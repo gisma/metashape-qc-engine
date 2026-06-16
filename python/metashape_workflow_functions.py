@@ -647,7 +647,6 @@ def build_point_cloud(doc, log_file, run_id, cfg):
         subdivide_task=cfg["subdivide_task"],
         point_colors=True,
     )
-    doc.chunk.smoothModel(cfg["noiterations"]) 
     # get an ending time stamp for the previous step
     timer3b = time.time()
 
@@ -709,6 +708,7 @@ def build_model(doc, log_file, run_id, cfg):
         ],  # Only used if face_count is custom
         source_data=Metashape.TiePointsData,
     )
+    doc.chunk.smoothModel(cfg["buildModel"]["noiterations"])
 
     time_taken = diff_time(time.time(), start_time)
 
@@ -913,7 +913,7 @@ def build_export_orthomosaic(doc, log_file, run_id, cfg, file_ending, from_mesh 
         refine_seamlines=cfg["buildOrthomosaic"]["refine_seamlines"],
         subdivide_task=cfg["subdivide_task"],
         projection=projection,
-        resolution = cfg["orthoRes"]"
+        resolution=cfg["buildOrthomosaic"]["orthoRes"],
     )
 
     # get an ending time stamp for the previous step
