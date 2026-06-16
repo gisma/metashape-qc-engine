@@ -57,6 +57,18 @@ def get_camera(chunk, label):
     return None
 
 
+def chunk_has_model(chunk):
+    """
+    Check whether the active chunk has a mesh/model available for ModelData operations.
+    """
+    model = getattr(chunk, "model", None)
+    if model is not None:
+        return True
+
+    models = getattr(chunk, "models", None)
+    return bool(models)
+
+
 #### Functions for each major step in Metashape
 
 
@@ -699,6 +711,7 @@ def build_model(doc, log_file, run_id, cfg):
 
     start_time = time.time()
     # Build the mesh
+    doc.chunk.resetRegion()
     doc.chunk.buildModel(
         surface_type=Metashape.HeightField,
         interpolation=Metashape.EnabledInterpolation,
@@ -706,7 +719,7 @@ def build_model(doc, log_file, run_id, cfg):
         face_count_custom=cfg["buildModel"][
             "face_count_custom"
         ],  # Only used if face_count is custom
-        source_data=Metashape.TiePointsData,
+        source_data=cfg["buildModel"].get("source_data", Metashape.TiePointsData),
     )
     doc.chunk.smoothModel(cfg["buildModel"]["noiterations"])
 
@@ -771,6 +784,11 @@ def build_dem_orthomosaic(doc, log_file, run_id, cfg):
     """
     # Building an orthomosaic from the mesh does not require a DEM, so this is done separately, independent of any DEM building
     if (cfg["buildOrthomosaic"]["enabled"] and "Mesh" in cfg["buildOrthomosaic"]["surface"]):
+        if not chunk_has_model(doc.chunk) and not cfg["buildModel"]["enabled"]:
+            raise ValueError(
+                "buildOrthomosaic.surface includes 'Mesh', but no model exists and buildModel.enabled is False. "
+                "Enable buildModel or load a project that already contains a model."
+            )
         build_export_orthomosaic(doc, log_file, run_id, cfg, from_mesh = True, file_ending="mesh")
         
     # classify ground points if specified
@@ -902,6 +920,11 @@ def build_export_orthomosaic(doc, log_file, run_id, cfg, file_ending, from_mesh 
     projection.crs = Metashape.CoordinateSystem(cfg["project_crs"])
 
     if from_mesh:
+        if not chunk_has_model(doc.chunk):
+            raise ValueError(
+                "Cannot build mesh-based orthomosaic because the active chunk has no model."
+            )
+        doc.chunk.resetRegion()
         surface_data = Metashape.ModelData
     else:
         surface_data = Metashape.ElevationData

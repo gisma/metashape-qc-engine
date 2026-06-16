@@ -124,6 +124,7 @@ classifyGroundPoints: # (Metashape: classifyGroundPoints) # classify points, IF 
 
 buildModel:
     enabled: True
+    source_data: Metashape.TiePointsData # Data source for mesh construction. Ortho+ mesh orthomosaic uses tie points by default.
     face_count: "Metashape.MediumFaceCount" # How many faces to use, Metashape.LowFaceCount, MediumFaceCount, HighFaceCount, CustomFaceCount
     face_count_custom: 100000 # Only used if custom number of faces set (above).
     export_local: True # Export the model in local coordinates
