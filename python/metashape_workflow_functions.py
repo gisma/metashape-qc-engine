@@ -117,7 +117,15 @@ def project_setup(cfg, config_file):
     else:
         # Initialize a chunk, set its CRS as specified
         chunk = doc.addChunk()
+
+        # Project/output CRS. This is the target CRS for exported geospatial products.
         chunk.crs = Metashape.CoordinateSystem(cfg["project_crs"])
+
+        # Camera reference CRS. DJI/EXIF geotags are normally stored as WGS84 lon/lat.
+        # This must be explicit when project_crs is projected, e.g. EPSG::32632.
+        chunk.camera_crs = Metashape.CoordinateSystem(cfg.get("camera_crs", "EPSG::4326"))
+
+        # Marker/GCP CRS remains configurable because GCPs may be measured in a projected CRS.
         chunk.marker_crs = Metashape.CoordinateSystem(cfg["addGCPs"]["gcp_crs"])
 
     # Save doc doc as new project (even if we opened an existing project, save as a separate one so the existing project remains accessible in its original state)
@@ -926,18 +934,31 @@ def build_export_orthomosaic(doc, log_file, run_id, cfg, file_ending, from_mesh 
             )
         doc.chunk.resetRegion()
         surface_data = Metashape.ModelData
+        mesh_ortho_params = {
+            "ghosting_filter": False,
+            "cull_faces": False,
+        }
     else:
         surface_data = Metashape.ElevationData
+        mesh_ortho_params = {}
 
-    doc.chunk.buildOrthomosaic(
-        surface_data=surface_data,
-        blending_mode=cfg["buildOrthomosaic"]["blending"],
-        fill_holes=cfg["buildOrthomosaic"]["fill_holes"],
-        refine_seamlines=cfg["buildOrthomosaic"]["refine_seamlines"],
-        subdivide_task=cfg["subdivide_task"],
-        projection=projection,
-        resolution=cfg["buildOrthomosaic"]["orthoRes"],
-    )
+    ortho_build_params = {
+        "surface_data": surface_data,
+        "blending_mode": cfg["buildOrthomosaic"]["blending"],
+        "fill_holes": cfg["buildOrthomosaic"]["fill_holes"],
+        "refine_seamlines": cfg["buildOrthomosaic"]["refine_seamlines"],
+        "subdivide_task": cfg["subdivide_task"],
+        "resolution": cfg["buildOrthomosaic"]["orthoRes"],
+        **mesh_ortho_params,
+    }
+
+    # Direct mesh-based Ortho+ builds can fail with unsupported datum
+    # transformations if a new projection is forced during buildOrthomosaic().
+    # DEM/DSM-based orthomosaics still receive the configured projection.
+    if not from_mesh:
+        ortho_build_params["projection"] = projection
+
+    doc.chunk.buildOrthomosaic(**ortho_build_params)
 
     # get an ending time stamp for the previous step
     timer6b = time.time()

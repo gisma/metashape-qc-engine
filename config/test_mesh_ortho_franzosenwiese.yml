@@ -1,0 +1,119 @@
+load_project: ""
+photo_path: "/datadisk/data/uav/burgwald_jürgen/franzosenwiese/auswahl/"
+photo_path_secondary: ""
+
+output_path: "/datadisk/data/uav/burgwald_jürgen/franzosenwiese/metashape_test/output/"
+project_path: "/datadisk/data/uav/burgwald_jürgen/franzosenwiese/metashape_test/psx/"
+run_name: "franzosenwiese_mesh_ortho_test_fresh"
+project_crs: "EPSG::32632"
+camera_crs: "EPSG::4326"
+
+subdivide_task: False
+use_cuda: True
+gpu_multiplier: 2
+
+addPhotos:
+  enabled: True
+  separate_calibration_per_path: False
+  multispectral: False
+  use_rtk: False
+  fix_accuracy: 0.000001
+  nofix_accuracy: 0.0001
+
+calibrateReflectance:
+  enabled: False
+  panel_filename: "RP04-1923118-OB.csv"
+  use_reflectance_panels: True
+  use_sun_sensor: True
+
+alignPhotos:
+  enabled: True
+  downscale: 1
+  adaptive_fitting: True
+  keep_keypoints: True
+  reset_alignment: True
+  generic_preselection: True
+  reference_preselection: True
+  reference_preselection_mode: Metashape.ReferencePreselectionSource
+  export: True
+
+addGCPs:
+  enabled: False
+  gcp_crs: "EPSG::32632"
+  marker_location_accuracy: 0.1
+  marker_projection_accuracy: 8
+  optimize_w_gcps_only: True
+
+filterPointsUSGS:
+  enabled: True
+  rec_thresh_percent: 20
+  rec_thresh_absolute: 15
+  proj_thresh_percent: 30
+  proj_thresh_absolute: 2
+  reproj_thresh_percent: 5
+  reproj_thresh_absolute: 0.3
+
+optimizeCameras:
+  enabled: True
+  adaptive_fitting: True
+  export: True
+
+buildDepthMaps:
+  enabled: False
+  downscale: 4
+  filter_mode: Metashape.ModerateFiltering
+  reuse_depth: False
+  max_neighbors: 60
+
+buildPointCloud:
+  enabled: False
+  keep_depth: True
+  max_neighbors: 60
+  classify_ground_points: False
+  export: False
+  classes: "ALL"
+  remove_after_export: False
+
+classifyGroundPoints:
+  max_angle: 15.0
+  max_distance: 1.0
+  cell_size: 50.0
+
+buildModel:
+  enabled: True
+  source_data: Metashape.TiePointsData
+  face_count: Metashape.LowFaceCount
+  face_count_custom: 100000
+  export_local: True
+  export_transform: False
+  export_georeferenced: True
+  export_extension: "obj"
+  noiterations: 35
+
+buildDem:
+  enabled: False
+  classify_ground_points: False
+  surface: ["DSM-mesh"]
+  resolution: 0
+  export: False
+  tiff_big: True
+  tiff_tiled: False
+  nodata: -32767
+  tiff_overviews: True
+
+buildOrthomosaic:
+  enabled: True
+  orthoRes: 0.05
+  surface: ["Mesh"]
+  blending: Metashape.MosaicBlending
+  fill_holes: True
+  refine_seamlines: True
+  export: True
+  tiff_big: True
+  tiff_tiled: True
+  nodata: -32767
+  tiff_overviews: True
+  remove_after_export: True
+
+exportReport:
+  enabled: False
