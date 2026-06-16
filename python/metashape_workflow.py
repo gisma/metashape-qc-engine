@@ -6,6 +6,18 @@
 # 2021
 
 import sys
+# Make repo-local vendored dependencies available inside the Metashape runtime.
+from pathlib import Path as _Path
+
+_REPO_ROOT = _Path(__file__).resolve().parents[1]
+_VENDOR_DIR = _REPO_ROOT / "python" / "vendor"
+
+if _VENDOR_DIR.is_dir():
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 
 # ---- If this is a first run from the standalone python module, need to copy the license file from the full metashape install: from python import metashape_license_setup
 
