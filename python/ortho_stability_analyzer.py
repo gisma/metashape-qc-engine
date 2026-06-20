@@ -34,10 +34,31 @@ from osgeo import gdal
 
 gdal.UseExceptions()
 
+MANIFEST_COLUMNS = [
+    "experiment_id",
+    "variant_id",
+    "replicate",
+    "status",
+    "return_code",
+    "config_file",
+    "project_dir",
+    "output_dir",
+    "project_file",
+    "ortho_file",
+    "launcher_log",
+    "elapsed_sec",
+]
+
 
 def read_manifest(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as f:
-        rows = list(csv.DictReader(f))
+        reader = csv.DictReader(f)
+        missing = [col for col in MANIFEST_COLUMNS if col not in (reader.fieldnames or [])]
+        if missing:
+            raise RuntimeError(
+                "Manifest is missing required columns: " + ", ".join(missing)
+            )
+        rows = list(reader)
 
     out = []
     for row in rows:
@@ -49,6 +70,15 @@ def read_manifest(path: Path) -> list[dict[str, str]]:
             continue
         if not Path(ortho).is_file():
             continue
+        missing_used = [
+            col for col in ("variant_id", "replicate")
+            if not row.get(col, "").strip()
+        ]
+        if missing_used:
+            raise RuntimeError(
+                "Manifest row used for analysis is missing required values: "
+                + ", ".join(missing_used)
+            )
         out.append(row)
 
     if not out:

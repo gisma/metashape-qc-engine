@@ -52,6 +52,17 @@ SUPPORT_COLUMNS = [
     "support_dropout_footprint",
 ]
 
+SUMMARY_COLUMNS = [
+    "variant_id",
+    "n_orthos",
+    "mean_mad_rgb",
+    "p95_mad_rgb",
+    "mean_rmse_to_median",
+    "p95_rmse_to_median",
+    "stable_fraction_support_rmse",
+    "unstable_fraction_support_rmse",
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -108,7 +119,13 @@ def fmt(value: str | float | None, digits: int = 4) -> str:
 
 def read_csv_dicts(path: Path) -> list[dict[str, str]]:
     with path.open(newline="") as handle:
-        return list(csv.DictReader(handle))
+        reader = csv.DictReader(handle)
+        missing = [col for col in SUMMARY_COLUMNS if col not in (reader.fieldnames or [])]
+        if missing:
+            raise RuntimeError(
+                f"{path} is missing required columns: " + ", ".join(missing)
+            )
+        return list(reader)
 
 
 def write_tsv(rows: list[dict[str, str]], columns: list[str], path: Path) -> None:

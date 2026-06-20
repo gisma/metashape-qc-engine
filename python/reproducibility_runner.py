@@ -33,6 +33,23 @@ import yaml
 
 SKIP = object()
 
+MANIFEST_COLUMNS = [
+    "experiment_id",
+    "variant_id",
+    "replicate",
+    "status",
+    "return_code",
+    "config_file",
+    "project_dir",
+    "output_dir",
+    "project_file",
+    "ortho_file",
+    "launcher_log",
+    "elapsed_sec",
+]
+
+MANIFEST_STATUSES = {"ok", "ok_no_ortho", "failed"}
+
 
 def read_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
@@ -162,25 +179,18 @@ def find_latest(pattern_dir: Path, pattern: str) -> str:
 def write_manifest(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    fieldnames = [
-        "experiment_id",
-        "variant_id",
-        "replicate",
-        "status",
-        "return_code",
-        "config_file",
-        "project_dir",
-        "output_dir",
-        "project_file",
-        "ortho_file",
-        "launcher_log",
-        "elapsed_sec",
-    ]
-
     with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=MANIFEST_COLUMNS)
         writer.writeheader()
         for row in rows:
+            missing = [col for col in MANIFEST_COLUMNS if col not in row]
+            if missing:
+                raise RuntimeError(
+                    "Manifest row is missing required columns: "
+                    + ", ".join(missing)
+                )
+            if row["status"] not in MANIFEST_STATUSES:
+                raise RuntimeError(f"Invalid manifest status: {row['status']}")
             writer.writerow(row)
 
 
