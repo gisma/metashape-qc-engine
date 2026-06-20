@@ -22,7 +22,7 @@ if str(_REPO_ROOT) not in sys.path:
 # ---- If this is a first run from the standalone python module, need to copy the license file from the full metashape install: from python import metashape_license_setup
 
 ## Define where to get the config file (only used if running interactively)
-manual_config_file = "~/apps/Metashape_workflows/automate-metashape-2/config/base.yml"
+manual_config_file = "~/dev/metashape-qc-engine/config/base.yml"
 # ---- If not running interactively, the config file should be supplied as the command-line argument after the python script, e.g.: python metashape_workflow.py config.yml
 
 

@@ -44,7 +44,7 @@ The workflow script adds this directory to `sys.path` before importing workflow 
 From the repository root:
 
 ```bash
-cd ~/dev/automate-metashape-2
+cd ~/dev/metashape-qc-engine
 scripts/bootstrap_metashape_deps.sh
 ```
 
