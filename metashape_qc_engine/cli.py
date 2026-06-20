@@ -104,6 +104,8 @@ def _run_experiment(args: argparse.Namespace) -> int:
         cmd.extend(["--metashape-dir", args.metashape_dir])
     if args.overwrite:
         cmd.append("--overwrite")
+    if args.resume:
+        cmd.append("--resume")
 
     return _run(cmd)
 
@@ -182,6 +184,7 @@ def _build_parser() -> argparse.ArgumentParser:
     experiment.add_argument("--variants", metavar="CSV")
     experiment.add_argument("--metashape-dir", metavar="DIR")
     experiment.add_argument("--overwrite", action="store_true")
+    experiment.add_argument("--resume", action="store_true")
     experiment.set_defaults(func=_run_experiment)
 
     analyze = subparsers.add_parser(

@@ -34,6 +34,9 @@ from osgeo import gdal
 
 gdal.UseExceptions()
 
+RESOLUTION_REL_TOL = 1e-6
+RESOLUTION_ABS_TOL = 1e-7
+
 MANIFEST_COLUMNS = [
     "experiment_id",
     "variant_id",
@@ -137,14 +140,28 @@ def check_compatible(infos: list[dict[str, Any]]) -> None:
                 f"  {info['path']}"
             )
 
-        if not math.isclose(info["xres"], base["xres"], rel_tol=0, abs_tol=1e-9):
+        if not math.isclose(
+            info["xres"],
+            base["xres"],
+            rel_tol=RESOLUTION_REL_TOL,
+            abs_tol=RESOLUTION_ABS_TOL,
+        ):
             raise RuntimeError(
-                f"X resolution mismatch: {base['xres']} vs {info['xres']}"
+                f"X resolution mismatch: {base['xres']} vs {info['xres']} "
+                f"(absolute difference: {abs(base['xres'] - info['xres'])}, "
+                f"tolerance: abs_tol={RESOLUTION_ABS_TOL}, rel_tol={RESOLUTION_REL_TOL})"
             )
 
-        if not math.isclose(info["yres"], base["yres"], rel_tol=0, abs_tol=1e-9):
+        if not math.isclose(
+            info["yres"],
+            base["yres"],
+            rel_tol=RESOLUTION_REL_TOL,
+            abs_tol=RESOLUTION_ABS_TOL,
+        ):
             raise RuntimeError(
-                f"Y resolution mismatch: {base['yres']} vs {info['yres']}"
+                f"Y resolution mismatch: {base['yres']} vs {info['yres']} "
+                f"(absolute difference: {abs(base['yres'] - info['yres'])}, "
+                f"tolerance: abs_tol={RESOLUTION_ABS_TOL}, rel_tol={RESOLUTION_REL_TOL})"
             )
 
 

@@ -167,6 +167,75 @@ def ensure_experiment_dir(path: Path, overwrite: bool) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def validate_manifest_row(row: dict[str, str]) -> None:
+    missing = [col for col in MANIFEST_COLUMNS if col not in row]
+    if missing:
+        raise RuntimeError(
+            "Manifest row is missing required columns: "
+            + ", ".join(missing)
+        )
+    if row["status"] not in MANIFEST_STATUSES:
+        raise RuntimeError(f"Invalid manifest status: {row['status']}")
+
+
+def read_manifest(path: Path) -> list[dict[str, str]]:
+    with path.open("r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = [{col: row.get(col, "") for col in MANIFEST_COLUMNS} for row in reader]
+
+    for row in rows:
+        validate_manifest_row(row)
+
+    return rows
+
+
+def append_manifest_row(path: Path, row: dict[str, str]) -> None:
+    validate_manifest_row(row)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    needs_header = not path.exists() or path.stat().st_size == 0
+
+    with path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MANIFEST_COLUMNS)
+        if needs_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def manifest_key(row: dict[str, str]) -> tuple[str, str]:
+    return row["variant_id"], row["replicate"]
+
+
+def latest_manifest_rows(
+    rows: list[dict[str, str]],
+) -> tuple[dict[tuple[str, str], dict[str, str]], set[tuple[str, str]]]:
+    latest: dict[tuple[str, str], dict[str, str]] = {}
+    seen: set[tuple[str, str]] = set()
+    duplicates: set[tuple[str, str]] = set()
+
+    for row in rows:
+        key = manifest_key(row)
+        if key in seen:
+            duplicates.add(key)
+        seen.add(key)
+        latest[key] = row
+
+    return latest, duplicates
+
+
+def is_resumable_success(row: dict[str, str] | None) -> bool:
+    if row is None or row["status"] not in {"ok", "ok_no_ortho"}:
+        return False
+
+    required = [
+        "config_file",
+        "project_dir",
+        "output_dir",
+        "project_file",
+        "launcher_log",
+    ]
+    return all(row.get(col, "").strip() for col in required)
+
+
 def find_latest(pattern_dir: Path, pattern: str) -> str:
     files = sorted(
         pattern_dir.glob(pattern),
@@ -183,14 +252,7 @@ def write_manifest(path: Path, rows: list[dict[str, str]]) -> None:
         writer = csv.DictWriter(f, fieldnames=MANIFEST_COLUMNS)
         writer.writeheader()
         for row in rows:
-            missing = [col for col in MANIFEST_COLUMNS if col not in row]
-            if missing:
-                raise RuntimeError(
-                    "Manifest row is missing required columns: "
-                    + ", ".join(missing)
-                )
-            if row["status"] not in MANIFEST_STATUSES:
-                raise RuntimeError(f"Invalid manifest status: {row['status']}")
+            validate_manifest_row(row)
             writer.writerow(row)
 
 
@@ -200,11 +262,13 @@ def make_replicate_config(
     base_run_name: str,
     experiment_dir: Path,
     replicate_index: int,
+    run_label: str | None = None,
 ) -> tuple[dict[str, Any], Path, Path, Path]:
     rep = f"rep_{replicate_index:03d}"
+    run_label = run_label or rep
 
     variant_dir = experiment_dir / "variants" / variant_id
-    run_dir = variant_dir / "runs" / rep
+    run_dir = variant_dir / "runs" / run_label
     project_dir = run_dir / "psx"
     output_dir = run_dir / "output"
     config_dir = variant_dir / "configs"
@@ -215,13 +279,31 @@ def make_replicate_config(
     # They must not continue a previously generated PSX file.
     cfg["load_project"] = ""
 
-    cfg["run_name"] = f"{base_run_name}_{variant_id}_{rep}"
+    cfg["run_name"] = f"{base_run_name}_{variant_id}_{run_label}"
     cfg["project_path"] = str(project_dir) + "/"
     cfg["output_path"] = str(output_dir) + "/"
 
-    rep_config = config_dir / f"{rep}.yml"
+    rep_config = config_dir / f"{run_label}.yml"
 
     return cfg, rep_config, project_dir, output_dir
+
+
+def choose_run_label(
+    experiment_dir: Path,
+    variant_id: str,
+    rep: str,
+    prior_rows: list[dict[str, str]],
+    resume: bool,
+) -> str:
+    default_run_dir = experiment_dir / "variants" / variant_id / "runs" / rep
+    default_config = experiment_dir / "variants" / variant_id / "configs" / f"{rep}.yml"
+
+    if not resume:
+        return rep
+    if not prior_rows and not default_run_dir.exists() and not default_config.exists():
+        return rep
+
+    return f"{rep}_attempt_{len(prior_rows) + 1:03d}"
 
 
 def run_replicate(
@@ -293,6 +375,11 @@ def main() -> int:
         action="store_true",
         help="Allow writing into an existing non-empty experiment directory.",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume an existing experiment by skipping successful variant/replicate runs.",
+    )
 
     args = parser.parse_args()
 
@@ -304,7 +391,14 @@ def main() -> int:
     if args.reps < 2:
         raise RuntimeError("Use at least --reps 2 for a reproducibility experiment.")
 
-    ensure_experiment_dir(experiment_dir, overwrite=args.overwrite)
+    manifest_file = experiment_dir / "manifest.csv"
+    if manifest_file.exists() and not args.resume:
+        raise RuntimeError(
+            f"Manifest already exists: {manifest_file}\n"
+            "Pass --resume to continue failed or missing runs, or choose a new experiment directory."
+        )
+
+    ensure_experiment_dir(experiment_dir, overwrite=args.overwrite or args.resume)
 
     base_cfg = read_yaml(base_config)
 
@@ -314,8 +408,25 @@ def main() -> int:
 
     variants = read_variants(variants_file)
 
-    manifest_file = experiment_dir / "manifest.csv"
-    rows: list[dict[str, str]] = []
+    existing_rows = read_manifest(manifest_file) if manifest_file.exists() else []
+    latest_rows, duplicate_keys = latest_manifest_rows(existing_rows)
+    rows_by_key: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for row in existing_rows:
+        rows_by_key.setdefault(manifest_key(row), []).append(row)
+
+    if duplicate_keys:
+        duplicate_list = ", ".join(
+            f"{variant_id}/{rep}" for variant_id, rep in sorted(duplicate_keys)
+        )
+        print(
+            f"Duplicate manifest rows found; latest rows will be used for resume decisions: {duplicate_list}",
+            file=sys.stderr,
+        )
+
+    ok_count = 0
+    ok_no_ortho_count = 0
+    failed_count = 0
+    skipped_count = 0
 
     for variant in variants:
         variant_id = variant["variant_id"]
@@ -327,6 +438,21 @@ def main() -> int:
 
         for i in range(1, args.reps + 1):
             rep = f"rep_{i:03d}"
+            key = (variant_id, rep)
+            if args.resume and is_resumable_success(latest_rows.get(key)):
+                skipped_count += 1
+                print(f"  Skipping {rep}/{args.reps:03d} (already successful)", flush=True)
+                continue
+
+            prior_rows = rows_by_key.get(key, [])
+            run_label = choose_run_label(
+                experiment_dir=experiment_dir,
+                variant_id=variant_id,
+                rep=rep,
+                prior_rows=prior_rows,
+                resume=args.resume,
+            )
+
             print(f"  Running {rep}/{args.reps:03d}", flush=True)
 
             cfg, rep_config, project_dir, output_dir = make_replicate_config(
@@ -335,6 +461,7 @@ def main() -> int:
                 base_run_name=base_run_name,
                 experiment_dir=experiment_dir,
                 replicate_index=i,
+                run_label=run_label,
             )
 
             project_dir.mkdir(parents=True, exist_ok=True)
@@ -345,7 +472,7 @@ def main() -> int:
                 / "variants"
                 / variant_id
                 / "runs"
-                / rep
+                / run_label
                 / "launcher.log"
             )
 
@@ -370,28 +497,33 @@ def main() -> int:
             else:
                 status = "failed"
 
-            rows.append(
-                {
-                    "experiment_id": experiment_dir.name,
-                    "variant_id": variant_id,
-                    "replicate": rep,
-                    "status": status,
-                    "return_code": str(return_code),
-                    "config_file": str(rep_config),
-                    "project_dir": str(project_dir),
-                    "output_dir": str(output_dir),
-                    "project_file": project_file,
-                    "ortho_file": ortho_file,
-                    "launcher_log": str(launcher_log),
-                    "elapsed_sec": str(elapsed),
-                }
-            )
+            row = {
+                "experiment_id": experiment_dir.name,
+                "variant_id": variant_id,
+                "replicate": rep,
+                "status": status,
+                "return_code": str(return_code),
+                "config_file": str(rep_config),
+                "project_dir": str(project_dir),
+                "output_dir": str(output_dir),
+                "project_file": project_file,
+                "ortho_file": ortho_file,
+                "launcher_log": str(launcher_log),
+                "elapsed_sec": str(elapsed),
+            }
+            append_manifest_row(manifest_file, row)
+            latest_rows[key] = row
+            rows_by_key.setdefault(key, []).append(row)
 
-            write_manifest(manifest_file, rows)
+            if status == "ok":
+                ok_count += 1
+            elif status == "ok_no_ortho":
+                ok_no_ortho_count += 1
+            else:
+                failed_count += 1
 
             if return_code != 0:
                 print(f"{variant_id}/{rep} failed. See: {launcher_log}", file=sys.stderr)
-                return return_code
 
             if not ortho_file:
                 print(
@@ -400,7 +532,14 @@ def main() -> int:
                 )
 
     print(f"Manifest written to: {manifest_file}")
-    return 0
+    print(
+        "Summary: "
+        f"ok={ok_count}, "
+        f"ok_no_ortho={ok_no_ortho_count}, "
+        f"failed={failed_count}, "
+        f"skipped={skipped_count}"
+    )
+    return 1 if failed_count else 0
 
 
 if __name__ == "__main__":

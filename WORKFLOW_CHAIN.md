@@ -1,6 +1,43 @@
-# Recovered Fork Workflow Chain
+# Workflow Chain
 
-## Active Workflow
+## Active Product Workflow
+
+`metashape-qc-engine` is now organized as a product-oriented reproducibility and QC workflow around Metashape orthomosaic generation. The active user sequence is:
+
+1. Prepare product-specific experiment inputs with `python/prepare_product_experiment.py`.
+2. Run repeated Metashape variants with `metashape-qc experiment`.
+3. Evaluate orthomosaic stability and support diagnostics with `metashape-qc evaluate`.
+4. Inspect `stability_union/summary_key_metrics.tsv`, `stability_union/support_valid_count_histogram.tsv`, `stability_union/evaluation_report.md`, `selected_product.json`, the QGIS launchers, and `threshold_review/threshold_sensitivity.tsv`.
+
+The preparation step takes an image directory, product id, preset, replicate count, and output root. It writes `config.yml` and `variants.csv` into the concrete experiment directory, not into the source repository.
+
+The current runner command shape is:
+
+```bash
+metashape-qc experiment <config.yml> \
+  --reps N \
+  --experiment-dir <dir> \
+  --variants <variants.csv> \
+  --metashape-dir <METASHAPE_DIR>
+```
+
+If a Metashape replicate fails, the runner records `status=failed` in `manifest.csv` and continues the matrix. Rerun aborted experiments with `--resume`; successful variant/replicate combinations are skipped, failed or missing combinations are rerun, and prior manifest rows are preserved as history.
+
+Evaluation command shape is:
+
+```bash
+metashape-qc evaluate <experiment_dir>
+```
+
+or, when `stability_union/summary.csv` and analyzer rasters already exist:
+
+```bash
+metashape-qc evaluate <experiment_dir> --skip-analyzer
+```
+
+`selected_product.json` is a technical trace. It records the implemented selection procedure and warnings for user and domain review; it does not validate scientific correctness.
+
+## Procedural Metashape Runtime
 
 The active workflow is the recovered fork-style procedural runner:
 
@@ -37,6 +74,23 @@ The script reads `base.yml`, reads config fragments from `derived.yml`, merges e
 `config/derived.yml` contains partial config fragments for `R/prep_configs.R`. These fragments are merged into `base.yml` to produce full generated configs. They must target active paths such as `addPhotos.multispectral` and `buildPointCloud`.
 
 `config/config-example.yml` is an upstream reference config. It uses the upstream nested snake_case schema and is not the active schema for the recovered procedural runner.
+
+## Product Experiment Preset
+
+The active product starter preset is:
+
+```text
+config/experiments/presets/mesh_facecount_smoothing_3x3.json
+```
+
+It defines a mesh orthomosaic experiment that varies:
+
+```text
+buildModel.face_count_custom
+buildModel.noiterations
+```
+
+Preset factor values are used by default. The current starter script also implements `--factor COLUMN=VALUE1,VALUE2,...`, `--face-counts`, `--smoothing`, and `--variant-id-template` overrides.
 
 ## YAML Parser
 

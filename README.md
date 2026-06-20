@@ -1,15 +1,14 @@
 # metashape-qc-engine
 
-`metashape-qc-engine` is a Python-first quality-control engine for repeated Agisoft Metashape processing, stability evaluation, and controlled product generation.
+`metashape-qc-engine` is a product-oriented reproducibility and QC workflow around Agisoft Metashape orthomosaic generation.
 
-The current focus is reproducible Metashape product generation through:
+The workflow supports:
 
-- configuration-driven workflow execution,
-- repeated runs across parameter variants,
-- manifest-based experiment tracking,
-- raster-based stability analysis,
-- support-aware evaluation reports,
-- controlled selection of robust processing states.
+- repeated Metashape runs,
+- variant matrices,
+- orthomosaic stability analysis,
+- support diagnostics,
+- selected product tracing.
 
 The project contains adapted components from the UC Davis / AM2 / automate-metashape workflow core and extends them with reproducibility, quality-control, and stability-evaluation logic. See `LICENSE` and `NOTICE.md`.
 
@@ -23,37 +22,72 @@ The active engine is still organized around existing runtime scripts:
 
 Additional experiment and evaluation components are provided by:
 
+- `python/prepare_product_experiment.py`
 - `python/reproducibility_runner.py`
 - `python/ortho_stability_analyzer.py`
 - `python/evaluate_ortho_stability.py`
 
 The package/CLI layer is intentionally thin and should delegate to the existing runtime scripts without changing workflow logic.
 
-## Current command pattern
+## Current product workflow
 
-Single Metashape workflow run:
+Concise end-to-end commands are in [docs/quick_workflow.md](docs/quick_workflow.md).
 
-```bash
-METASHAPE_DIR="/path/to/metashape-pro" \
-scripts/run_metashape_workflow.sh config/base.yml
-````
-
-Repeated experiment:
+1. Prepare a product experiment from an image directory, product id, preset, replicate count, and output root:
 
 ```bash
-python3 python/reproducibility_runner.py \
-  config/experiments/test_mesh_ortho_mof_forest_knoll_rgb.yml \
-  --variants config/experiments/repro_variants_mesh_smoothing_only.csv \
-  --reps 5 \
-  --experiment-dir /path/to/experiment \
+python3 python/prepare_product_experiment.py \
+  --image-dir /data/product-001/images \
+  --product-id product-001 \
+  --preset config/experiments/presets/mesh_facecount_smoothing_3x3.json \
+  --reps 10 \
+  --output-root /data/metashape-qc-runs
+```
+
+The helper writes product-specific `config.yml` and `variants.csv` into the concrete experiment directory under the output root. These files are run artifacts and should not be committed.
+
+2. Run the repeated Metashape experiment:
+
+```bash
+metashape-qc experiment /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10/config.yml \
+  --reps 10 \
+  --experiment-dir /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10 \
+  --variants /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10/variants.csv \
   --metashape-dir /path/to/metashape-pro
 ```
 
-Support-aware evaluation:
+Failed Metashape replicates are recorded in `manifest.csv` and the matrix continues. To continue an aborted experiment, rerun the same command with `--resume`; successful variant/replicate combinations are skipped, failed or missing combinations are rerun, and manifest history is preserved.
+
+3. Evaluate the completed experiment:
 
 ```bash
-python3 python/evaluate_ortho_stability.py /path/to/experiment --skip-analyzer
+metashape-qc evaluate /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10
 ```
+
+If analyzer outputs already exist:
+
+```bash
+metashape-qc evaluate /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10 --skip-analyzer
+```
+
+4. Inspect the technical outputs:
+
+- `stability_union/summary_key_metrics.tsv`
+- `stability_union/support_valid_count_histogram.tsv`
+- `stability_union/evaluation_report.md`
+- `selected_product.json`
+- `qgis_open_selected.sh` and `qgis_open_selected.bat`
+- `threshold_review/threshold_sensitivity.tsv`
+
+## Terminology
+
+- `image directory`: directory containing input images.
+- `product id`: logical dataset or product identifier used for generated names.
+- `output root`: parent directory for experiment runs.
+- `experiment directory`: concrete run directory containing manifest, variants, outputs, stability products, and selected product trace.
+- `preset`: experiment-design template, not a dataset.
+- `variants CSV`: generated technical matrix consumed by the runner.
+- `selected product trace`: technical selection record for user and domain review, not an automatic scientific truth claim.
 
 ## Architecture direction
 

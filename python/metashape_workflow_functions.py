@@ -436,6 +436,10 @@ def align_photos(doc, log_file, run_id, cfg):
         subdivide_task=cfg["subdivide_task"],
         reset_alignment=cfg["alignPhotos"]["reset_alignment"],
     )
+    aligned_cameras = [camera for camera in doc.chunk.cameras if camera.transform]
+    if not aligned_cameras:
+        doc.save()
+        raise RuntimeError("No aligned cameras after alignment")
     doc.save()
 
     # get an ending time stamp
