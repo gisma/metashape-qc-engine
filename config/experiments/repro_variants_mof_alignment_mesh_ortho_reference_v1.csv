@@ -1,0 +1,2 @@
+variant_id,buildDepthMaps.enabled,buildPointCloud.enabled,buildModel.enabled,buildModel.source_data,buildModel.face_count,buildModel.face_count_custom,buildModel.noiterations,buildDem.enabled,buildDem.surface,buildOrthomosaic.enabled,buildOrthomosaic.surface,buildOrthomosaic.orthoRes,alignPhotos.downscale,alignPhotos.adaptive_fitting,alignPhotos.generic_preselection,alignPhotos.reference_preselection
+base,False,False,True,Metashape.TiePointsData,Metashape.CustomFaceCount,100000,35,False,,True,[Mesh],0.05,1,True,True,True

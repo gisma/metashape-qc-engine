@@ -53,6 +53,39 @@ buildModel.noiterations
 
 Factor values come from the preset unless overridden by the implemented CLI options above.
 
+## MOF Alignment-Mesh-Ortho Reference Matrix
+
+The MOF reference benchmark preset is:
+
+```text
+config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json
+```
+
+It defines an Alignment-Mesh-Ortho sensitivity matrix for an orthomosaic reproducibility benchmark and product analysis. The matrix has 48 processing candidates and varies only parameters already handled by the current config, variant, and preparation system:
+
+```text
+alignPhotos.downscale
+alignPhotos.adaptive_fitting
+buildModel.face_count_custom
+buildModel.noiterations
+buildOrthomosaic.orthoRes
+```
+
+Dense/Depth-Map/DSM excluded: Dense/Depth-Map/DSM products are excluded from this benchmark. The preset keeps `buildDepthMaps.enabled`, `buildPointCloud.enabled`, and `buildDem.enabled` disabled in the variant template and builds mesh-based orthomosaics only. This is an orthomosaic reproducibility and product-selection benchmark, not a full-workflow matrix.
+
+Generic and reference preselection are present as fixed supported columns in the variant template, but are not varied in this v1 matrix so the prepare-compatible Cartesian factor expansion remains bounded. `keypoint_limit`, `keypoint_limit_per_mpx`, `tiepoint_limit`, and `guided_matching` are not current active workflow controls in this repository, so they are not included.
+
+Suitability and change-detection interpretation are not part of this step. Platform comparison is not part of this step. GCP/checkpoint/cross-date accuracy is not part of this step.
+
+```bash
+metashape-qc prepare \
+  --image-dir "/datadisk/data/uav/MOF/" \
+  --product-id "mof_alignment_mesh_ortho_reference_v1" \
+  --preset "config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json" \
+  --reps 5 \
+  --output-root "/datadisk/data/uav/MOF_repro_reference/runs"
+```
+
 After preparation, run the product analysis with the generated files:
 
 ```bash
