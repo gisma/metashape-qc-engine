@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metashape-qc-engine"
+version = "0.1.0"
+description = "Minimal CLI wrapper for the Metashape QC engine workflow scripts."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+dependencies = [
+  "PyYAML>=6.0",
+]
+
+[project.scripts]
+metashape-qc = "metashape_qc_engine.cli:main"
+
+[tool.setuptools]
+packages = ["metashape_qc_engine"]

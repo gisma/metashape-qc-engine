@@ -126,3 +126,4 @@ dev/
 .DS_Store
 # Local Python dependencies for Agisoft Metashape runtime
 python/vendor/
+.venv/
