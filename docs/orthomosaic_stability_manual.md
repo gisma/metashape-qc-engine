@@ -11,6 +11,53 @@ The workflow has three stages:
 Full YAML and parameter details are in the appendix:
 [Parameter and File Reference](orthomosaic_stability_reference.md)
 
+## Product-oriented preparation layer
+
+The product-oriented workflow separates dataset identity from concrete run paths:
+
+`image directory`
+is the actual directory containing the input images used by Metashape.
+
+`product id`
+is the logical dataset or product identifier used in generated names.
+
+`output root`
+is the parent directory where experiment runs are created.
+
+`experiment directory`
+is the concrete run directory for one prepared experiment.
+
+`preset`
+is an experiment-design template. It is not a dataset.
+
+The preparation script writes the generated `config.yml` and `variants.csv` into the experiment directory. These generated files are run artifacts and should not be committed.
+
+Example:
+
+```bash
+python3 python/prepare_product_experiment.py \
+  --image-dir /data/product/images \
+  --product-id product-001 \
+  --preset config/experiments/presets/mesh_facecount_smoothing_3x3.json \
+  --reps 10 \
+  --output-root /data/metashape-qc-runs
+```
+
+This creates a product-specific experiment directory under the output root and prints the `metashape-qc experiment` command that uses the generated config and variants.
+
+### Factor overrides
+
+The preset defines the default factor matrix. For a prepared product experiment, the matrix can be adjusted from the command line:
+
+```text
+--factor COLUMN=VALUE1,VALUE2,...
+--face-counts VALUE1,VALUE2,...
+--smoothing VALUE1,VALUE2,...
+--variant-id-template TEMPLATE
+```
+
+`--factor` overrides or adds one factor column and may be repeated. `--face-counts` is a shortcut for `buildModel.face_count_custom`. `--smoothing` is a shortcut for `buildModel.noiterations`. `--variant-id-template` overrides the preset template used to generate `variant_id` values.
+
 ## 1. Project Structure
 
 Each dataset gets its own project directory.
@@ -235,9 +282,8 @@ valid_count.tif
 median_ortho.tif
 mad_rgb.tif
 rmse_to_median.tif
-stable_mask_rmse15.tif
-unstable_mask_rmse15.tif
 summary.csv
+threshold_review/rmse15/variants/<variant_id>/quality_flag_rmse15.tif
 ```
 
 `valid_count.tif` shows how many replicates have valid image support for each pixel.
@@ -248,11 +294,13 @@ summary.csv
 
 `rmse_to_median.tif` shows RMSE deviations from the median image.
 
-`stable_mask_rmse15.tif` marks stable areas.
-
-`unstable_mask_rmse15.tif` marks unstable areas.
-
 `summary.csv` summarizes stability by variant.
+
+Threshold review writes separate threshold quality flags under
+`threshold_review/rmse<THR>/variants/<variant_id>/quality_flag_rmse<THR>.tif`.
+These Byte GeoTIFFs use 0 for invalid/no support, 1 for stable/usable, and 2
+for unstable/review or exclude under that RMSE threshold. Threshold quality
+flags do not modify or clean the orthomosaic.
 
 ## 5. Reading Results
 
@@ -286,11 +334,13 @@ For QGIS inspection, these layers are central:
 median_ortho.tif
 valid_count.tif
 rmse_to_median.tif
-stable_mask_rmse15.tif
-unstable_mask_rmse15.tif
+threshold_review/rmse15/variants/<variant_id>/quality_flag_rmse15.tif
 ```
 
-`median_ortho.tif` is useful as a background. `rmse_to_median.tif` shows deviation hotspots. `valid_count.tif` shows stable or unstable image support. The masks separate stable and unstable areas.
+`median_ortho.tif` is useful as a background. `rmse_to_median.tif` shows
+deviation hotspots. `valid_count.tif` shows stable or unstable image support.
+The threshold quality flag separates invalid/no support, stable/usable, and
+unstable/review-or-exclude areas without modifying or cleaning the orthomosaic.
 
 ## 6. Changing Defaults
 
@@ -347,6 +397,12 @@ summary_key_metrics.tsv
 support_valid_count_histogram.tsv
 qgis_layers.txt
 summary.csv
+../qgis_open_selected.sh
+../qgis_open_selected.bat
+../qgis_open_threshold_review.sh
+../qgis_open_threshold_review.bat
+../threshold_review/threshold_sensitivity.tsv
+../threshold_review/threshold_winners.tsv
 ```
 
 `evaluation_report.md` contains the compact variant evaluation.
@@ -359,6 +415,17 @@ summary.csv
 
 `summary.csv` contains the full analyzer result table.
 
+The evaluator also writes standard QGIS launchers at the experiment directory
+root. Both POSIX `.sh` and Windows `.bat` launchers are generated. Launcher
+raster arguments are relative to the experiment directory; Windows users may
+set `QGIS_BIN` to override the default `qgis-bin.exe`.
+
+`threshold_review/threshold_sensitivity.tsv` and
+`threshold_review/threshold_winners.tsv` are derived from existing
+`rmse_to_median.tif` rasters. This threshold review does not rerun Metashape,
+does not rerun the full stability analyzer, and is a guard / sensitivity layer
+rather than the primary product selector.
+
 The compact default table is sorted by continuous image-value stability:
 
 ```text
@@ -368,6 +435,32 @@ The compact default table is sorted by continuous image-value stability:
 4. lower mean MAD RGB
 ```
 
-The evaluator also reports separate threshold-mask and support-persistence candidates. These candidate categories are not collapsed into one canonical winner.
+The evaluator also reports separate threshold quality-flag and
+support-persistence candidates. These candidate categories are not collapsed
+into one canonical winner.
 
 This evaluation describes reproducibility of the orthomosaic product. It does not replace independent geometric validation.
+
+### Selected product trace
+
+`selected_product.json` records the technical selection trace produced by evaluation.
+
+Continuous stability selects the primary variant. Support persistence is feasibility and coverage context. Threshold quality-flag metrics are rejection and warning guard context.
+
+`median_ortho` is the robust analysis product for the selected variant. `medoid_replicate` is the original Metashape orthomosaic closest to the selected variant median.
+
+Warnings require review. The selected product trace is not an automatic scientific correctness claim.
+
+### Evaluator dependencies
+
+`metashape-qc evaluate` requires `numpy`, `rasterio`, and GDAL Python bindings. The project virtual environment must be able to import GDAL array support:
+
+```bash
+python3 -c "from osgeo import gdal_array"
+```
+
+Use the project helper inside the virtual environment:
+
+```bash
+scripts/install_evaluator_deps.sh
+```

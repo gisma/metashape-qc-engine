@@ -17,10 +17,12 @@ import argparse
 import csv
 import json
 import math
+import os
+import shlex
 import subprocess
 import sys
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import numpy as np
 from osgeo import gdal
@@ -87,6 +89,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bands", type=int, default=3)
     parser.add_argument("--stable-rmse-threshold", type=float, default=15.0)
     parser.add_argument(
+        "--thresholds",
+        default="5,10,15,20,25,30",
+        help=(
+            "Comma-separated RMSE thresholds for cheap post-processing review. "
+            "Use empty string or 'none' to disable."
+        ),
+    )
+    parser.add_argument(
         "--no-overwrite",
         action="store_true",
         help="Do not pass --overwrite to ortho_stability_analyzer.py.",
@@ -98,6 +108,22 @@ def threshold_label(value: float) -> str:
     if float(value).is_integer():
         return str(int(value))
     return str(value).replace(".", "p")
+
+
+def parse_thresholds(value: str | None) -> list[float]:
+    if value is None:
+        return []
+    stripped = value.strip()
+    if not stripped or stripped.lower() == "none":
+        return []
+
+    thresholds: list[float] = []
+    for item in stripped.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        thresholds.append(float(item))
+    return thresholds
 
 
 def as_float(value: str | float | None) -> float:
@@ -434,8 +460,6 @@ def write_qgis_layers(
         "median_ortho.tif",
         "valid_count.tif",
         "rmse_to_median.tif",
-        f"stable_mask_rmse{suffix}.tif",
-        f"unstable_mask_rmse{suffix}.tif",
     ]
 
     with path.open("w") as handle:
@@ -519,6 +543,279 @@ def select_medoid_replicate(
     return selected, warnings_out
 
 
+def raster_valid_mask(band: gdal.Band, arr: np.ndarray) -> np.ndarray:
+    valid = np.isfinite(arr)
+
+    nodata = band.GetNoDataValue()
+    if nodata is not None:
+        valid &= arr != nodata
+
+    mask_band = band.GetMaskBand()
+    if mask_band is not None:
+        valid &= mask_band.ReadAsArray() != 0
+
+    return valid
+
+
+def write_byte_mask(
+    path: Path,
+    values: np.ndarray,
+    reference_ds: gdal.Dataset,
+    nodata: int = 255,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    driver = gdal.GetDriverByName("GTiff")
+    ds = driver.Create(
+        str(path),
+        reference_ds.RasterXSize,
+        reference_ds.RasterYSize,
+        1,
+        gdal.GDT_Byte,
+        options=["COMPRESS=DEFLATE", "TILED=YES"],
+    )
+    if ds is None:
+        raise RuntimeError(f"Could not create raster: {path}")
+
+    ds.SetGeoTransform(reference_ds.GetGeoTransform())
+    ds.SetProjection(reference_ds.GetProjection())
+    band = ds.GetRasterBand(1)
+    band.SetNoDataValue(nodata)
+    band.WriteArray(values)
+    band.FlushCache()
+    ds.FlushCache()
+    ds = None
+
+
+def run_threshold_review(
+    summary_rows: list[dict[str, str]],
+    output_dir: Path,
+    review_dir: Path,
+    thresholds: list[float],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    sensitivity_rows: list[dict[str, str]] = []
+    numeric_rows: list[dict[str, str | float]] = []
+
+    if not thresholds:
+        return sensitivity_rows, []
+
+    for threshold in thresholds:
+        suffix = threshold_label(threshold)
+        for row in summary_rows:
+            variant = row["variant_id"]
+            rmse_file = output_dir / "variants" / variant / "rmse_to_median.tif"
+            if not rmse_file.is_file():
+                raise FileNotFoundError(f"Missing RMSE raster: {rmse_file}")
+
+            ds = gdal.Open(str(rmse_file), gdal.GA_ReadOnly)
+            if ds is None:
+                raise RuntimeError(f"Could not open raster: {rmse_file}")
+
+            band = ds.GetRasterBand(1)
+            rmse = band.ReadAsArray().astype("float32")
+            valid = raster_valid_mask(band, rmse)
+
+            stable = valid & (rmse <= threshold)
+            unstable = valid & (rmse > threshold)
+
+            quality_flag = np.zeros(rmse.shape, dtype=np.uint8)
+            quality_flag[stable] = 1
+            quality_flag[unstable] = 2
+
+            variant_review_dir = review_dir / f"rmse{suffix}" / "variants" / variant
+            write_byte_mask(
+                variant_review_dir / f"quality_flag_rmse{suffix}.tif",
+                quality_flag,
+                ds,
+                nodata=0,
+            )
+
+            valid_pixels = int(np.count_nonzero(valid))
+            stable_pixels = int(np.count_nonzero(stable))
+            unstable_pixels = int(np.count_nonzero(unstable))
+            stable_fraction = stable_pixels / valid_pixels if valid_pixels else math.nan
+            unstable_fraction = unstable_pixels / valid_pixels if valid_pixels else math.nan
+
+            out_row = {
+                "threshold": threshold_label(threshold),
+                "variant_id": variant,
+                "valid_pixels": str(valid_pixels),
+                "stable_pixels": str(stable_pixels),
+                "unstable_pixels": str(unstable_pixels),
+                "stable_fraction_valid": fmt(stable_fraction, digits=6),
+                "unstable_fraction_valid": fmt(unstable_fraction, digits=6),
+            }
+            sensitivity_rows.append(out_row)
+            numeric_rows.append(
+                {
+                    **out_row,
+                    "_threshold": threshold,
+                    "_stable_fraction": stable_fraction,
+                    "_unstable_fraction": unstable_fraction,
+                }
+            )
+            ds = None
+
+    winner_rows: list[dict[str, str]] = []
+    for threshold in thresholds:
+        threshold_rows = [
+            row for row in numeric_rows if row["_threshold"] == threshold
+        ]
+        if not threshold_rows:
+            continue
+
+        def winner_key(row: dict[str, str | float]) -> tuple[float, float, str]:
+            stable = row["_stable_fraction"]
+            unstable = row["_unstable_fraction"]
+            stable_key = (
+                -stable
+                if isinstance(stable, float) and not math.isnan(stable)
+                else math.inf
+            )
+            unstable_key = (
+                unstable
+                if isinstance(unstable, float) and not math.isnan(unstable)
+                else math.inf
+            )
+            return (stable_key, unstable_key, str(row["variant_id"]))
+
+        winner = sorted(threshold_rows, key=winner_key)[0]
+        winner_rows.append(
+            {
+                "threshold": threshold_label(threshold),
+                "winner_variant_id": str(winner["variant_id"]),
+                "stable_fraction_valid": str(winner["stable_fraction_valid"]),
+                "unstable_fraction_valid": str(winner["unstable_fraction_valid"]),
+            }
+        )
+
+    return sensitivity_rows, winner_rows
+
+
+def rel_from_experiment(path: Path | str, experiment_dir: Path) -> str:
+    return os.path.relpath(Path(path), experiment_dir)
+
+
+def qgis_posix_arg(relative_path: str) -> str:
+    return '"$SCRIPT_DIR"/' + shlex.quote(relative_path)
+
+
+def qgis_windows_arg(relative_path: str) -> str:
+    win_path = str(PureWindowsPath(relative_path)).replace("%", "%%")
+    return '"%SCRIPT_DIR%' + win_path.replace('"', '""') + '"'
+
+
+def existing_relative_paths(paths: list[Path | str | None], experiment_dir: Path) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        if not path:
+            continue
+        path_obj = Path(path)
+        if not path_obj.is_file():
+            continue
+        relative = rel_from_experiment(path_obj, experiment_dir)
+        if relative not in seen:
+            out.append(relative)
+            seen.add(relative)
+    return out
+
+
+def write_qgis_launchers(
+    sh_path: Path,
+    bat_path: Path,
+    relative_paths: list[str],
+) -> None:
+    posix_args = " \\\n  ".join(qgis_posix_arg(path) for path in relative_paths)
+    with sh_path.open("w", newline="\n") as handle:
+        handle.write("#!/usr/bin/env bash\n")
+        handle.write("set -euo pipefail\n")
+        handle.write('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n')
+        if posix_args:
+            handle.write("qgis \\\n  ")
+            handle.write(posix_args)
+            handle.write("\n")
+        else:
+            handle.write('qgis "$SCRIPT_DIR"\n')
+    sh_path.chmod(0o755)
+
+    windows_args = " ^\n  ".join(qgis_windows_arg(path) for path in relative_paths)
+    with bat_path.open("w", newline="\r\n") as handle:
+        handle.write("@echo off\n")
+        handle.write("setlocal\n")
+        handle.write("set \"SCRIPT_DIR=%~dp0\"\n")
+        handle.write("if defined QGIS_BIN (\n")
+        handle.write("  set \"QGIS_EXE=%QGIS_BIN%\"\n")
+        handle.write(") else (\n")
+        handle.write("  set \"QGIS_EXE=qgis-bin.exe\"\n")
+        handle.write(")\n")
+        if windows_args:
+            handle.write("\"%QGIS_EXE%\" ^\n  ")
+            handle.write(windows_args)
+            handle.write("\n")
+        else:
+            handle.write("\"%QGIS_EXE%\" \"%SCRIPT_DIR%\"\n")
+
+
+def selected_launcher_paths(
+    selected_product: dict[str, object],
+    experiment_dir: Path,
+    output_dir: Path,
+    review_dir: Path,
+    threshold: float,
+) -> list[str]:
+    variant = str(selected_product["primary_variant_id"])
+    suffix = threshold_label(threshold)
+    variant_dir = output_dir / "variants" / variant
+    review_variant_dir = review_dir / f"rmse{suffix}" / "variants" / variant
+    product_modes = selected_product.get("product_modes", {})
+    medoid = (
+        product_modes.get("medoid_replicate")
+        if isinstance(product_modes, dict)
+        else None
+    )
+
+    medoid_aligned = None
+    medoid_original = None
+    if isinstance(medoid, dict):
+        medoid_aligned = medoid.get("aligned_file")
+        medoid_original = medoid.get("ortho_file")
+
+    return existing_relative_paths(
+        [
+            variant_dir / "median_ortho.tif",
+            variant_dir / "rmse_to_median.tif",
+            variant_dir / "valid_count.tif",
+            review_variant_dir / f"quality_flag_rmse{suffix}.tif",
+            medoid_aligned,
+            medoid_original,
+        ],
+        experiment_dir,
+    )
+
+
+def threshold_launcher_paths(
+    selected_product: dict[str, object],
+    experiment_dir: Path,
+    output_dir: Path,
+    review_dir: Path,
+    thresholds: list[float],
+) -> list[str]:
+    variant = str(selected_product["primary_variant_id"])
+    variant_dir = output_dir / "variants" / variant
+    paths: list[Path | str | None] = [
+        variant_dir / "median_ortho.tif",
+        variant_dir / "rmse_to_median.tif",
+        variant_dir / "valid_count.tif",
+    ]
+
+    for threshold in thresholds:
+        suffix = threshold_label(threshold)
+        review_variant_dir = review_dir / f"rmse{suffix}" / "variants" / variant
+        paths.append(review_variant_dir / f"quality_flag_rmse{suffix}.tif")
+
+    return existing_relative_paths(paths, experiment_dir)
+
+
 def row_subset(row: dict[str, str], columns: list[str]) -> dict[str, str]:
     return {col: row.get(col, "") for col in columns}
 
@@ -534,7 +831,7 @@ def write_selected_product(
     path: Path,
     bands: int,
     threshold: float,
-) -> None:
+) -> dict[str, object]:
     if not continuous_ranked:
         raise RuntimeError("No continuous-stability candidates available for product selection.")
 
@@ -554,8 +851,8 @@ def write_selected_product(
 
     if mask_candidate and mask_candidate.get("variant_id") != primary_variant:
         warnings_out.append(
-            "Threshold-mask candidate differs from the continuous-stability primary variant; "
-            "review threshold masks before product use."
+            "Threshold quality-flag candidate differs from the continuous-stability primary variant; "
+            "review threshold quality flags before product use."
         )
 
     medoid, medoid_warnings = select_medoid_replicate(
@@ -622,7 +919,7 @@ def write_selected_product(
             if mask_candidate
             else {},
             "description": (
-                "Threshold-mask metrics are used as a rejection or warning guard, not as the "
+                "Threshold quality-flag metrics are used as a rejection or warning guard, not as the "
                 "primary selection logic."
             ),
         },
@@ -641,6 +938,8 @@ def write_selected_product(
     with path.open("w", encoding="utf-8") as handle:
         json.dump(product, handle, indent=2, sort_keys=True)
         handle.write("\n")
+
+    return product
 
 
 def write_report(
@@ -677,7 +976,7 @@ def write_report(
 
         handle.write("## Candidate summary\n\n")
         handle.write(f"Continuous stability candidate: `{continuous_best}`\n\n")
-        handle.write(f"Threshold-mask candidate: `{mask_best}`\n\n")
+        handle.write(f"Threshold quality-flag candidate: `{mask_best}`\n\n")
         handle.write(f"Support-persistence candidate: `{support_best}`\n\n")
 
         handle.write("The continuous stability candidate is ranked by:\n\n")
@@ -687,7 +986,7 @@ def write_report(
         handle.write("4. lower `mean_mad_rgb`\n\n")
 
         handle.write(
-            "The threshold-mask candidate is ranked by `stable_fraction_support_rmse`. "
+            "The threshold quality-flag candidate is ranked by `stable_fraction_support_rmse`. "
             "This result depends on the selected RMSE threshold and is therefore reported separately.\n\n"
         )
 
@@ -733,18 +1032,18 @@ def write_report(
         for row in continuous_ranked:
             variant = row["variant_id"]
             variant_dir = output_dir / "variants" / variant
+            review_variant_dir = experiment_dir / "threshold_review" / f"rmse{suffix}" / "variants" / variant
             handle.write(f"### {variant}\n\n")
             handle.write(f"- `{variant_dir / 'median_ortho.tif'}`\n")
             handle.write(f"- `{variant_dir / 'valid_count.tif'}`\n")
             handle.write(f"- `{variant_dir / 'rmse_to_median.tif'}`\n")
-            handle.write(f"- `{variant_dir / f'stable_mask_rmse{suffix}.tif'}`\n")
-            handle.write(f"- `{variant_dir / f'unstable_mask_rmse{suffix}.tif'}`\n\n")
+            handle.write(f"- `{review_variant_dir / f'quality_flag_rmse{suffix}.tif'}`\n\n")
 
         handle.write("## Interpretation note\n\n")
         handle.write(
             "This report evaluates repeated-build stability of exported orthomosaic products. "
             "It does not prove geometric accuracy. Continuous deviation metrics, threshold-based "
-            "masks, and support persistence metrics are reported separately because they answer "
+            "quality flags, and support persistence metrics are reported separately because they answer "
             "different questions.\n\n"
         )
         handle.write(
@@ -755,7 +1054,7 @@ def write_report(
         )
         handle.write(
             "Final interpretation should combine this table with spatial inspection of "
-            "`valid_count.tif`, `rmse_to_median.tif`, and the stable / unstable masks.\n"
+            "`valid_count.tif`, `rmse_to_median.tif`, and threshold quality flags.\n"
         )
 
 
@@ -765,7 +1064,9 @@ def main() -> None:
 
     experiment_dir = Path(args.experiment_dir).resolve()
     output_dir = experiment_dir / "stability_union"
+    review_dir = experiment_dir / "threshold_review"
     summary_file = output_dir / "summary.csv"
+    thresholds = parse_thresholds(args.thresholds)
 
     if not args.skip_analyzer:
         run_analyzer(
@@ -798,6 +1099,12 @@ def main() -> None:
     qgis_layers_file = output_dir / "qgis_layers.txt"
     report_file = output_dir / "evaluation_report.md"
     selected_product_file = experiment_dir / "selected_product.json"
+    qgis_selected_sh = experiment_dir / "qgis_open_selected.sh"
+    qgis_selected_bat = experiment_dir / "qgis_open_selected.bat"
+    threshold_sensitivity_file = review_dir / "threshold_sensitivity.tsv"
+    threshold_winners_file = review_dir / "threshold_winners.tsv"
+    qgis_threshold_sh = experiment_dir / "qgis_open_threshold_review.sh"
+    qgis_threshold_bat = experiment_dir / "qgis_open_threshold_review.bat"
 
     write_tsv(continuous_ranked, KEY_COLUMNS, key_metrics_file)
 
@@ -828,7 +1135,7 @@ def main() -> None:
         threshold=args.stable_rmse_threshold,
     )
 
-    write_selected_product(
+    selected_product = write_selected_product(
         continuous_ranked=continuous_ranked,
         mask_ranked=mask_ranked,
         support_ranked=support_ranked,
@@ -841,10 +1148,66 @@ def main() -> None:
         threshold=args.stable_rmse_threshold,
     )
 
+    threshold_rows: list[dict[str, str]] = []
+    threshold_winner_rows: list[dict[str, str]] = []
+    if thresholds:
+        threshold_rows, threshold_winner_rows = run_threshold_review(
+            summary_rows=summary_rows,
+            output_dir=output_dir,
+            review_dir=review_dir,
+            thresholds=thresholds,
+        )
+        write_tsv(
+            threshold_rows,
+            [
+                "threshold",
+                "variant_id",
+                "valid_pixels",
+                "stable_pixels",
+                "unstable_pixels",
+                "stable_fraction_valid",
+                "unstable_fraction_valid",
+            ],
+            threshold_sensitivity_file,
+        )
+        write_tsv(
+            threshold_winner_rows,
+            [
+                "threshold",
+                "winner_variant_id",
+                "stable_fraction_valid",
+                "unstable_fraction_valid",
+            ],
+            threshold_winners_file,
+        )
+        write_qgis_launchers(
+            sh_path=qgis_threshold_sh,
+            bat_path=qgis_threshold_bat,
+            relative_paths=threshold_launcher_paths(
+                selected_product=selected_product,
+                experiment_dir=experiment_dir,
+                output_dir=output_dir,
+                review_dir=review_dir,
+                thresholds=thresholds,
+            ),
+        )
+
+    write_qgis_launchers(
+        sh_path=qgis_selected_sh,
+        bat_path=qgis_selected_bat,
+        relative_paths=selected_launcher_paths(
+            selected_product=selected_product,
+            experiment_dir=experiment_dir,
+            output_dir=output_dir,
+            review_dir=review_dir,
+            threshold=args.stable_rmse_threshold,
+        ),
+    )
+
     print()
     print("Candidate summary")
     print(f"Continuous stability candidate: {continuous_ranked[0]['variant_id']}")
-    print(f"Threshold-mask candidate: {mask_ranked[0]['variant_id']}")
+    print(f"Threshold quality-flag candidate: {mask_ranked[0]['variant_id']}")
     print(f"Support-persistence candidate: {support_ranked[0]['variant_id']}")
 
     print()
@@ -861,6 +1224,13 @@ def main() -> None:
     print(f"Wrote: {qgis_layers_file}")
     print(f"Wrote: {report_file}")
     print(f"Wrote: {selected_product_file}")
+    print(f"Wrote: {qgis_selected_sh}")
+    print(f"Wrote: {qgis_selected_bat}")
+    if thresholds:
+        print(f"Wrote: {threshold_sensitivity_file}")
+        print(f"Wrote: {threshold_winners_file}")
+        print(f"Wrote: {qgis_threshold_sh}")
+        print(f"Wrote: {qgis_threshold_bat}")
 
 
 if __name__ == "__main__":

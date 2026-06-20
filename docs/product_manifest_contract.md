@@ -45,6 +45,15 @@ ortho_file exists on disk
 
 ## Experiment folder shape
 
+The product preparation helper writes generated experiment inputs to the concrete experiment directory:
+
+```text
+<experiment_dir>/config.yml
+<experiment_dir>/variants.csv
+```
+
+These are product/run artifacts and should not be committed to the source repository.
+
 The reproducibility runner writes generated configs, projects, outputs, and launcher logs under:
 
 ```text
@@ -71,8 +80,6 @@ variants/<variant_id>/valid_count.tif
 variants/<variant_id>/median_ortho.tif
 variants/<variant_id>/mad_rgb.tif
 variants/<variant_id>/rmse_to_median.tif
-variants/<variant_id>/stable_mask_rmse<THRESH>.tif
-variants/<variant_id>/unstable_mask_rmse<THRESH>.tif
 ```
 
 ## Evaluator products
@@ -85,7 +92,27 @@ support_valid_count_histogram.tsv
 qgis_layers.txt
 evaluation_report.md
 <experiment_dir>/selected_product.json
+<experiment_dir>/qgis_open_selected.sh
+<experiment_dir>/qgis_open_selected.bat
+<experiment_dir>/qgis_open_threshold_review.sh
+<experiment_dir>/qgis_open_threshold_review.bat
+<experiment_dir>/threshold_review/threshold_sensitivity.tsv
+<experiment_dir>/threshold_review/threshold_winners.tsv
+<experiment_dir>/threshold_review/rmse<THRESH>/variants/<variant_id>/quality_flag_rmse<THRESH>.tif
 ```
+
+The QGIS launchers are standard evaluation artifacts. Both POSIX `.sh` and
+Windows `.bat` launchers are generated, and all raster arguments are relative
+to the experiment directory. Windows users may set `QGIS_BIN` to override the
+default `qgis-bin.exe`.
+
+The threshold review is post-processing from existing
+`stability_union/variants/<variant_id>/rmse_to_median.tif` rasters. It does not
+rerun Metashape and does not rerun the full stability analyzer. It is a
+sensitivity / guard layer, not the primary product selector. Each threshold
+quality flag is a Byte GeoTIFF where 0 means invalid/no support, 1 means
+stable/usable, and 2 means unstable/review or exclude under that RMSE
+threshold. Threshold quality flags do not modify or clean the orthomosaic.
 
 ## Ranking outputs
 
@@ -93,7 +120,7 @@ The evaluator reports three current candidate categories:
 
 ```text
 continuous stability candidate
-threshold-mask candidate
+threshold quality-flag candidate
 support-persistence candidate
 ```
 
@@ -112,8 +139,8 @@ reachable and evaluable output area and provides feasibility / coverage
 context, but it does not automatically override the continuous-stability
 variant.
 
-The threshold-mask result acts as a rejection / warning guard. It is reported
-as threshold-dependent context and is not the primary selection logic.
+The threshold quality-flag result acts as a rejection / warning guard. It is
+reported as threshold-dependent context and is not the primary selection logic.
 
 The concrete output product is resolved in one of two modes:
 
@@ -139,6 +166,10 @@ stability_union/aligned/<variant_id>/<replicate>_aligned.tif
 and records the corresponding original `ortho_file` from `manifest.csv`. It
 does not copy rasters and does not recompute the full analyzer.
 
+If medoid resolution cannot be completed, evaluation remains nonfatal. The
+condition is recorded in `warnings`, and the `median_ortho` product mode remains
+available when its raster exists.
+
 ## Selected product trace
 
 The evaluator writes a machine-readable technical trace to:
@@ -161,4 +192,5 @@ warnings
 ```
 
 `selected_product.json` records a technical selection trace for user and domain
-review. It does not claim scientific correctness by itself.
+review. Warnings must be reviewed before product use. The trace does not claim
+scientific correctness by itself.

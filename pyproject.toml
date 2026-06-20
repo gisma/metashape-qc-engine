@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
 dependencies = [
+  "numpy",
   "PyYAML>=6.0",
+  "rasterio",
 ]
 
 [project.scripts]

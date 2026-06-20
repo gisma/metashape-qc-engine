@@ -1,0 +1,18 @@
+{
+  "template_config": "config/experiments/test_mesh_ortho_mof_forest_knoll_rgb.yml",
+  "template_variants_csv": "config/experiments/repro_variants_mesh_smoothing_only.csv",
+  "experiment_dir_template": "{output_root}/{product_id}_mesh_facecount_smoothing_reps{reps}",
+  "variant_id_template": "fc{buildModel.face_count_custom:k}_smooth_{buildModel.noiterations}",
+  "factors": {
+    "buildModel.face_count_custom": [
+      50000,
+      100000,
+      250000
+    ],
+    "buildModel.noiterations": [
+      5,
+      35,
+      80
+    ]
+  }
+}

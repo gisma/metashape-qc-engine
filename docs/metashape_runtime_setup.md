@@ -66,6 +66,42 @@ At minimum, the requirements file contains:
 PyYAML>=6.0
 ```
 
+## Evaluator dependency setup
+
+The `metashape-qc evaluate` command runs the orthomosaic stability evaluator and analyzer in the active Python environment. That environment requires:
+
+```text
+numpy
+rasterio
+GDAL Python bindings
+```
+
+The GDAL Python binding must match the local system GDAL version reported by:
+
+```bash
+gdal-config --version
+```
+
+The evaluator also needs the GDAL array extension to load successfully:
+
+```python
+from osgeo import gdal_array
+```
+
+Run the installer inside the project virtual environment, or point `PYTHON` at that virtual environment's Python executable:
+
+```bash
+scripts/install_evaluator_deps.sh
+```
+
+The helper script installs `numpy` before building the GDAL binding, installs `GDAL==$(gdal-config --version)` with build isolation disabled, installs `rasterio`, and verifies that `numpy`, `rasterio`, `osgeo.gdal`, and `osgeo.gdal_array` all import.
+
+Failures involving `_gdal_array` indicate a broken or mismatched GDAL Python binding. Fix them by rerunning the installer against the project virtual environment:
+
+```bash
+scripts/install_evaluator_deps.sh
+```
+
 ## Running the workflow
 
 Metashape is launched through the wrapper script:
