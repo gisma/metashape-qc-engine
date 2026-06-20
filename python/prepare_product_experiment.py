@@ -308,7 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Prepare product-specific config and variants for a Metashape QC "
-            "experiment."
+            "product analysis."
         )
     )
     parser.add_argument(
@@ -328,7 +328,9 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Project/product identifier for generated names.",
     )
-    parser.add_argument("--preset", required=True, help="Experiment preset JSON file.")
+    parser.add_argument(
+        "--preset", required=True, help="Product analysis preset JSON file."
+    )
     parser.add_argument(
         "--reps",
         required=True,
@@ -338,7 +340,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-root",
         required=True,
-        help="Root directory for experiment outputs.",
+        help="Root directory for product analysis runs.",
     )
     parser.add_argument(
         "--factor",
@@ -431,19 +433,19 @@ def main(argv: list[str] | None = None) -> int:
 
         command = [
             "metashape-qc",
-            "experiment",
+            "run-analysis",
             str(generated_config),
             "--variants",
             str(generated_variants_csv),
             "--reps",
             str(args.reps),
-            "--experiment-dir",
+            "--run-dir",
             str(experiment_dir),
         ]
 
         print(f"Generated config: {generated_config}")
         print(f"Generated variants CSV: {generated_variants_csv}")
-        print(f"Experiment directory: {experiment_dir}")
+        print(f"Run directory: {experiment_dir}")
         print(f"Variants: {variant_count}")
         print(f"Replicates: {args.reps}")
         print(f"Total runs: {variant_count * args.reps}")

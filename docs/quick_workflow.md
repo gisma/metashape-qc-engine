@@ -14,7 +14,7 @@ A **variant** is one processing candidate, defined by a parameter combination su
 
 A **replicate** is one repeated Metashape run for the same variant.
 
-The command `metashape-qc experiment` currently executes the variant × replicate matrix. Despite the command name, the workflow result is not an “experiment result” in a scientific sense. It is a reproducibility analysis with a best-candidate suggestion.
+The command `metashape-qc run-analysis` executes the variant × replicate matrix. The legacy `metashape-qc experiment` command remains available for compatibility.
 
 The command `metashape-qc evaluate` evaluates the run directory and writes the selected candidate trace.
 
@@ -23,17 +23,17 @@ The selected candidate is not a new orthomosaic processing step. It is the docum
 
 ## 1. Prepare a product analysis
 
-Input is an image directory. A product id is required. The preset defines the experiment design, and the output root defines where experiment directories are created.
+Input is an image directory. A product id is required. The preset defines the product analysis design, and the output root defines where run directories are created.
 
 The preparation step writes run-local control files:
 
-- `<experiment_dir>/config.yml`
-- `<experiment_dir>/variants.csv`
+- `<run_dir>/config.yml`
+- `<run_dir>/variants.csv`
 
-It also prints the exact `metashape-qc experiment` command to run.
+It also prints the exact `metashape-qc run-analysis` command to run.
 
 ```bash
-python3 python/prepare_product_experiment.py \
+metashape-qc prepare \
   --image-dir "/path/to/images" \
   --product-id "example_product" \
   --preset "config/experiments/presets/mesh_facecount_smoothing_3x3.json" \
@@ -43,15 +43,15 @@ python3 python/prepare_product_experiment.py \
   --smoothing 5,35,80
 ```
 
-Do not use `config/experiments/generated/` as persistent run input. Regenerate the run-local control files for each product experiment.
+Do not use `config/experiments/generated/` as persistent run input. Regenerate the run-local control files for each product analysis.
 
-## 2. Run the experiment
+## 2. Run the product analysis
 
 ```bash
-metashape-qc experiment "<experiment_dir>/config.yml" \
-  --variants "<experiment_dir>/variants.csv" \
+metashape-qc run-analysis "<run_dir>/config.yml" \
+  --variants "<run_dir>/variants.csv" \
   --reps 5 \
-  --experiment-dir "<experiment_dir>" \
+  --run-dir "<run_dir>" \
   --metashape-dir "$METASHAPE_DIR"
 ```
 
@@ -59,15 +59,14 @@ metashape-qc experiment "<experiment_dir>/config.yml" \
 
 `manifest.csv` records each variant/replicate.
 
-## 3. Resume an aborted experiment
+## 3. Resume an aborted product analysis
 
 ```bash
-metashape-qc experiment "<experiment_dir>/config.yml" \
-  --variants "<experiment_dir>/variants.csv" \
+metashape-qc resume-analysis "<run_dir>/config.yml" \
+  --variants "<run_dir>/variants.csv" \
   --reps 5 \
-  --experiment-dir "<experiment_dir>" \
-  --metashape-dir "$METASHAPE_DIR" \
-  --resume
+  --run-dir "<run_dir>" \
+  --metashape-dir "$METASHAPE_DIR"
 ```
 
 Resume behavior:
@@ -78,16 +77,16 @@ Resume behavior:
 - The latest row per `variant_id` + `replicate` is used for the resume decision.
 - A single failed replicate must not stop the full matrix.
 
-## 4. Evaluate a completed experiment
+## 4. Evaluate a completed product analysis
 
 ```bash
-metashape-qc evaluate "<experiment_dir>"
+metashape-qc evaluate "<run_dir>"
 ```
 
 If analyzer products already exist:
 
 ```bash
-metashape-qc evaluate "<experiment_dir>" --skip-analyzer
+metashape-qc evaluate "<run_dir>" --skip-analyzer
 ```
 
 Main outputs:
@@ -153,11 +152,11 @@ qgis_open_selected.bat
 qgis_open_threshold_review.bat
 ```
 
-Windows users can set `QGIS_BIN`. Launchers use paths relative to the experiment directory.
+Windows users can set `QGIS_BIN`. Launchers use paths relative to the run directory.
 
 ## 8. Minimal troubleshooting
 
 - If `BASE_CONFIG` is missing, do not use old repo-local generated paths.
-- Regenerate run-local control files with `prepare_product_experiment.py`.
-- If an experiment was aborted, rerun with `--resume`.
+- Regenerate run-local control files with `metashape-qc prepare`.
+- If a product analysis was aborted, rerun with `metashape-qc resume-analysis`.
 - If evaluation appears idle, it may be writing quality flag rasters; check the `threshold_review` file count.

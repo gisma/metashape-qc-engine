@@ -64,6 +64,29 @@ def _require_dir(path: str, label: str) -> None:
         raise RuntimeError(f"{label} does not exist or is not a directory: {path}")
 
 
+def _same_path(left: str, right: str) -> bool:
+    return Path(left).expanduser().resolve(strict=False) == Path(right).expanduser().resolve(
+        strict=False
+    )
+
+
+def _select_run_dir(args: argparse.Namespace) -> str:
+    run_dir = getattr(args, "run_dir", None)
+    experiment_dir = getattr(args, "experiment_dir", None)
+
+    if run_dir and experiment_dir:
+        if not _same_path(run_dir, experiment_dir):
+            raise RuntimeError(
+                "--run-dir and --experiment-dir refer to different directories."
+            )
+        return run_dir
+    if run_dir:
+        return run_dir
+    if experiment_dir:
+        return experiment_dir
+    raise RuntimeError("Provide --run-dir.")
+
+
 def _run_workflow(args: argparse.Namespace) -> int:
     _require_file(args.config, "CONFIG")
     if args.metashape_dir:
@@ -78,12 +101,45 @@ def _run_workflow(args: argparse.Namespace) -> int:
     return _run(cmd, env)
 
 
+def _run_prepare(args: argparse.Namespace) -> int:
+    root = _repo_root()
+    cmd = [
+        sys.executable,
+        str(root / "python" / "prepare_product_experiment.py"),
+        "--image-dir",
+        args.image_dir,
+        "--product-id",
+        args.product_id,
+        "--preset",
+        args.preset,
+        "--reps",
+        str(args.reps),
+        "--output-root",
+        args.output_root,
+    ]
+
+    if args.product_dir:
+        cmd.extend(["--product-dir", args.product_dir])
+    for factor in args.factor or []:
+        cmd.extend(["--factor", factor])
+    if args.face_counts:
+        cmd.extend(["--face-counts", args.face_counts])
+    if args.smoothing:
+        cmd.extend(["--smoothing", args.smoothing])
+    if args.variant_id_template:
+        cmd.extend(["--variant-id-template", args.variant_id_template])
+
+    return _run(cmd)
+
+
 def _run_experiment(args: argparse.Namespace) -> int:
+    run_dir = _select_run_dir(args)
+
     _require_file(args.base_config, "BASE_CONFIG")
     if args.variants:
         _require_file(args.variants, "CSV")
     if args.reps < 2:
-        raise RuntimeError("--reps must be at least 2 for a reproducibility experiment.")
+        raise RuntimeError("--reps must be at least 2 for a product analysis.")
     if args.metashape_dir:
         _require_dir(args.metashape_dir, "METASHAPE_DIR")
 
@@ -95,7 +151,7 @@ def _run_experiment(args: argparse.Namespace) -> int:
         "--reps",
         str(args.reps),
         "--experiment-dir",
-        args.experiment_dir,
+        run_dir,
     ]
 
     if args.variants:
@@ -139,7 +195,7 @@ def _run_analyze(args: argparse.Namespace) -> int:
 
 
 def _run_evaluate(args: argparse.Namespace) -> int:
-    _require_dir(args.experiment_dir, "EXPERIMENT_DIR")
+    _require_dir(args.experiment_dir, "RUN_DIR")
 
     root = _repo_root()
     cmd = [
@@ -165,7 +221,7 @@ def _run_evaluate(args: argparse.Namespace) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="metashape-qc",
-        description="Thin CLI wrappers around metashape-qc-engine scripts.",
+        description="Thin CLI wrappers for Metashape QC product analysis.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -174,9 +230,32 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--metashape-dir", metavar="DIR")
     run.set_defaults(func=_run_workflow)
 
+    prepare = subparsers.add_parser(
+        "prepare",
+        help="Prepare product analysis control files.",
+        description=(
+            "Prepare product-specific config and variants for a Metashape QC "
+            "product analysis."
+        ),
+    )
+    prepare.add_argument("--product-dir", metavar="DIR")
+    prepare.add_argument("--image-dir", metavar="DIR", required=True)
+    prepare.add_argument("--product-id", metavar="ID", required=True)
+    prepare.add_argument("--preset", metavar="JSON", required=True)
+    prepare.add_argument("--reps", metavar="N", type=int, required=True)
+    prepare.add_argument("--output-root", metavar="DIR", required=True)
+    prepare.add_argument("--factor", metavar="COLUMN=VALUES", action="append")
+    prepare.add_argument("--face-counts", metavar="VALUES")
+    prepare.add_argument("--smoothing", metavar="VALUES")
+    prepare.add_argument("--variant-id-template", metavar="TEMPLATE")
+    prepare.set_defaults(func=_run_prepare)
+
     experiment = subparsers.add_parser(
         "experiment",
-        help="Run reproducibility experiment replicates.",
+        help=(
+            "Run legacy reproducibility experiment replicates. "
+            "Prefer run-analysis or resume-analysis for new usage."
+        ),
     )
     experiment.add_argument("base_config", metavar="BASE_CONFIG")
     experiment.add_argument("--reps", metavar="N", type=int, required=True)
@@ -186,6 +265,53 @@ def _build_parser() -> argparse.ArgumentParser:
     experiment.add_argument("--overwrite", action="store_true")
     experiment.add_argument("--resume", action="store_true")
     experiment.set_defaults(func=_run_experiment)
+
+    run_analysis = subparsers.add_parser(
+        "run-analysis",
+        help="Run product analysis variants and replicates.",
+        description="Run product analysis variants and replicates into a run directory.",
+    )
+    run_analysis.add_argument("base_config", metavar="CONFIG")
+    run_analysis.add_argument("--reps", metavar="N", type=int, required=True)
+    run_analysis.add_argument(
+        "--run-dir",
+        metavar="DIR",
+        help="Run directory where configs, outputs, and manifest are written.",
+    )
+    run_analysis.add_argument(
+        "--experiment-dir",
+        metavar="DIR",
+        help="Legacy alias for --run-dir.",
+    )
+    run_analysis.add_argument("--variants", metavar="CSV")
+    run_analysis.add_argument("--metashape-dir", metavar="DIR")
+    run_analysis.add_argument("--overwrite", action="store_true")
+    run_analysis.set_defaults(func=_run_experiment, resume=False)
+
+    resume_analysis = subparsers.add_parser(
+        "resume-analysis",
+        help="Resume a product analysis run.",
+        description=(
+            "Resume a product analysis run by skipping successful "
+            "variant/replicate combinations."
+        ),
+    )
+    resume_analysis.add_argument("base_config", metavar="CONFIG")
+    resume_analysis.add_argument("--reps", metavar="N", type=int, required=True)
+    resume_analysis.add_argument(
+        "--run-dir",
+        metavar="DIR",
+        help="Run directory containing the existing manifest and outputs.",
+    )
+    resume_analysis.add_argument(
+        "--experiment-dir",
+        metavar="DIR",
+        help="Legacy alias for --run-dir.",
+    )
+    resume_analysis.add_argument("--variants", metavar="CSV")
+    resume_analysis.add_argument("--metashape-dir", metavar="DIR")
+    resume_analysis.add_argument("--overwrite", action="store_true")
+    resume_analysis.set_defaults(func=_run_experiment, resume=True)
 
     analyze = subparsers.add_parser(
         "analyze",
@@ -206,9 +332,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     evaluate = subparsers.add_parser(
         "evaluate",
-        help="Evaluate a completed orthomosaic reproducibility experiment.",
+        help="Evaluate a completed product analysis run directory.",
     )
-    evaluate.add_argument("experiment_dir", metavar="EXPERIMENT_DIR")
+    evaluate.add_argument("experiment_dir", metavar="RUN_DIR")
     evaluate.add_argument("--skip-analyzer", action="store_true")
     evaluate.add_argument(
         "--grid-mode",
