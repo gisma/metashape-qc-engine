@@ -1,22 +1,11 @@
 # Notice
 
-This repository is developed as `metashape-qc-engine`, a Python-first quality-control and reproducibility engine for Agisoft Metashape workflows.
+`metashape-qc-engine` is maintained by Christoph Reudenbach, University of Marburg.
 
-It contains adapted components from the UC Davis / AM2 / automate-metashape code base, distributed under the BSD 3-Clause License. The original copyright and license notice are retained in `LICENSE`.
+This project is an independent continuation and extension of an AM2 / automate-metashape-derived workflow core.
 
-Upstream-derived or adapted runtime components include, at minimum:
+The repository contains adapted components from the UC Davis / AM2 / automate-metashape code base. These upstream-derived components remain distributed under the BSD 3-Clause License, and the original copyright, author, license, and disclaimer notices are retained in `LICENSE`.
 
-- `python/metashape_workflow.py`
-- `python/metashape_workflow_functions.py`
-- `python/read_yaml.py`
-- `scripts/run_metashape_workflow.sh`
+Additional development in `metashape-qc-engine` includes reproducibility experiment control, variant and replicate execution, orthomosaic stability analysis, support-aware evaluation reporting, and controlled product-generation logic.
 
-Substantial additions developed in `metashape-qc-engine` include:
-
-- reproducibility experiment control
-- variant and replicate execution
-- orthomosaic stability analysis
-- support-aware evaluation reporting
-- controlled product-generation logic
-
-The names of the original copyright holders and contributors are not used to endorse this derived project.
+The original authors, institutions, and contributors listed in `LICENSE` are credited for the upstream-derived components. Their names are not used to imply endorsement of this derived project.
