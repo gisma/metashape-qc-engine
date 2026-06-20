@@ -514,7 +514,7 @@ def main() -> None:
     key_metrics_file = output_dir / "summary_key_metrics.tsv"
     support_histogram_file = output_dir / "support_valid_count_histogram.tsv"
     qgis_layers_file = output_dir / "qgis_layers.txt"
-    report_file = output_dir / "evaluation_report2.md"
+    report_file = output_dir / "evaluation_report.md"
 
     write_tsv(continuous_ranked, KEY_COLUMNS, key_metrics_file)
 

@@ -3,6 +3,9 @@ title: "Zwischenbericht: Mesh-basierte Orthomosaik-Stabilität im MOF-Testworkfl
 format: html
 ---
 
+::: {.callout-note}
+This is an archived German working report. The maintained product and manifest contract is `docs/product_manifest_contract.md`.
+:::
 
 ## 1. Ausgangspunkt
 
@@ -170,15 +173,15 @@ Der nächste technische Schritt ist die Stabilisierung der Python-Core-Struktur:
 Die CLI sollte perspektivisch etwa diese Form haben:
 
 ```text
-metashape-ortho run config.yml
+metashape-qc run config.yml
 
-metashape-ortho experiment config.yml \
+metashape-qc experiment config.yml \
   --variants variants.csv \
   --reps 5 \
   --experiment-dir EXP \
   --metashape-dir /path/to/metashape-pro
 
-metashape-ortho evaluate EXP --skip-analyzer
+metashape-qc evaluate EXP --skip-analyzer
 ```
 
 Danach kann eine GUI-Schicht in Metashape denselben Core aufrufen:

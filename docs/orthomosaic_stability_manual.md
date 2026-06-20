@@ -1,21 +1,19 @@
-# Orthomosaic Stability Workflow — Manual
+# Orthomosaic Stability Workflow Manual
 
-Dieses Manual beschreibt den Standardablauf für wiederholbare UAV-Orthomosaik-Experimente mit Metashape und anschließender Stabilitätsanalyse.
+This manual describes the standard workflow for repeatable UAV orthomosaic experiments with Metashape and stability analysis.
 
-Der Workflow hat drei Arbeitsstufen:
+The workflow has three stages:
 
+1. Single Metashape orthomosaic run
+2. Variants x replicates with the reproducibility runner
+3. Canonical-grid stability analysis
 
-1. Einzelner Metashape-Ortho-Lauf
-2. Varianten × Replikate mit dem Reproducibility Runner
-3. Canonical-Grid-Stabilitätsanalyse
-
-
-Die vollständigen YAML- und Parameterdetails stehen im Anhang:
+Full YAML and parameter details are in the appendix:
 [Parameter and File Reference](orthomosaic_stability_reference.md)
 
-## 1. Projektstruktur
+## 1. Project Structure
 
-Jeder Datensatz bekommt einen eigenen Projektordner.
+Each dataset gets its own project directory.
 
 ```text
 PROJECT_ROOT/
@@ -23,19 +21,19 @@ PROJECT_ROOT/
   runs/
 ```
 
-Die Bilddaten liegen ausschließlich in:
+Input imagery is stored only in:
 
 ```text
 PROJECT_ROOT/input-images/
 ```
 
-Alle erzeugten Produkte liegen unter:
+All generated products are written below:
 
 ```text
 PROJECT_ROOT/runs/
 ```
 
-Beispiel:
+Example:
 
 ```text
 /datadisk/data/uav/MOF_repro_test_recovered/
@@ -46,27 +44,27 @@ Beispiel:
   runs/
 ```
 
-`input-images/` ist der saubere Eingabeordner für Metashape. Dort liegen nur die Bilder, die verarbeitet werden sollen. `runs/` enthält Metashape-Projekte, Orthomosaike, Logs, Manifeste und Stabilitätsprodukte.
+`input-images/` is the clean Metashape input folder. It contains only the images that should be processed. `runs/` contains Metashape projects, orthomosaics, logs, manifests, and stability products.
 
-Die zentrale Steuerdatei für den Datensatz ist:
+The central dataset control file is:
 
 ```text
 config/experiments/test_mesh_ortho_mof_forest_knoll_rgb.yml
 ```
 
-Sie verweist auf `input-images/` und auf die Ausgabeordner unter `runs/`.
+It points to `input-images/` and to output directories below `runs/`.
 
-Die Variantenmatrix ist:
+The variant matrix is:
 
 ```text
 config/experiments/repro_variants_mesh_regularization.csv
 ```
 
-Sie definiert die drei Standardvarianten `flat_mesh`, `moderate_mesh` und `light_mesh`.
+It defines the three standard variants `flat_mesh`, `moderate_mesh`, and `light_mesh`.
 
-## 2. Einzelner Metashape-Ortho-Lauf
+## 2. Single Metashape Orthomosaic Run
 
-Minimaler Default-Aufruf:
+Minimal default call:
 
 ```bash
 cd ~/dev/metashape-qc-engine
@@ -75,44 +73,44 @@ METASHAPE_DIR="/home/creu/apps/metashape-pro" \
 scripts/run_metashape_workflow.sh config/experiments/test_mesh_ortho_mof_forest_knoll_rgb.yml
 ```
 
-Dieser Lauf führt genau die Base-YAML aus. Er erzeugt einen einzelnen Metashape-Lauf ohne Varianten und ohne Wiederholungen.
+This run executes exactly the base YAML. It creates one Metashape run without variants and without repeated replicates.
 
-Der Einzelrun dient dazu, zu prüfen, ob die Basissteuerung funktioniert: Bilder werden geladen, Photos werden ausgerichtet, Tiepoints werden gefiltert, Kameras werden optimiert, ein Mesh aus Tiepoints wird gebaut, geglättet und als Projektionsfläche für ein Orthomosaik verwendet.
+The single run checks whether the base workflow works: images are loaded, photos are aligned, tie points are filtered, cameras are optimized, a mesh is built from tie points, the mesh is smoothed, and that mesh is used as the orthomosaic projection surface.
 
-Der Default ist bewusst mesh-basiert:
+The default is intentionally mesh-based:
 
 ```text
 TiePointsData -> smoothed mesh -> mesh orthomosaic
 ```
 
-Depth Maps, Dense Cloud und DEM/DSM sind im Standard deaktiviert. Der aktuelle Test fragt nicht nach der besten Dense-Rekonstruktion, sondern nach der Stabilität der Orthoprojektion über eine regularisierte Mesh-Oberfläche.
+Depth maps, dense cloud generation, and DEM/DSM generation are disabled by default. The current test is not asking for the best dense reconstruction; it evaluates the stability of orthoprojection over a regularized mesh surface.
 
-Die wichtigste Default-Entscheidung ist:
+The key default setting is:
 
 ```yaml
 buildOrthomosaic:
   surface: ["Mesh"]
 ```
 
-und:
+and:
 
 ```yaml
 buildModel:
   source_data: Metashape.TiePointsData
 ```
 
-Das Orthomosaik wird also nicht aus einem DSM erzeugt, sondern aus einem Mesh, das aus Tiepoints gebaut und geglättet wird.
+The orthomosaic is therefore not built from a DSM. It is built from a mesh that was generated from tie points and smoothed.
 
-Die Ausgabe des Einzelruns landet in den Pfaden aus der Base-YAML:
+The single-run output goes to the paths configured in the base YAML:
 
 ```text
 PROJECT_ROOT/runs/single_run/psx/
 PROJECT_ROOT/runs/single_run/output/
 ```
 
-## 3. Varianten × Replikate
+## 3. Variants x Replicates
 
-Minimaler Default-Aufruf:
+Minimal default call:
 
 ```bash
 cd ~/dev/metashape-qc-engine
@@ -127,49 +125,49 @@ python3 python/reproducibility_runner.py \
   --metashape-dir /home/creu/apps/metashape-pro
 ```
 
-Dieser Schritt ist das eigentliche Reproducibility-Experiment.
+This step is the actual reproducibility experiment.
 
-Der Runner nimmt die Base-YAML und erzeugt daraus mehrere konkrete YAML-Dateien: eine pro Variante und Replikat. Jede dieser generierten YAMLs hat eigene Ausgabeordner, eigene Projektordner und einen eigenen `run_name`.
+The runner takes the base YAML and creates concrete YAML files from it: one per variant and replicate. Each generated YAML has its own output directory, project directory, and `run_name`.
 
-Mit dem Default-Setup entstehen:
-
-```text
-3 Varianten × 5 Replikate = 15 Metashape-Läufe
-```
-
-Die drei Default-Varianten testen die Regularisierung der Projektionsfläche:
+With the default setup this creates:
 
 ```text
-flat_mesh      stark geglättetes, einfaches Mesh
-moderate_mesh  mittlere Mesh-Regularisierung
-light_mesh     detailreicheres, schwach geglättetes Mesh
+3 variants x 5 replicates = 15 Metashape runs
 ```
 
-Der wichtigste Parameter ist dabei:
+The three default variants test regularization of the projection surface:
+
+```text
+flat_mesh      strongly smoothed, simple mesh
+moderate_mesh  medium mesh regularization
+light_mesh     more detailed, lightly smoothed mesh
+```
+
+The main parameter is:
 
 ```yaml
 buildModel:
   noiterations: ...
 ```
 
-Er steuert die Glättung des Meshes.
+It controls mesh smoothing.
 
-Der zweite wichtige Parameter ist:
+The second important parameter is:
 
 ```yaml
 buildModel:
   face_count: ...
 ```
 
-Er steuert die Mesh-Komplexität.
+It controls mesh complexity.
 
-Die Standardvarianten sind so gesetzt, dass sie eine einfache Achse abbilden:
+The standard variants represent a simple axis:
 
 ```text
-stark regularisiert -> mittel regularisiert -> schwach regularisiert
+strongly regularized -> medium regularized -> weakly regularized
 ```
 
-Das Ergebnis des Runners ist ein Experimentordner:
+The runner produces an experiment directory:
 
 ```text
 PROJECT_ROOT/runs/experiment_mesh_variants_reps5/
@@ -180,17 +178,17 @@ PROJECT_ROOT/runs/experiment_mesh_variants_reps5/
     light_mesh/
 ```
 
-Die wichtigste Datei ist:
+The key file is:
 
 ```text
 manifest.csv
 ```
 
-Sie ist das Inhaltsverzeichnis des Experiments. Sie sagt, welche Variante und welches Replikat zu welchem Metashape-Projekt, welchem Log und welchem exportierten Orthomosaik gehört.
+The manifest is the experiment index. It records which variant and replicate correspond to which Metashape project, launcher log, and exported orthomosaic.
 
-## 4. Stabilitätsanalyse
+## 4. Stability Analysis
 
-Minimaler Default-Aufruf:
+Minimal default call:
 
 ```bash
 python3 python/ortho_stability_analyzer.py \
@@ -202,35 +200,35 @@ python3 python/ortho_stability_analyzer.py \
   --overwrite
 ```
 
-Der Analyzer liest die `manifest.csv` und verwendet alle erfolgreichen Orthomosaik-Exports.
+The analyzer reads `manifest.csv` and uses successful orthomosaic exports.
 
-Metashape-Orthomosaike aus wiederholten Läufen können leicht unterschiedliche Rasterausdehnungen haben. Deshalb werden sie vor dem Vergleich auf ein gemeinsames Analyse-Raster gebracht. Dieses Raster heißt Canonical Grid.
+Metashape orthomosaics from repeated runs can have slightly different raster extents. Before comparison, they are warped to one shared analysis raster. This raster is the canonical grid.
 
-Der Default ist:
+The default is:
 
 ```text
 --grid-mode union
 ```
 
-`union` bedeutet: Das gemeinsame Raster umfasst die gesamte Ausdehnung aller Orthomosaike. Dadurch bleiben auch wechselnde Randbereiche und unterschiedlicher Bildsupport sichtbar.
+`union` means the shared raster covers the combined extent of all orthomosaics. This preserves changing borders and variable image support.
 
-Für RGB-Orthomosaike ist der Default:
+For RGB orthomosaics the default is:
 
 ```text
 --bands 3
 ```
 
-Die ersten drei Bänder werden als RGB analysiert.
+The first three bands are analyzed as RGB.
 
-Die Stabilitätsmaske wird mit folgender Schwelle erzeugt:
+The stability mask is generated with this threshold:
 
 ```text
 --stable-rmse-threshold 15
 ```
 
-Ein Pixel gilt als stabil, wenn er in allen Replikaten gültig ist und seine RMSE-Abweichung vom Median-Orthomosaik höchstens 15 DN beträgt. Bei 8-bit-RGB liegt die Bildskala bei 0–255.
+A pixel is stable when it is valid in all replicates and its RMSE deviation from the median orthomosaic is at most 15 DN. For 8-bit RGB data, the image scale is 0-255.
 
-Die wichtigsten Analyzer-Produkte sind:
+The main analyzer products are:
 
 ```text
 valid_count.tif
@@ -242,33 +240,33 @@ unstable_mask_rmse15.tif
 summary.csv
 ```
 
-`valid_count.tif` zeigt, in wie vielen Replikaten ein Pixel gültigen Bildsupport hatte.
+`valid_count.tif` shows how many replicates have valid image support for each pixel.
 
-`median_ortho.tif` ist das robuste Median-Orthomosaik einer Variante.
+`median_ortho.tif` is the robust median orthomosaic for one variant.
 
-`mad_rgb.tif` zeigt robuste Abweichungen vom Medianbild.
+`mad_rgb.tif` shows robust deviations from the median image.
 
-`rmse_to_median.tif` zeigt RMSE-Abweichungen vom Medianbild.
+`rmse_to_median.tif` shows RMSE deviations from the median image.
 
-`stable_mask_rmse15.tif` markiert stabile Bereiche.
+`stable_mask_rmse15.tif` marks stable areas.
 
-`unstable_mask_rmse15.tif` markiert instabile Bereiche.
+`unstable_mask_rmse15.tif` marks unstable areas.
 
-`summary.csv` fasst die Stabilität je Variante tabellarisch zusammen.
+`summary.csv` summarizes stability by variant.
 
-## 5. Ergebnis lesen
+## 5. Reading Results
 
-Eine Variante ist stabiler, wenn sie insgesamt:
+A variant is more stable when, overall, it has:
 
 ```text
-mehr vollständigen Bildsupport hat
-geringere MAD-Werte hat
-geringere RMSE-Werte hat
-einen höheren stabilen Support-Anteil hat
-einen niedrigeren instabilen Support-Anteil hat
+more complete image support
+lower MAD values
+lower RMSE values
+a higher stable support fraction
+a lower unstable support fraction
 ```
 
-Die wichtigsten Summary-Spalten sind:
+The most important summary columns are:
 
 ```text
 full_support_fraction
@@ -280,9 +278,9 @@ stable_fraction_support_rmse
 unstable_fraction_support_rmse
 ```
 
-Die Werte messen Reproduzierbarkeit des Orthomosaikprodukts. Sie beweisen keine absolute geometrische Richtigkeit. Eine Variante kann reproduzierbar sein und trotzdem geometrisch falsch liegen. Für geometrische Genauigkeit braucht es eine eigene Validierung.
+These values measure reproducibility of the orthomosaic product. They do not prove absolute geometric correctness. A variant can be reproducible and still be geometrically wrong. Geometric accuracy requires separate validation.
 
-Für die QGIS-Sichtung sind diese Layer zentral:
+For QGIS inspection, these layers are central:
 
 ```text
 median_ortho.tif
@@ -292,40 +290,39 @@ stable_mask_rmse15.tif
 unstable_mask_rmse15.tif
 ```
 
-`median_ortho.tif` dient als Hintergrund. `rmse_to_median.tif` zeigt Abweichungshotspots. `valid_count.tif` zeigt den stabilen oder instabilen Bildsupport. Die Masken trennen stabile und instabile Bereiche.
+`median_ortho.tif` is useful as a background. `rmse_to_median.tif` shows deviation hotspots. `valid_count.tif` shows stable or unstable image support. The masks separate stable and unstable areas.
 
-## 6. Default ändern
+## 6. Changing Defaults
 
-Die meisten Einstellungen bleiben unverändert. Normalerweise werden nur diese Punkte angepasst:
+Most settings remain unchanged. Normally only these values are adjusted:
 
 `photo_path`
-zeigt auf den `input-images/`-Ordner des aktuellen Datensatzes.
+points to the current dataset's `input-images/` folder.
 
-`output_path` und `project_path`
-zeigen auf Unterordner von `runs/`.
+`output_path` and `project_path`
+point to subdirectories below `runs/`.
 
 `run_name`
-benennt Datensatz und Workflow.
+names the dataset and workflow.
 
 `project_crs`
-setzt das Zielkoordinatensystem der Exporte.
+sets the target coordinate reference system for exports.
 
 `orthoRes`
-setzt die Orthomosaik-Auflösung.
+sets the orthomosaic resolution.
 
 `--reps`
-setzt die Zahl der Wiederholungen.
+sets the number of replicates.
 
 `--stable-rmse-threshold`
-setzt die Schwelle für stabile Pixel.
+sets the threshold for stable pixels.
 
-Die komplette Parameterreferenz steht im Anhang:
+The full parameter reference is in the appendix:
 [Parameter and File Reference](orthomosaic_stability_reference.md)
 
+## Evaluation
 
-## Auswertung
-
-Nach Abschluss der Metashape-Replikate wird die Auswertung mit einem einzigen Evaluationsskript gestartet:
+After the Metashape replicates finish, run evaluation with one script:
 
 ```bash
 cd ~/dev/metashape-qc-engine
@@ -334,38 +331,43 @@ python3 python/evaluate_ortho_stability.py \
   /datadisk/data/uav/MOF_repro_test_recovered/runs/experiment_mesh_variants_reps5
 ```
 
-Das Skript führt den Stability Analyzer aus, wertet die `summary.csv` aus und schreibt einen kompakten Auswertungsreport.
+The script runs the stability analyzer, reads `summary.csv`, and writes a compact evaluation report.
 
-Die Ergebnisse liegen anschließend im Ordner:
+The results are written to:
 
 ```text
 PROJECT_ROOT/runs/experiment_mesh_variants_reps5/stability_union/
 ```
 
-Die wichtigsten Dateien sind:
+The most important files are:
 
 ```text
 evaluation_report.md
 summary_key_metrics.tsv
+support_valid_count_histogram.tsv
 qgis_layers.txt
 summary.csv
 ```
 
-`evaluation_report.md` enthält die kompakte Bewertung der Varianten.
+`evaluation_report.md` contains the compact variant evaluation.
 
-`summary_key_metrics.tsv` enthält die wichtigsten Kennwerte in reduzierter Tabellenform.
+`summary_key_metrics.tsv` contains the key metrics in a reduced table.
 
-`qgis_layers.txt` listet die relevanten Rasterprodukte für die räumliche Sichtung.
+`support_valid_count_histogram.tsv` contains support histograms derived from `valid_count.tif`.
 
-`summary.csv` enthält die vollständige Ergebnistabelle des Analyzers.
+`qgis_layers.txt` lists the relevant raster products for spatial inspection.
 
-Die Default-Bewertung sortiert die Varianten nach folgender Logik:
+`summary.csv` contains the full analyzer result table.
+
+The compact default table is sorted by continuous image-value stability:
 
 ```text
-1. höherer stabiler Support-Anteil
-2. niedrigeres p95-RMSE zum Median-Orthomosaik
-3. niedrigeres mittleres RMSE zum Median-Orthomosaik
-4. höherer vollständiger Bildsupport
+1. lower p95 RMSE to the median orthomosaic
+2. lower mean RMSE to the median orthomosaic
+3. lower p95 MAD RGB
+4. lower mean MAD RGB
 ```
 
-Diese Bewertung beschreibt die Reproduzierbarkeit des Orthomosaikprodukts. Sie ersetzt keine unabhängige geometrische Validierung.
+The evaluator also reports separate threshold-mask and support-persistence candidates. These candidate categories are not collapsed into one canonical winner.
+
+This evaluation describes reproducibility of the orthomosaic product. It does not replace independent geometric validation.
