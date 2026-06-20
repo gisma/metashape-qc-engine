@@ -1,0 +1,4 @@
+variant_id,buildDepthMaps.enabled,buildPointCloud.enabled,buildModel.enabled,buildModel.source_data,buildModel.face_count,buildModel.noiterations,buildDem.enabled,buildDem.surface,buildOrthomosaic.enabled,buildOrthomosaic.surface,buildOrthomosaic.orthoRes
+flat_mesh,False,False,True,Metashape.TiePointsData,Metashape.LowFaceCount,80,False,,True,[Mesh],0.05
+moderate_mesh,False,False,True,Metashape.TiePointsData,Metashape.LowFaceCount,35,False,,True,[Mesh],0.05
+light_mesh,False,False,True,Metashape.TiePointsData,Metashape.MediumFaceCount,5,False,,True,[Mesh],0.05
