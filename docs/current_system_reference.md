@@ -83,6 +83,14 @@ Ambiguous: scientific interpretation of the selected product depends on external
 - Key arguments: positional `MANIFEST`, `--output-dir`, optional `--grid-mode`, `--reference-ortho`, `--bands`, `--stable-rmse-threshold`, `--overwrite`.
 - Source: `metashape_qc_engine/cli.py`, `python/ortho_stability_analyzer.py`.
 
+## Runtime environments
+
+Metashape workflow execution requires the Agisoft/Metashape Python runtime or launcher environment. The current bridge is `scripts/run_metashape_workflow.sh`, which resolves `metashape.sh`, adds repo-local vendored Python dependencies to `PYTHONPATH`, and runs `python/metashape_workflow.py` with a generated config.
+
+`metashape-qc run` calls this bridge for one config. `metashape-qc run-analysis` and `metashape-qc resume-analysis` call the same bridge for each generated variant/replicate config and capture launcher logs.
+
+The evaluator and analyzer can run in a normal Python environment when the required geospatial dependencies are available, including GDAL array support. They do not require the Metashape runtime unless they are launching workflow execution.
+
 ## Prepare stage
 
 Implemented behavior:
@@ -104,6 +112,8 @@ The preset field is still named `experiment_dir_template` internally. User-facin
 `--factor COLUMN=VALUE1,VALUE2,...` replaces or adds a factor column. The target column must already exist in the template variants CSV. `--face-counts` is a shortcut for `buildModel.face_count_custom`. `--smoothing` is a shortcut for `buildModel.noiterations`.
 
 `variant_id_template` is rendered from factor values. Placeholders use `{factor.name}`. A `:k` suffix formats integer values divisible by 1000 as three-digit thousands, for example `50000` to `050k`. Generated IDs are sanitized to letters, numbers, underscore, dot, and hyphen, and duplicate generated IDs are rejected.
+
+Operational safety boundary: prepare writes the supplied image directory into the generated config as the Metashape input folder. The directory must contain supported image files and should not contain unrelated supported-image files. Polluted image folders can lead to unexpected photo counts in Metashape. This is an operational warning; the implementation validates the presence of supported files but does not enforce cleanup or delete files.
 
 ## Run-analysis and resume-analysis
 
@@ -180,6 +190,14 @@ Implemented behavior:
 
 Default evaluator settings are `grid-mode=union`, `bands=3`, `stable-rmse-threshold=15.0`, and threshold review values `5,10,15,20,25,30`.
 
+Threshold review rasters are written as `quality_flag_rmse*.tif`. Values are:
+
+- `0`: invalid/no support.
+- `1`: stable or usable under the threshold.
+- `2`: unstable/review/exclude over the threshold.
+
+These flags are review and interpretation guards. They do not clean, edit, or mask the source orthomosaic products.
+
 ## Analyzer/stability products
 
 The analyzer aligns successful orthomosaics onto one canonical grid. Grid modes are:
@@ -204,6 +222,16 @@ Analyzer outputs:
 
 Metrics include support counts, median RGB orthomosaic, median absolute deviation to the median by RGB band average, RMSE to the median, and stable/unstable fractions under the configured RMSE threshold. Stable masks require full support across replicates and RMSE at or below the threshold. Unstable masks cover supported pixels that do not meet that stable condition.
 
+Support metric definitions:
+
+- `any_support_fraction_grid`: fraction of the rectangular canonical analysis grid with valid orthomosaic support in at least one replicate.
+- `full_support_fraction_grid`: fraction of the rectangular canonical analysis grid with valid orthomosaic support in all replicates.
+- `variable_support_fraction_grid`: fraction of the rectangular canonical analysis grid with support in some but not all replicates.
+- `support_persistence_footprint`: `full_support / any_support`, measuring support persistence inside pixels that have any support.
+- `support_dropout_footprint`: `variable_support / any_support`, measuring replicate-to-replicate support dropout inside pixels that have any support.
+
+Grid fractions refer to the canonical analysis grid. Footprint fractions refer only to pixels with any support. Support persistence is support consistency, not geometric accuracy.
+
 ## Selection logic
 
 The selected product is a trace of the implemented selection procedure, not a claim of absolute truth.
@@ -225,6 +253,8 @@ Support-persistence candidate:
 - Sort key: lower `support_dropout_footprint`, lower `variable_support_fraction_grid`, higher `support_persistence_footprint`.
 
 `selected_product.json` uses `selection_policy: continuous_first`. It records the primary variant, selected median orthomosaic path, optional medoid original replicate, support context, threshold guard context, source files, and warnings. Warnings are added when support-persistence or threshold candidates differ from the continuous-stability primary variant, or when medoid scoring cannot be completed.
+
+`median_ortho.tif` is a synthetic per-pixel median product derived from aligned successful replicates for the selected variant. The optional medoid replicate is an original Metashape orthomosaic selected from the successful replicates whose aligned raster is closest to the selected variant median on common valid pixels. If medoid scoring cannot be completed, the evaluator records warnings/context and leaves the medoid mode absent; that does not make candidate selection fail.
 
 ## QGIS review artifacts
 
@@ -290,6 +320,8 @@ This expands to `2 x 2 x 3 x 2 x 2 = 48` processing candidates. With 5 replicate
 
 The MOF variant template disables `buildDepthMaps.enabled`, `buildPointCloud.enabled`, and `buildDem.enabled`, enables `buildModel.enabled`, and enables mesh-based `buildOrthomosaic.surface: [Mesh]`.
 
+MOF v1 varies only the listed factor columns. Generic and reference preselection appear as fixed CSV/template controls but are not varied by the v1 preset. Keypoint, tiepoint, and guided-matching controls are not part of the current v1 matrix unless they are implemented as active factor controls in the preset and generated variants CSV. Dense/Depth/PointCloud/DEM products are disabled in the MOF template/CSV and are not current MOF v1 benchmark axes.
+
 `buildOrthomosaic.orthoRes` is passed to Metashape as the requested orthomosaic build resolution. In this reference it is a product sampling parameter, not a claim of geometric accuracy or true detail.
 
 ## Current reference benchmark: MOF
@@ -299,7 +331,7 @@ MOF is the current reference benchmark for the implemented product-analysis work
 Current code/config reference:
 
 - Image directory: `/datadisk/data/uav/MOF_repro_test_recovered/input-images`
-- Local supported image count observed in that directory: 48
+- Current local MOF development setup: 48 supported input images observed in that directory. This is dataset metadata, not implementation behavior.
 - Template config: `config/experiments/test_mesh_ortho_mof_forest_knoll_rgb.yml`
 - Preset: `config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json`
 - Matrix: Alignment-Mesh-Ortho sensitivity matrix

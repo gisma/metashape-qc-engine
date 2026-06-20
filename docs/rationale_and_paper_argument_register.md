@@ -14,6 +14,8 @@
 
 [HYPOTHESIS] Photogrammetric orthomosaics can look complete after one run while still containing processing-dependent artifacts, variable spatial support, seamline instability, or projection-surface effects. A single successful export proves that one processing path completed; it does not prove that the product is stable, accurate, or suitable for downstream interpretation.
 
+[INFERRED] Orthomosaics are synthetic photogrammetric products, not direct photographs. They result from alignment, tie points, projection surface choice, seamlines, blending, and export sampling. Therefore a single visually complete export is weak evidence for reproducible product behavior.
+
 [CODE-DERIVED] The analyzer treats repeated outputs as comparable samples from the processing procedure. It aligns successful orthomosaics to a canonical grid and measures support persistence and image-value deviation from the per-variant median orthomosaic.
 
 ## Product analysis instead of parameter experiment
@@ -40,11 +42,15 @@
 
 [IMPLEMENTED] QGIS launchers collect key raster review layers for selected-product and threshold review.
 
+[INFERRED] Rectangular canonical-grid support fractions can be misleading when the actual orthomosaic footprint occupies only part of the canonical rectangle. Footprint-based dropout and persistence are often more interpretable for product support because they condition on pixels with any support.
+
 ## MOF reference benchmark rationale
 
 [DESIGN DECISION] MOF is the current reference benchmark because it is controlled enough for implementation development and demanding enough for forest orthomosaic products.
 
-[BOUNDARY EVIDENCE] Existing project notes describe the MOF RGB dataset as 48 UAV RGB images of a forest terrain knoll with beech and Douglas fir. The local reference image directory contains 48 supported images.
+[BOUNDARY EVIDENCE] MOF is demanding but controlled enough for reference development. It is a forest RGB UAV benchmark for the current workflow, not a cross-platform comparison.
+
+[BOUNDARY EVIDENCE] Existing project notes describe the MOF RGB dataset as 48 UAV RGB images of a forest terrain knoll with beech and Douglas fir. In the current local MOF development setup, the reference image directory contains 48 supported images. This is dataset metadata, not implementation behavior.
 
 [IMPLEMENTED] The current MOF reference preset is `config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json`.
 
@@ -54,11 +60,17 @@
 
 [NON-SCOPE] No completed MOF result claims should be made unless run outputs and evaluation products are present and inspected.
 
+## Forest orthomosaic regularization hypothesis
+
+[HYPOTHESIS] Projection-surface regularization may improve repeated-build reproducibility in forest orthomosaics while reducing local detail. This is a design rationale to test, not a completed universal result.
+
+[DESIGN DECISION] The MOF matrix relates this hypothesis to mesh face count, mesh smoothing iterations, and requested `buildOrthomosaic.orthoRes`. These controls should be discussed as product-generation and sampling choices, not as direct proof of accuracy.
+
 ## Franzosenwiese boundary-case rationale
 
 [BOUNDARY EVIDENCE] Franzosenwiese is useful as a boundary/stress case. It can illustrate where the procedure produces warnings, candidate disagreement, or high review burden.
 
-[NON-SCOPE] Franzosenwiese is not the current reference benchmark and should not be converted into change-detection suitability logic.
+[NON-SCOPE] The current reference benchmark is MOF. Franzosenwiese should remain a boundary/stress case and should not be converted into change-detection suitability logic.
 
 [HYPOTHESIS] A boundary case may still produce a selected candidate, but the selected candidate can carry high warning conditions and require stronger domain review.
 
@@ -69,6 +81,12 @@
 [DESIGN DECISION] In the paper argument, requested pixel size should be treated as a sampling or product-resolution choice. It should not be described as a direct measure of geometric accuracy or true scene detail.
 
 [NON-SCOPE] The workflow does not prove that smaller `orthoRes` is more accurate.
+
+## Provenance and upstream lineage
+
+[INFERRED] The project derives from the `automate-metashape` / AM2 lineage and a recovered fork workflow.
+
+[BOUNDARY EVIDENCE] Upstream/class workflow material and MetashapeTools are useful background and reference context, but they are not the current implementation contract.
 
 ## Why Dense/Depth-Map/DSM are excluded here
 
