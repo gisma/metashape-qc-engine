@@ -84,6 +84,7 @@ summary_key_metrics.tsv
 support_valid_count_histogram.tsv
 qgis_layers.txt
 evaluation_report.md
+<experiment_dir>/selected_product.json
 ```
 
 ## Ranking outputs
@@ -97,3 +98,67 @@ support-persistence candidate
 ```
 
 These categories are separate outputs. They are not collapsed into one canonical winner.
+
+## Product selection procedure
+
+The concrete product-selection policy is `continuous_first`.
+
+Continuous stability selects the primary variant. Stable image values are the
+primary requirement for change detection, so the evaluator uses the existing
+continuous-stability ranking as the primary selection list.
+
+Support persistence checks spatial and evaluable support. It marks the
+reachable and evaluable output area and provides feasibility / coverage
+context, but it does not automatically override the continuous-stability
+variant.
+
+The threshold-mask result acts as a rejection / warning guard. It is reported
+as threshold-dependent context and is not the primary selection logic.
+
+The concrete output product is resolved in one of two modes:
+
+```text
+median_ortho
+medoid_replicate
+```
+
+`median_ortho` uses the selected variant's existing:
+
+```text
+stability_union/variants/<variant_id>/median_ortho.tif
+```
+
+`medoid_replicate` uses the original Metashape replicate orthomosaic whose
+existing aligned raster is closest to the selected variant's median
+orthomosaic. The evaluator prefers:
+
+```text
+stability_union/aligned/<variant_id>/<replicate>_aligned.tif
+```
+
+and records the corresponding original `ortho_file` from `manifest.csv`. It
+does not copy rasters and does not recompute the full analyzer.
+
+## Selected product trace
+
+The evaluator writes a machine-readable technical trace to:
+
+```text
+<experiment_dir>/selected_product.json
+```
+
+The JSON records:
+
+```text
+selection_policy
+primary_variant_id
+primary_selection_category
+product_modes
+support_persistence_context
+threshold_guard_context
+source_files
+warnings
+```
+
+`selected_product.json` records a technical selection trace for user and domain
+review. It does not claim scientific correctness by itself.

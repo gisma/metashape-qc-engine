@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import math
 import subprocess
 import sys
@@ -128,6 +129,11 @@ def read_csv_dicts(path: Path) -> list[dict[str, str]]:
         return list(reader)
 
 
+def read_manifest_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
 def write_tsv(rows: list[dict[str, str]], columns: list[str], path: Path) -> None:
     with path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=columns, delimiter="\t")
@@ -205,6 +211,65 @@ def read_raster_array(path: Path) -> np.ndarray:
         arr = arr[0]
 
     return arr.copy()
+
+
+def read_raster_for_distance(path: Path, bands: int, reject_rgb_zero: bool) -> tuple[np.ndarray, np.ndarray]:
+    ds = gdal.Open(str(path), gdal.GA_ReadOnly)
+    if ds is None:
+        raise RuntimeError(f"Could not open raster: {path}")
+    if ds.RasterCount < bands:
+        raise RuntimeError(f"Raster has fewer than {bands} bands: {path}")
+
+    arrays = []
+    valids = []
+    for b in range(1, bands + 1):
+        rb = ds.GetRasterBand(b)
+        arr = rb.ReadAsArray().astype("float32")
+        valid = np.isfinite(arr)
+
+        nodata = rb.GetNoDataValue()
+        if nodata is not None:
+            valid &= arr != nodata
+
+        mask_band = rb.GetMaskBand()
+        if mask_band is not None:
+            valid &= mask_band.ReadAsArray() != 0
+
+        arrays.append(arr)
+        valids.append(valid)
+
+    image = np.stack(arrays, axis=0)
+    valid = np.logical_and.reduce(valids)
+
+    if reject_rgb_zero:
+        valid &= ~np.all(image == 0, axis=0)
+
+    return image, valid
+
+
+def raster_distance_to_median(aligned_file: Path, median_file: Path, bands: int) -> float:
+    aligned, aligned_valid = read_raster_for_distance(
+        aligned_file,
+        bands=bands,
+        reject_rgb_zero=True,
+    )
+    median, median_valid = read_raster_for_distance(
+        median_file,
+        bands=bands,
+        reject_rgb_zero=False,
+    )
+
+    if aligned.shape != median.shape:
+        raise RuntimeError(
+            f"Raster shapes differ for medoid selection: {aligned_file} and {median_file}"
+        )
+
+    valid = aligned_valid & median_valid
+    if not np.any(valid):
+        return math.inf
+
+    diff = aligned[:, valid] - median[:, valid]
+    return float(np.sqrt(np.mean(diff * diff)))
 
 
 def compute_support_metrics(variant_id: str, n_orthos: int, valid_count_file: Path) -> dict[str, str]:
@@ -383,6 +448,188 @@ def write_qgis_layers(
             handle.write("\n")
 
 
+def select_medoid_replicate(
+    variant_id: str,
+    manifest_rows: list[dict[str, str]],
+    output_dir: Path,
+    bands: int,
+) -> tuple[dict[str, str | float | None], list[str]]:
+    warnings_out: list[str] = []
+    median_file = output_dir / "variants" / variant_id / "median_ortho.tif"
+
+    if not median_file.is_file():
+        raise FileNotFoundError(f"Missing selected variant median raster: {median_file}")
+
+    candidates = []
+    for row in manifest_rows:
+        if row.get("variant_id", "").strip() != variant_id:
+            continue
+        if row.get("status", "").strip() != "ok":
+            continue
+
+        ortho_file = row.get("ortho_file", "").strip()
+        replicate = row.get("replicate", "").strip()
+        if not ortho_file or not replicate:
+            continue
+        if not Path(ortho_file).is_file():
+            continue
+
+        aligned_file = output_dir / "aligned" / variant_id / f"{replicate}_aligned.tif"
+        if not aligned_file.is_file():
+            warnings_out.append(
+                f"Aligned raster missing for medoid candidate {variant_id}/{replicate}: "
+                f"{aligned_file}"
+            )
+            continue
+
+        distance = raster_distance_to_median(
+            aligned_file=aligned_file,
+            median_file=median_file,
+            bands=bands,
+        )
+        if math.isinf(distance):
+            warnings_out.append(
+                f"No common valid pixels for medoid candidate {variant_id}/{replicate}: "
+                f"{aligned_file}"
+            )
+            continue
+
+        candidates.append(
+            {
+                "replicate": replicate,
+                "ortho_file": str(Path(ortho_file).resolve()),
+                "aligned_file": str(aligned_file),
+                "distance_value": distance,
+            }
+        )
+
+    if not candidates:
+        raise RuntimeError(f"No medoid replicate candidates found for variant: {variant_id}")
+
+    selected = min(candidates, key=lambda item: item["distance_value"])
+
+    return selected, warnings_out
+
+
+def row_subset(row: dict[str, str], columns: list[str]) -> dict[str, str]:
+    return {col: row.get(col, "") for col in columns}
+
+
+def write_selected_product(
+    continuous_ranked: list[dict[str, str]],
+    mask_ranked: list[dict[str, str]],
+    support_ranked: list[dict[str, str]],
+    support_by_variant: dict[str, dict[str, str]],
+    manifest_rows: list[dict[str, str]],
+    experiment_dir: Path,
+    output_dir: Path,
+    path: Path,
+    bands: int,
+    threshold: float,
+) -> None:
+    if not continuous_ranked:
+        raise RuntimeError("No continuous-stability candidates available for product selection.")
+
+    primary = continuous_ranked[0]
+    primary_variant = primary["variant_id"]
+    support_candidate = support_ranked[0] if support_ranked else {}
+    mask_candidate = mask_ranked[0] if mask_ranked else {}
+    support_candidate_variant = support_candidate.get("variant_id", "")
+    median_file = output_dir / "variants" / primary_variant / "median_ortho.tif"
+    warnings_out: list[str] = []
+
+    if support_candidate and support_candidate_variant != primary_variant:
+        warnings_out.append(
+            "Support-persistence candidate differs from the continuous-stability primary variant; "
+            "review spatial support before product use."
+        )
+
+    if mask_candidate and mask_candidate.get("variant_id") != primary_variant:
+        warnings_out.append(
+            "Threshold-mask candidate differs from the continuous-stability primary variant; "
+            "review threshold masks before product use."
+        )
+
+    medoid, medoid_warnings = select_medoid_replicate(
+        variant_id=primary_variant,
+        manifest_rows=manifest_rows,
+        output_dir=output_dir,
+        bands=bands,
+    )
+    warnings_out.extend(medoid_warnings)
+
+    product = {
+        "selection_policy": "continuous_first",
+        "primary_variant_id": primary_variant,
+        "primary_selection_category": "continuous_stability",
+        "product_modes": {
+            "median_ortho": {
+                "path": str(median_file),
+                "description": (
+                    "Use the selected continuous-stability variant's existing median_ortho.tif."
+                ),
+            },
+            "medoid_replicate": {
+                "variant_id": primary_variant,
+                "replicate": medoid["replicate"],
+                "ortho_file": medoid["ortho_file"],
+                "aligned_file": medoid["aligned_file"],
+                "distance_metric": "rgb_rmse_to_selected_variant_median_on_common_valid_pixels",
+                "distance_value": medoid["distance_value"],
+                "description": (
+                    "Use the original Metashape replicate orthomosaic whose existing aligned "
+                    "raster is closest to the selected variant's median_ortho.tif."
+                ),
+            },
+        },
+        "support_persistence_context": {
+            "role": "feasibility_coverage_context",
+            "candidate_variant_id": support_candidate_variant,
+            "primary_variant_metrics": row_subset(
+                support_by_variant.get(primary_variant, {}),
+                SUPPORT_COLUMNS,
+            ),
+            "candidate_metrics": row_subset(
+                support_by_variant.get(support_candidate_variant, {}),
+                SUPPORT_COLUMNS,
+            )
+            if support_candidate_variant
+            else {},
+            "description": (
+                "Support persistence marks reachable and evaluable output area and does not "
+                "automatically override the continuous-stability primary variant."
+            ),
+        },
+        "threshold_guard_context": {
+            "role": "rejection_warning_guard",
+            "stable_rmse_threshold": threshold,
+            "candidate_variant_id": mask_candidate.get("variant_id", ""),
+            "primary_variant_metrics": row_subset(primary, SUMMARY_COLUMNS),
+            "candidate_metrics": row_subset(mask_candidate, SUMMARY_COLUMNS)
+            if mask_candidate
+            else {},
+            "description": (
+                "Threshold-mask metrics are used as a rejection or warning guard, not as the "
+                "primary selection logic."
+            ),
+        },
+        "source_files": {
+            "manifest": str(experiment_dir / "manifest.csv"),
+            "summary": str(output_dir / "summary.csv"),
+            "summary_key_metrics": str(output_dir / "summary_key_metrics.tsv"),
+            "support_valid_count_histogram": str(
+                output_dir / "support_valid_count_histogram.tsv"
+            ),
+            "selected_variant_median_ortho": str(median_file),
+        },
+        "warnings": warnings_out,
+    }
+
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(product, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
 def write_report(
     continuous_ranked: list[dict[str, str]],
     mask_ranked: list[dict[str, str]],
@@ -520,7 +767,12 @@ def main() -> None:
     if not summary_file.is_file():
         raise FileNotFoundError(f"Missing summary file: {summary_file}")
 
+    manifest_file = experiment_dir / "manifest.csv"
+    if not manifest_file.is_file():
+        raise FileNotFoundError(f"Missing manifest file: {manifest_file}")
+
     summary_rows = read_csv_dicts(summary_file)
+    manifest_rows = read_manifest_rows(manifest_file)
     support_by_variant = derive_support_rows(summary_rows, output_dir)
     compact_rows = build_compact_rows(summary_rows, support_by_variant)
 
@@ -532,6 +784,7 @@ def main() -> None:
     support_histogram_file = output_dir / "support_valid_count_histogram.tsv"
     qgis_layers_file = output_dir / "qgis_layers.txt"
     report_file = output_dir / "evaluation_report.md"
+    selected_product_file = experiment_dir / "selected_product.json"
 
     write_tsv(continuous_ranked, KEY_COLUMNS, key_metrics_file)
 
@@ -562,6 +815,19 @@ def main() -> None:
         threshold=args.stable_rmse_threshold,
     )
 
+    write_selected_product(
+        continuous_ranked=continuous_ranked,
+        mask_ranked=mask_ranked,
+        support_ranked=support_ranked,
+        support_by_variant=support_by_variant,
+        manifest_rows=manifest_rows,
+        experiment_dir=experiment_dir,
+        output_dir=output_dir,
+        path=selected_product_file,
+        bands=args.bands,
+        threshold=args.stable_rmse_threshold,
+    )
+
     print()
     print("Candidate summary")
     print(f"Continuous stability candidate: {continuous_ranked[0]['variant_id']}")
@@ -581,6 +847,7 @@ def main() -> None:
     print(f"Wrote: {support_histogram_file}")
     print(f"Wrote: {qgis_layers_file}")
     print(f"Wrote: {report_file}")
+    print(f"Wrote: {selected_product_file}")
 
 
 if __name__ == "__main__":
