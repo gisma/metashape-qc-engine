@@ -71,14 +71,14 @@ PyYAML>=6.0
 Metashape is launched through the wrapper script:
 
 ```bash
-scripts/run_metashape_workflow.sh config/test_mesh_ortho_franzosenwiese.yml
+scripts/run_metashape_workflow.sh config/experiments/test_mesh_ortho_franzosenwiese.yml
 ```
 
 If `metashape.sh` is not available in `PATH`, set `METASHAPE_DIR` explicitly:
 
 ```bash
 METASHAPE_DIR="/home/creu/apps/metashape-pro" \
-scripts/run_metashape_workflow.sh config/test_mesh_ortho_franzosenwiese.yml
+scripts/run_metashape_workflow.sh config/experiments/test_mesh_ortho_franzosenwiese.yml
 ```
 
 For other users, the path must be adapted to their local Metashape installation, for example:
@@ -163,7 +163,7 @@ After bootstrapping dependencies, run:
 
 ```bash
 METASHAPE_DIR="/home/creu/apps/metashape-pro" \
-scripts/run_metashape_workflow.sh config/test_mesh_ortho_franzosenwiese.yml
+scripts/run_metashape_workflow.sh config/experiments/test_mesh_ortho_franzosenwiese.yml
 ```
 
 A successful start should print the Metashape version and continue into the workflow without failing on missing Python modules.

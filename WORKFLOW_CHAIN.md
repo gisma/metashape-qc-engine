@@ -7,7 +7,7 @@ The active workflow is the recovered fork-style procedural runner:
 - `python/metashape_workflow.py`
 - `python/metashape_workflow_functions.py`
 - `python/read_yaml.py`
-- flat/camelCase YAML configs such as `config/base.yml` and `config/base2.yml`
+- flat/camelCase YAML configs such as `config/base.yml` and `config/legacy/base2_pre_migration_franzosenwiese.yml`
 
 The runner loads one YAML config, converts Metashape object strings, then calls module-level functions in a fixed order. The workflow is not step-isolated and does not use an object-oriented workflow class.
 
@@ -32,7 +32,7 @@ The script reads `base.yml`, reads config fragments from `derived.yml`, merges e
 
 `config/base.yml` is the restored example/default flat-schema config. It is the expected input shape for the active Python runner and the default filename expected by `R/prep_configs.R`.
 
-`config/base2.yml` is a separate/manual fork config with project-specific paths and Ortho+ oriented settings. It uses the same active flat/camelCase schema, including `buildModel.noiterations` and `buildOrthomosaic.orthoRes`.
+`config/legacy/base2_pre_migration_franzosenwiese.yml` is a separate/manual fork config with project-specific paths and Ortho+ oriented settings. It uses the same active flat/camelCase schema, including `buildModel.noiterations` and `buildOrthomosaic.orthoRes`.
 
 `config/derived.yml` contains partial config fragments for `R/prep_configs.R`. These fragments are merged into `base.yml` to produce full generated configs. They must target active paths such as `addPhotos.multispectral` and `buildPointCloud`.
 
@@ -124,7 +124,7 @@ python python/metashape_workflow.py config/base.yml
 or:
 
 ```bash
-python python/metashape_workflow.py config/base2.yml
+python python/metashape_workflow.py config/legacy/base2_pre_migration_franzosenwiese.yml
 ```
 
 In production, run this with the Python interpreter provided by Agisoft Metashape or an environment where the `Metashape` module is installed.
