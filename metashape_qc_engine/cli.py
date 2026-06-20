@@ -52,7 +52,23 @@ def _run(cmd: list[str], env_overrides: dict[str, str] | None = None) -> int:
     return proc.returncode
 
 
+def _require_file(path: str, label: str) -> None:
+    candidate = Path(path).expanduser()
+    if not candidate.is_file():
+        raise RuntimeError(f"{label} does not exist or is not a file: {path}")
+
+
+def _require_dir(path: str, label: str) -> None:
+    candidate = Path(path).expanduser()
+    if not candidate.is_dir():
+        raise RuntimeError(f"{label} does not exist or is not a directory: {path}")
+
+
 def _run_workflow(args: argparse.Namespace) -> int:
+    _require_file(args.config, "CONFIG")
+    if args.metashape_dir:
+        _require_dir(args.metashape_dir, "METASHAPE_DIR")
+
     root = _repo_root()
     cmd = [
         str(root / "scripts" / "run_metashape_workflow.sh"),
@@ -63,6 +79,14 @@ def _run_workflow(args: argparse.Namespace) -> int:
 
 
 def _run_experiment(args: argparse.Namespace) -> int:
+    _require_file(args.base_config, "BASE_CONFIG")
+    if args.variants:
+        _require_file(args.variants, "CSV")
+    if args.reps < 2:
+        raise RuntimeError("--reps must be at least 2 for a reproducibility experiment.")
+    if args.metashape_dir:
+        _require_dir(args.metashape_dir, "METASHAPE_DIR")
+
     root = _repo_root()
     cmd = [
         sys.executable,
@@ -85,6 +109,10 @@ def _run_experiment(args: argparse.Namespace) -> int:
 
 
 def _run_analyze(args: argparse.Namespace) -> int:
+    _require_file(args.manifest, "MANIFEST")
+    if args.reference_ortho:
+        _require_file(args.reference_ortho, "REFERENCE_ORTHO")
+
     root = _repo_root()
     cmd = [
         sys.executable,
@@ -109,6 +137,8 @@ def _run_analyze(args: argparse.Namespace) -> int:
 
 
 def _run_evaluate(args: argparse.Namespace) -> int:
+    _require_dir(args.experiment_dir, "EXPERIMENT_DIR")
+
     root = _repo_root()
     cmd = [
         sys.executable,
