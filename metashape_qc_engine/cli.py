@@ -77,7 +77,7 @@ def _select_run_dir(args: argparse.Namespace) -> str:
     if run_dir and experiment_dir:
         if not _same_path(run_dir, experiment_dir):
             raise RuntimeError(
-                "--run-dir and --experiment-dir refer to different directories."
+                "--run-dir and --experiment-dir cannot differ."
             )
         return run_dir
     if run_dir:
