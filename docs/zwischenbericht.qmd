@@ -1,0 +1,212 @@
+---
+title: "Zwischenbericht: Mesh-basierte Orthomosaik-Stabilität im MOF-Testworkflow"
+format: html
+---
+
+
+## 1. Ausgangspunkt
+
+Der aktuelle Workflow entwickelt sich zu einer eigenständigen Python-basierten Metashape-Engine für reproduzierbare Orthomosaik-Experimente. Der Kern liegt auf einem mesh-basierten Orthomosaikpfad: Aus den Tie Points wird ein HeightField-Mesh erzeugt, dieses Mesh wird geglättet, und das Orthomosaik wird anschließend auf Grundlage des erzeugten Meshs berechnet.
+
+Der MOF-RGB-Datensatz dient dabei als realitätsnaher Benchmark. Es handelt sich um 48 RGB-UAV-Bilder eines bewaldeten Geländeknolls mit Buche und Douglasie. Der Datensatz ist damit geeignet, den Workflow unter strukturierter Waldoberfläche und realistischen Bildbedingungen zu prüfen.
+
+## 2. Technischer Arbeitsstand
+
+Der prozedurale Python-Fork ist inzwischen arbeitsfähig. Die zentralen Bestandteile laufen:
+
+```text
+YAML-/CSV-Konfiguration
+→ Metashape-Workflow
+→ Varianten- und Replikatläufe
+→ Manifest
+→ Orthomosaik-Export
+→ Stabilitätsanalyse
+→ support-aware Report
+```
+
+Der aktuelle Workflow umfasst:
+
+```text
+photo import
+→ match / align
+→ repository-definierte Sparse-/Tie-Point-Filterung
+→ camera optimization
+→ buildModel(source_data = Metashape.TiePointsData)
+→ buildOrthomosaic(surface = Metashape.ModelData)
+→ export
+→ repeated-build stability analysis
+```
+
+Wichtig ist die terminologische Einordnung: Die vorgeschaltete Tie-Point-Filterung ist Teil der eigenen Workflow-Logik im Repository. Der interne Name `filterPointsUSGS` darf fachlich nicht als Beleg für einen externen USGS-Workflow gelesen werden. Entscheidend ist die tatsächliche implementierte Logik: Es werden Tie Points über Metashape-Filterkriterien wie Reconstruction Uncertainty, Projection Accuracy und Reprojection Error reduziert und anschließend optimiert.
+
+## 3. Bisherige Experimente
+
+Der erste Variantenlauf war ein operativer Burntest. Er hat gezeigt, dass der Workflow grundsätzlich lauffähig ist, war aber methodisch nicht sauber genug für harte Parameterinterpretationen, weil Mesh-Komplexität und Smoothing teilweise gemeinsam variiert wurden.
+
+Der zweite Lauf war ein kontrollierter Smoothing-only-Test. Die Mesh-Komplexität wurde konstant gehalten, variiert wurde nur `noiterations`:
+
+```text
+smooth_5
+smooth_35
+smooth_80
+```
+
+Diese drei Werte bilden einen groben Screening-Schnitt: geringe Glättung, bisheriger Default und starke Glättung. Daraus folgt keine vollständige Parameteroptimierung, aber eine belastbarere Prüfung des bisherigen Defaults.
+
+## 4. Ergebnisse des Smoothing-only-Tests
+
+Die neue support-aware Evaluation trennt drei Bewertungsdimensionen:
+
+```text
+1. kontinuierliche Bildwertstabilität
+2. threshold-basierte RMSE15-Stabilitätsmaske
+3. räumliche Support-Persistenz im tatsächlichen Orthomosaik-Footprint
+```
+
+Das Ergebnis:
+
+```text
+Continuous stability candidate: smooth_35
+Threshold-mask candidate: smooth_35
+Support-persistence candidate: smooth_5
+```
+
+`smooth_35` liegt bei den RMSE-basierten Bildwertmetriken vorn. `smooth_5` hat beim Support-Dropout einen minimal besseren Wert. Der Unterschied ist klein:
+
+```text
+support_dropout_footprint:
+smooth_5   0.0063
+smooth_35  0.0067
+smooth_80  0.0067
+```
+
+Das entspricht etwa 0.63 % gegenüber 0.67 % des tatsächlichen Footprints. Diese Differenz rechtfertigt keine starke Siegerformulierung. Die RMSE-Werte zeigen dagegen eine klarere Tendenz zugunsten von `smooth_35`:
+
+```text
+p95_rmse_to_median:
+smooth_35  28.2548
+smooth_80  29.6491
+smooth_5   32.2035
+```
+
+## 5. Interpretation
+
+Der bisherige Default `noiterations = 35` ist im kontrollierten Test plausibel bestätigt. Er liefert innerhalb des eigenen Workflows einen stabilen Kompromiss aus Bildwertstabilität und räumlicher Support-Persistenz.
+
+Die Auswertung zeigt keine Überlegenheit gegenüber Metashape-internem Standard- oder Auto-Verhalten. Ein solcher Vergleich wurde bislang nicht durchgeführt. Getestet wurde der eigene Workflow mit aktivierter repository-definierter Tie-Point-Filterung, konstanter Mesh-Komplexität und variierter Mesh-Glättung.
+
+Die sauberste Zwischeninterpretation lautet:
+
+```text
+noiterations = 35 bleibt der begründete Arbeitsdefault für den aktuellen MOF-RGB-Waldbenchmark.
+smooth_5 ist beim Support nahezu gleichauf, zeigt aber schlechtere RMSE-basierte Bildwertstabilität.
+smooth_80 bringt gegenüber smooth_35 keinen erkennbaren Zusatznutzen.
+```
+
+## 6. Bedeutung der Support-Auswertung
+
+Die frühere Interpretation über `full_support_fraction` war missverständlich, weil dieser Wert auf das rechteckige Union-Grid bezogen ist. Ein niedriger Grid-Anteil beschreibt primär die Lage des Orthomosaik-Footprints innerhalb des rechteckigen Analysefensters.
+
+Die neue Auswertung ist methodisch sauberer, weil sie den tatsächlichen Footprint berücksichtigt:
+
+```text
+any_support_fraction_grid
+full_support_fraction_grid
+variable_support_fraction_grid
+support_persistence_footprint
+support_dropout_footprint
+```
+
+Der zentrale Wert ist `support_dropout_footprint`. Er beschreibt den Anteil des tatsächlichen Orthomosaik-Footprints, der in einigen, aber nicht allen Replikaten vorhanden ist. Im aktuellen Test liegt dieser Wert bei allen Varianten unter 0.7 %. Die räumliche Support-Stabilität ist damit insgesamt hoch.
+
+## 7. Grenzen des aktuellen Stands
+
+Die aktuelle Analyse bewertet repeated-build stability exportierter Orthomosaikprodukte. Sie bewertet keine absolute geometrische Genauigkeit. Für Aussagen zur geometrischen Genauigkeit wären unabhängige Checkpoints, GCPs, Referenzdaten oder separate geometrische Fehlermaße erforderlich.
+
+Der Parameterraum ist außerdem noch nicht systematisch erschlossen. Relevante Parametergruppen sind:
+
+```text
+Sparse-/Tie-Point-Filterung
+Mesh-Komplexität / face_count_custom
+Mesh-Smoothing / noiterations
+Orthomosaic-Optionen wie fill_holes und refine_seamlines
+Blending-Strategie
+Exportauflösung / orthoRes
+```
+
+Der aktuelle Test isoliert nur einen kleinen Ausschnitt: Smoothing bei konstanter Mesh-Komplexität.
+
+## 8. Architekturstand
+
+Die Entwicklung hat sich faktisch von einer R-Paket-Integration zu einer eigenständigen Python-Engine verschoben. Das ist fachlich sinnvoll, weil Metashape selbst Python-nativ gesteuert wird.
+
+Die Zielarchitektur ist:
+
+```text
+Python Core
+= Workflow-Engine, CLI, Batch, Reproduzierbarkeit, Evaluation
+
+Metashape-GUI-Adapter
+= Menü-/Script-Zugang für Nutzer:innen ohne CLI
+
+AM2/R-Adapter
+= späterer dünner Anschluss für R-Projektlogik und Ergebnisimport
+```
+
+Der AM2-/R-Anschluss ist nachgeordnet. Der Hauptpfad ist eine Python-/pip-first Engine mit stabilem Datei-Contract. Die Metashape-GUI-Anbindung ist als nächster attraktiver Frontend-Schritt naheliegend, weil sie den Workflow für Nutzer:innen verfügbar macht, die direkt in Metashape arbeiten.
+
+## 9. Nächste Arbeitsschritte
+
+Der nächste technische Schritt ist die Stabilisierung der Python-Core-Struktur:
+
+```text
+1. Python-Paketstruktur / pyproject.toml klären
+2. CLI-Einstiege definieren
+3. stabilen Datei-Contract dokumentieren
+4. aktuelle Workflow-Logik unverändert kapseln
+5. Metashape-GUI-Adapter als dünnes Frontend skizzieren
+```
+
+Die CLI sollte perspektivisch etwa diese Form haben:
+
+```text
+metashape-ortho run config.yml
+
+metashape-ortho experiment config.yml \
+  --variants variants.csv \
+  --reps 5 \
+  --experiment-dir EXP \
+  --metashape-dir /path/to/metashape-pro
+
+metashape-ortho evaluate EXP --skip-analyzer
+```
+
+Danach kann eine GUI-Schicht in Metashape denselben Core aufrufen:
+
+```text
+Config auswählen
+Output-Ordner wählen
+Preset wählen
+Workflow starten
+Report öffnen
+```
+
+## 10. Vorläufiger Arbeitsdefault
+
+Für die nächste Testphase bleibt der produktive Arbeitsdefault:
+
+```yaml
+buildModel:
+  source_data: Metashape.TiePointsData
+  face_count: Metashape.CustomFaceCount
+  face_count_custom: 100000
+  noiterations: 35
+
+buildOrthomosaic:
+  surface: ["Mesh"]
+  orthoRes: 0.05
+  fill_holes: True
+  refine_seamlines: True
+```
+
+Diese Konfiguration ist ein begründeter Arbeitsdefault, keine endgültige Optimierung. Der nächste methodisch saubere Test sollte die Mesh-Komplexität separat prüfen, bevor weitere Smoothing-Werte oder Orthomosaic-Optionen variiert werden.
