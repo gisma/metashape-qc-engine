@@ -35,7 +35,7 @@ Single Metashape workflow run:
 
 ```bash
 METASHAPE_DIR="/path/to/metashape-pro" \
-scripts/run_metashape_workflow.sh config/example.yml
+scripts/run_metashape_workflow.sh config/base.yml
 ````
 
 Repeated experiment:
@@ -78,3 +78,14 @@ Future frontends may include:
 This repository is distributed under the BSD 3-Clause License.
 
 It contains adapted components from the UC Davis / AM2 / automate-metashape code base. Original copyright, author, license, and disclaimer notices are retained in `LICENSE`; project-specific attribution and scope notes are provided in `NOTICE.md`.
+
+## Repository layout
+
+- `python/` contains the active workflow and analysis scripts used for Metashape execution, reproducibility runs, orthomosaic stability analysis, and support-aware evaluation.
+- `metashape_qc_engine/` contains the thin installable CLI wrapper that exposes selected scripts through the `metashape-qc` command.
+- `scripts/` contains shell launchers and bootstrap helpers for running the workflow inside the Metashape runtime environment.
+- `config/` contains reference YAML configurations, AM2-style derived configuration support, experiment configurations, and legacy pre-migration configurations.
+- `R/` contains AM2-style R helper scripts retained as a compatibility layer. The primary runtime logic lives in Python.
+- `docs/` contains audit notes, runtime notes, workflow documentation, and archived upstream documentation.
+- `calibration/` contains retained calibration CSV input/reference files.
+- `prior-versions/` contains archived workflow code for older Metashape compatibility/reference cases.
