@@ -127,3 +127,4 @@ dev/
 # Local Python dependencies for Agisoft Metashape runtime
 python/vendor/
 .venv/
+settings.json
