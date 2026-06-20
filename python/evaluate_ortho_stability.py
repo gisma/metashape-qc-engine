@@ -453,12 +453,13 @@ def select_medoid_replicate(
     manifest_rows: list[dict[str, str]],
     output_dir: Path,
     bands: int,
-) -> tuple[dict[str, str | float | None], list[str]]:
+) -> tuple[dict[str, str | float | None] | None, list[str]]:
     warnings_out: list[str] = []
     median_file = output_dir / "variants" / variant_id / "median_ortho.tif"
 
     if not median_file.is_file():
-        raise FileNotFoundError(f"Missing selected variant median raster: {median_file}")
+        warnings_out.append(f"Missing selected variant median raster: {median_file}")
+        return None, warnings_out
 
     candidates = []
     for row in manifest_rows:
@@ -482,11 +483,17 @@ def select_medoid_replicate(
             )
             continue
 
-        distance = raster_distance_to_median(
-            aligned_file=aligned_file,
-            median_file=median_file,
-            bands=bands,
-        )
+        try:
+            distance = raster_distance_to_median(
+                aligned_file=aligned_file,
+                median_file=median_file,
+                bands=bands,
+            )
+        except RuntimeError as exc:
+            warnings_out.append(
+                f"Could not score medoid candidate {variant_id}/{replicate}: {exc}"
+            )
+            continue
         if math.isinf(distance):
             warnings_out.append(
                 f"No common valid pixels for medoid candidate {variant_id}/{replicate}: "
@@ -504,7 +511,8 @@ def select_medoid_replicate(
         )
 
     if not candidates:
-        raise RuntimeError(f"No medoid replicate candidates found for variant: {variant_id}")
+        warnings_out.append(f"No medoid replicate candidates found for variant: {variant_id}")
+        return None, warnings_out
 
     selected = min(candidates, key=lambda item: item["distance_value"])
 
@@ -557,6 +565,20 @@ def write_selected_product(
         bands=bands,
     )
     warnings_out.extend(medoid_warnings)
+    medoid_mode = None
+    if medoid is not None:
+        medoid_mode = {
+            "variant_id": primary_variant,
+            "replicate": medoid["replicate"],
+            "ortho_file": medoid["ortho_file"],
+            "aligned_file": medoid["aligned_file"],
+            "distance_metric": "rgb_rmse_to_selected_variant_median_on_common_valid_pixels",
+            "distance_value": medoid["distance_value"],
+            "description": (
+                "Use the original Metashape replicate orthomosaic whose existing aligned "
+                "raster is closest to the selected variant's median_ortho.tif."
+            ),
+        }
 
     product = {
         "selection_policy": "continuous_first",
@@ -565,22 +587,13 @@ def write_selected_product(
         "product_modes": {
             "median_ortho": {
                 "path": str(median_file),
+                "exists": median_file.is_file(),
+                "missing": not median_file.is_file(),
                 "description": (
                     "Use the selected continuous-stability variant's existing median_ortho.tif."
                 ),
             },
-            "medoid_replicate": {
-                "variant_id": primary_variant,
-                "replicate": medoid["replicate"],
-                "ortho_file": medoid["ortho_file"],
-                "aligned_file": medoid["aligned_file"],
-                "distance_metric": "rgb_rmse_to_selected_variant_median_on_common_valid_pixels",
-                "distance_value": medoid["distance_value"],
-                "description": (
-                    "Use the original Metashape replicate orthomosaic whose existing aligned "
-                    "raster is closest to the selected variant's median_ortho.tif."
-                ),
-            },
+            "medoid_replicate": medoid_mode,
         },
         "support_persistence_context": {
             "role": "feasibility_coverage_context",
