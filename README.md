@@ -1,133 +1,87 @@
 # metashape-qc-engine
 
-`metashape-qc-engine` is a product-oriented reproducibility and QC workflow around Agisoft Metashape orthomosaic generation.
+## Project purpose
 
-The workflow supports:
+`metashape-qc-engine` is a product-analysis workflow for reproducible Agisoft Metashape orthomosaic candidate selection. It prepares candidate matrices, runs repeated Metashape builds, analyzes orthomosaic stability on a canonical grid, records support diagnostics, and writes a selected-product trace for review.
 
-- repeated Metashape runs,
-- variant matrices,
-- orthomosaic stability analysis,
-- support diagnostics,
-- selected product tracing.
+The workflow measures internal repeated-build stability and support persistence. It does not by itself establish absolute geometric accuracy, external truth, cross-date accuracy, platform comparison, or change-detection suitability.
 
-The project contains adapted components from the UC Davis / AM2 / automate-metashape workflow core and extends them with reproducibility, quality-control, and stability-evaluation logic. See `LICENSE` and `NOTICE.md`.
+## Current workflow
 
-## Current status
+For one image set, `metashape-qc prepare` writes run-local control files from a preset and variants template. `metashape-qc run-analysis` executes the candidate x replicate matrix through the Metashape runtime bridge. `metashape-qc resume-analysis` continues an interrupted run directory by skipping successful work and rerunning failed or missing work. `metashape-qc evaluate` runs or reuses the analyzer, writes support and stability summaries, creates threshold review products, and records `selected_product.json`.
 
-The active engine is still organized around existing runtime scripts:
-
-- `python/metashape_workflow.py`
-- `python/metashape_workflow_functions.py`
-- `scripts/run_metashape_workflow.sh`
-
-Additional product analysis and evaluation components are provided by:
-
-- `python/prepare_product_experiment.py`
-- `python/reproducibility_runner.py`
-- `python/ortho_stability_analyzer.py`
-- `python/evaluate_ortho_stability.py`
-
-The package/CLI layer is intentionally thin and should delegate to the existing runtime scripts without changing workflow logic.
-
-## Current product workflow
-
-Concise end-to-end commands are in [docs/quick_workflow.md](docs/quick_workflow.md).
-
-1. Prepare a product analysis from an image directory, product id, preset, replicate count, and output root:
+## Current command sequence
 
 ```bash
 metashape-qc prepare \
-  --image-dir /data/product-001/images \
-  --product-id product-001 \
-  --preset config/experiments/presets/mesh_facecount_smoothing_3x3.json \
-  --reps 10 \
-  --output-root /data/metashape-qc-runs
+  --image-dir "/path/to/input-images" \
+  --product-id "product_id" \
+  --preset "config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json" \
+  --reps 5 \
+  --output-root "/path/to/runs"
 ```
 
-The helper writes product-specific `config.yml` and `variants.csv` into the concrete run directory under the output root. These files are run artifacts and should not be committed.
-
-2. Run the repeated Metashape product analysis:
+`prepare` prints the concrete `metashape-qc run-analysis` command for the generated run directory.
 
 ```bash
-metashape-qc run-analysis /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10/config.yml \
-  --variants /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10/variants.csv \
-  --reps 10 \
-  --run-dir /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10 \
-  --metashape-dir /path/to/metashape-pro
+metashape-qc run-analysis "<run_dir>/config.yml" \
+  --variants "<run_dir>/variants.csv" \
+  --reps 5 \
+  --run-dir "<run_dir>" \
+  --metashape-dir "$METASHAPE_DIR"
 ```
-
-Failed Metashape replicates are recorded in `manifest.csv` and the matrix continues. To continue an aborted product analysis, use `resume-analysis`; successful variant/replicate combinations are skipped, failed or missing combinations are rerun, and manifest history is preserved.
 
 ```bash
-metashape-qc resume-analysis /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10/config.yml \
-  --variants /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10/variants.csv \
-  --reps 10 \
-  --run-dir /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10 \
-  --metashape-dir /path/to/metashape-pro
+metashape-qc resume-analysis "<run_dir>/config.yml" \
+  --variants "<run_dir>/variants.csv" \
+  --reps 5 \
+  --run-dir "<run_dir>" \
+  --metashape-dir "$METASHAPE_DIR"
 ```
-
-3. Evaluate the completed product analysis:
 
 ```bash
-metashape-qc evaluate /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10
+metashape-qc evaluate "<run_dir>"
 ```
 
-If analyzer outputs already exist:
+## Current reference benchmark
 
-```bash
-metashape-qc evaluate /data/metashape-qc-runs/product-001_mesh_facecount_smoothing_reps10 --skip-analyzer
-```
+The current reference benchmark is the MOF Alignment-Mesh-Ortho reference matrix:
 
-4. Inspect the technical outputs:
+- Image directory: `/datadisk/data/uav/MOF_repro_test_recovered/input-images`
+- Preset: `config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json`
+- Matrix: alignment downscale, adaptive fitting, mesh face count, mesh smoothing iterations, and requested orthomosaic pixel size
+- Size: `48` processing candidates x `5` replicates = `240` Metashape runs
 
-- `stability_union/summary_key_metrics.tsv`
-- `stability_union/support_valid_count_histogram.tsv`
-- `stability_union/evaluation_report.md`
-- `selected_product.json`
-- `qgis_open_selected.sh` and `qgis_open_selected.bat`
-- `threshold_review/threshold_sensitivity.tsv`
+`buildOrthomosaic.orthoRes` is the requested orthomosaic pixel size / sampling resolution passed to Metashape. It is not a direct measure of geometric accuracy or true scene detail.
 
-## Terminology
+Dense Cloud, Depth Maps, Point Cloud, DSM/DEM quality, 3D reconstruction quality, GCP/checkpoint validation, cross-date accuracy, platform comparison, and change-detection suitability are outside the current MOF reference benchmark.
 
-- `image directory`: directory containing input images.
-- `product id`: logical dataset or product identifier used for generated names.
-- `output root`: parent directory for product analysis runs.
-- `run directory`: concrete directory containing manifest, variants, outputs, stability products, and selected product trace.
-- `preset`: product-analysis template, not a dataset.
-- `variants CSV`: generated technical matrix consumed by the runner.
-- `selected product trace`: technical selection record for user and domain review, not an automatic scientific truth claim.
+`config/experiments/presets/mesh_facecount_smoothing_3x3.json` remains useful as a small starter/example preset, but it is not the current reference benchmark.
 
-## Architecture direction
+## Documentation map
 
-The intended architecture is:
+- [WORKFLOW_CHAIN.md](WORKFLOW_CHAIN.md): active architecture and runtime chain.
+- [docs/quick_workflow.md](docs/quick_workflow.md): concise operational command guide.
+- [docs/orthomosaic_stability_manual.md](docs/orthomosaic_stability_manual.md): maintained interpretation and workflow manual.
+- [docs/product_manifest_contract.md](docs/product_manifest_contract.md): manifest, evaluator, threshold review, and selected-product contract.
+- [docs/current_system_reference.md](docs/current_system_reference.md): code-derived current system reference.
+- [docs/rationale_and_paper_argument_register.md](docs/rationale_and_paper_argument_register.md): rationale and paper argument register.
+- [docs/legacy_document_mining_report.md](docs/legacy_document_mining_report.md): mining guidance for legacy material.
+- [config/experiments/README.md](config/experiments/README.md): preset and matrix reference.
 
-```text
-Python core
-→ Metashape runtime execution
-→ repeated product analyses
-→ stability / support evaluation
-→ controlled product generation
-```
+## Repository layout
 
-Future frontends may include:
-
-* a thin command-line package entry point,
-* a Metashape GUI/menu adapter,
-* a later AM2/R adapter around the file and CLI contract.
+- `metashape_qc_engine/`: thin installable CLI wrapper exposing `metashape-qc`.
+- `python/`: Metashape workflow, preparation, reproducibility runner, analyzer, and evaluator scripts.
+- `scripts/`: shell bridge for launching the workflow inside the Metashape runtime environment.
+- `config/`: runtime YAML configs, experiment presets, variant templates, and legacy config material.
+- `docs/`: active documentation, reference contracts, audit notes, and upstream/background material.
+- `R/`: retained AM2-style helper scripts and compatibility material; not the current primary product-analysis path.
+- `calibration/`: retained calibration CSV input/reference files.
+- `prior-versions/`: archived workflow code for older Metashape compatibility/reference cases.
 
 ## License and attribution
 
 This repository is distributed under the BSD 3-Clause License.
 
 It contains adapted components from the UC Davis / AM2 / automate-metashape code base. Original copyright, author, license, and disclaimer notices are retained in `LICENSE`; project-specific attribution and scope notes are provided in `NOTICE.md`.
-
-## Repository layout
-
-- `python/` contains the active workflow and analysis scripts used for Metashape execution, reproducibility runs, orthomosaic stability analysis, and support-aware evaluation.
-- `metashape_qc_engine/` contains the thin installable CLI wrapper that exposes selected scripts through the `metashape-qc` command.
-- `scripts/` contains shell launchers and bootstrap helpers for running the workflow inside the Metashape runtime environment.
-- `config/` contains reference YAML configurations, AM2-style derived configuration support, experiment configurations, and legacy pre-migration configurations.
-- `R/` contains AM2-style R helper scripts retained as a compatibility layer. The primary runtime logic lives in Python.
-- `docs/` contains audit notes, runtime notes, workflow documentation, and archived upstream documentation.
-- `calibration/` contains retained calibration CSV input/reference files.
-- `prior-versions/` contains archived workflow code for older Metashape compatibility/reference cases.

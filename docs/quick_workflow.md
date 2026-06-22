@@ -1,51 +1,37 @@
 # Quick workflow
 
-## Terminology
+This is the concise operational path for a product-analysis run. Use one run directory as the container for generated controls, Metashape outputs, manifest history, analyzer products, evaluator products, threshold review products, QGIS launchers, and `selected_product.json`.
 
-This workflow uses one run directory as the operational container.
+## Minimal command sequence
 
-A **product** is the intended orthomosaic product for one image set, identified by a `product_id`.
+Optionally determine the generic technical orthomosaic resolution before defining product-resolution factors:
 
-A **product analysis** is the reproducibility-based analysis for that product. It runs several processing variants with repeated Metashape runs and compares their stability.
+```bash
+metashape-qc run-analysis "CONFIG" \
+  --reps 1 \
+  --run-dir "RUN_DIR" \
+  --generic-ortho-resolution
+```
 
-A **run directory** is the concrete folder that contains the run-local control files, the manifest, all variant/replicate outputs, evaluation outputs, selected-candidate metadata, and QGIS launchers.
-
-A **variant** is one processing candidate, defined by a parameter combination such as face count and smoothing.
-
-A **replicate** is one repeated Metashape run for the same variant.
-
-The command `metashape-qc run-analysis` executes the variant × replicate matrix. The legacy `metashape-qc experiment` command remains available for compatibility.
-
-The command `metashape-qc evaluate` evaluates the run directory and writes the selected candidate trace.
-
-The selected candidate is not a new orthomosaic processing step. It is the documented outcome of the evaluation: the selected variant, the robust median orthomosaic, the medoid original Metashape orthomosaic if available, and quality artifacts for review.
+This mode runs one normal workflow execution without a variants table and forces `buildOrthomosaic.orthoRes = 0` only for this probe run. The resulting `recommended_numeric_orthoRes` is read from the exported GeoTIFF geotransform, not inferred from the config or from a variant name. The reported value can then be inserted manually into later product preparation as a numeric `buildOrthomosaic.orthoRes` factor.
 
 
-## 1. Prepare a product analysis
-
-Input is an image directory. A product id is required. The preset defines the product analysis design, and the output root defines where run directories are created.
-
-The preparation step writes run-local control files:
-
-- `<run_dir>/config.yml`
-- `<run_dir>/variants.csv`
-
-It also prints the exact `metashape-qc run-analysis` command to run.
+Prepare run-local controls:
 
 ```bash
 metashape-qc prepare \
-  --image-dir "/path/to/images" \
-  --product-id "example_product" \
-  --preset "config/experiments/presets/mesh_facecount_smoothing_3x3.json" \
+  --image-dir "/path/to/input-images" \
+  --product-id "product_id" \
+  --preset "config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json" \
   --reps 5 \
-  --output-root "/path/to/runs" \
-  --face-counts 50000,100000,250000 \
-  --smoothing 5,35,80
+  --output-root "/path/to/runs"
 ```
 
-Do not use `config/experiments/generated/` as persistent run input. Regenerate the run-local control files for each product analysis.
+`prepare` writes `<run_dir>/config.yml` and `<run_dir>/variants.csv`, then prints the concrete `metashape-qc run-analysis` command. It does not start Metashape.
 
-## 2. Run the product analysis
+Run the product analysis:
+
+
 
 ```bash
 metashape-qc run-analysis "<run_dir>/config.yml" \
@@ -55,11 +41,7 @@ metashape-qc run-analysis "<run_dir>/config.yml" \
   --metashape-dir "$METASHAPE_DIR"
 ```
 
-`METASHAPE_DIR` is the Agisoft Metashape installation directory used by the runner.
-
-`manifest.csv` records each variant/replicate.
-
-## 3. Resume an aborted product analysis
+Resume an interrupted product analysis:
 
 ```bash
 metashape-qc resume-analysis "<run_dir>/config.yml" \
@@ -69,94 +51,61 @@ metashape-qc resume-analysis "<run_dir>/config.yml" \
   --metashape-dir "$METASHAPE_DIR"
 ```
 
-Resume behavior:
-
-- `ok` and `ok_no_ortho` rows are skipped.
-- `failed` and missing rows are rerun.
-- Manifest history is preserved.
-- The latest row per `variant_id` + `replicate` is used for the resume decision.
-- A single failed replicate must not stop the full matrix.
-
-## 4. Evaluate a completed product analysis
+Evaluate a completed or partially completed run directory:
 
 ```bash
 metashape-qc evaluate "<run_dir>"
 ```
 
-If analyzer products already exist:
+If analyzer outputs already exist and should be reused:
 
 ```bash
 metashape-qc evaluate "<run_dir>" --skip-analyzer
 ```
 
-Main outputs:
-
-- `stability_union/summary.csv`
-- `stability_union/summary_key_metrics.tsv`
-- `stability_union/evaluation_report.md`
-- `selected_product.json`
-- `qgis_open_selected.sh`
-- `qgis_open_selected.bat`
-
-## 5. Threshold quality review
-
-Threshold review is derived from existing `rmse_to_median.tif` rasters. It does not rerun Metashape, and it does not clean or modify orthomosaics.
-
-It writes:
-
-- `threshold_review/threshold_sensitivity.tsv`
-- `threshold_review/threshold_winners.tsv`
-- `threshold_review/rmse<THR>/variants/<variant_id>/quality_flag_rmse<THR>.tif`
-- `qgis_open_threshold_review.sh`
-- `qgis_open_threshold_review.bat`
-
-Quality flag values:
-
-- `0` = invalid / no support
-- `1` = stable / usable under threshold
-- `2` = unstable / review or exclude
-
-Default thresholds: `5,10,15,20,25,30`.
-
-## 6. Product selection logic
-
-Priority:
-
-1. Continuous stability selects the primary variant.
-2. Support persistence is a coverage/feasibility check.
-3. Threshold quality flags are guard/review layers.
-
-`selected_product.json` points to:
-
-- selected variant
-- `median_ortho.tif`
-- medoid original Metashape orthomosaic, if available
-- aligned medoid raster, if available
-- warnings, if applicable
-
-## 7. QGIS launchers
-
-Launchers are standard artifacts.
-
-POSIX:
+## MOF reference prepare command
 
 ```bash
-./qgis_open_selected.sh
-./qgis_open_threshold_review.sh
+metashape-qc prepare \
+  --image-dir "/datadisk/data/uav/MOF_repro_test_recovered/input-images" \
+  --product-id "mof_alignment_mesh_ortho_reference_v1" \
+  --preset "config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json" \
+  --reps 5 \
+  --output-root "/datadisk/data/uav/MOF_repro_reference/runs"
 ```
 
-Windows:
+The MOF Alignment-Mesh-Ortho reference matrix expands to `48` processing candidates. With `5` replicates, the run directory represents `48 x 5 = 240` Metashape runs.
 
-```bat
-qgis_open_selected.bat
-qgis_open_threshold_review.bat
-```
+## What to inspect
 
-Windows users can set `QGIS_BIN`. Launchers use paths relative to the run directory.
+Core files:
 
-## 8. Minimal troubleshooting
+- `<run_dir>/manifest.csv`
+- `<run_dir>/selected_product.json`
+- `<run_dir>/stability_union/evaluation_report.md`
+- `<run_dir>/stability_union/summary_key_metrics.tsv`
+- `<run_dir>/stability_union/support_valid_count_histogram.tsv`
+- `<run_dir>/threshold_review/threshold_sensitivity.tsv`
 
-- If `BASE_CONFIG` is missing, do not use old repo-local generated paths.
-- Regenerate run-local control files with `metashape-qc prepare`.
-- If a product analysis was aborted, rerun with `metashape-qc resume-analysis`.
-- If evaluation appears idle, it may be writing quality flag rasters; check the `threshold_review` file count.
+Raster products for review:
+
+- `<run_dir>/stability_union/variants/<variant_id>/median_ortho.tif`
+- `<run_dir>/stability_union/variants/<variant_id>/valid_count.tif`
+- `<run_dir>/stability_union/variants/<variant_id>/mad_rgb.tif`
+- `<run_dir>/stability_union/variants/<variant_id>/rmse_to_median.tif`
+- `<run_dir>/stability_union/variants/<variant_id>/stable_mask_rmse<THRESH>.tif`
+- `<run_dir>/stability_union/variants/<variant_id>/unstable_mask_rmse<THRESH>.tif`
+- `<run_dir>/threshold_review/rmse<THRESH>/variants/<variant_id>/quality_flag_rmse<THRESH>.tif`
+
+QGIS launchers:
+
+- `<run_dir>/qgis_open_selected.sh`
+- `<run_dir>/qgis_open_selected.bat`
+- `<run_dir>/qgis_open_threshold_review.sh`
+- `<run_dir>/qgis_open_threshold_review.bat`
+
+`selected_product.json` is a trace of the implemented selection procedure. It is not a claim of absolute truth. `quality_flag_rmse` rasters are threshold interpretation guards; they do not clean or modify orthomosaics.
+
+## Compatibility note
+
+`metashape-qc experiment` remains available as a legacy compatibility wrapper around the same runner. Active operational instructions should use `metashape-qc run-analysis` and `metashape-qc resume-analysis` with `--run-dir`.

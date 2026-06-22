@@ -1,209 +1,181 @@
 # Workflow Chain
 
-## Active Product Workflow
+## Status
 
-`metashape-qc-engine` is now organized as a product-oriented reproducibility and QC workflow around Metashape orthomosaic generation. The active user sequence is:
+This is the active architecture and runtime-chain document for `metashape-qc-engine`. Implementation truth comes from the code, config, presets, CSV matrices, runner, analyzer, and evaluator. `docs/current_system_reference.md` is the committed technical reference for the current implementation.
 
-1. Prepare product-specific analysis inputs with `metashape-qc prepare`.
-2. Run repeated Metashape variants with `metashape-qc run-analysis`.
-3. Evaluate orthomosaic stability and support diagnostics with `metashape-qc evaluate`.
-4. Inspect `stability_union/summary_key_metrics.tsv`, `stability_union/support_valid_count_histogram.tsv`, `stability_union/evaluation_report.md`, `selected_product.json`, the QGIS launchers, and `threshold_review/threshold_sensitivity.tsv`.
-
-The preparation step takes an image directory, product id, preset, replicate count, and output root. It writes `config.yml` and `variants.csv` into the concrete run directory, not into the source repository.
-
-Preparation command shape is:
-
-```bash
-metashape-qc prepare \
-  --image-dir <image_dir> \
-  --product-id <product_id> \
-  --preset <preset.json> \
-  --reps N \
-  --output-root <output_root>
-```
-
-Run command shape is:
-
-```bash
-metashape-qc run-analysis <config.yml> \
-  --variants <variants.csv> \
-  --reps N \
-  --run-dir <run_dir> \
-  --metashape-dir <METASHAPE_DIR>
-```
-
-If a Metashape replicate fails, the runner records `status=failed` in `manifest.csv` and continues the matrix. Resume aborted product analyses with `resume-analysis`; successful variant/replicate combinations are skipped, failed or missing combinations are rerun, and prior manifest rows are preserved as history.
-
-```bash
-metashape-qc resume-analysis <config.yml> \
-  --variants <variants.csv> \
-  --reps N \
-  --run-dir <run_dir> \
-  --metashape-dir <METASHAPE_DIR>
-```
-
-Evaluation command shape is:
-
-```bash
-metashape-qc evaluate <run_dir>
-```
-
-or, when `stability_union/summary.csv` and analyzer rasters already exist:
-
-```bash
-metashape-qc evaluate <run_dir> --skip-analyzer
-```
-
-`selected_product.json` is a technical trace. It records the implemented selection procedure and warnings for user and domain review; it does not validate scientific correctness.
-
-## Procedural Metashape Runtime
-
-The active workflow is the recovered fork-style procedural runner:
-
-- `python/metashape_workflow.py`
-- `python/metashape_workflow_functions.py`
-- `python/read_yaml.py`
-- flat/camelCase YAML configs such as `config/base.yml` and `config/legacy/base2_pre_migration_franzosenwiese.yml`
-
-The runner loads one YAML config, converts Metashape object strings, then calls module-level functions in a fixed order. The workflow is not step-isolated and does not use an object-oriented workflow class.
-
-## Upstream Workflow Not Active
-
-The upstream class-based `MetashapeWorkflow` architecture is not active in this recovered chain. The nested snake_case config schema in `config/config-example.yml` is not the active runtime schema for `python/metashape_workflow.py`.
-
-Do not treat upstream `project:`, `add_photos`, `build_point_cloud`, or `build_orthomosaic` keys as active for this runner unless the workflow is deliberately migrated later.
-
-## R and Config Generation Chain
-
-`R/prep_configs.R` is the restored batch config generator. It expects a directory containing:
-
-- `base.yml`
-- `derived.yml`
-
-The script reads `base.yml`, reads config fragments from `derived.yml`, merges each fragment into the base config with `modifyList()`, writes generated `cfg_<run_name>.yml` files, and writes a `config_batch.sh` script that runs `python/metashape_workflow.py` once per generated config.
-
-`R/create_derived_configs.R` provides a function-based helper for generating derived YAML files from a base config and a replacement data frame. It preserves the same flat/camelCase schema when the replacement keys match that schema.
-
-## Config Files
-
-`config/base.yml` is the restored example/default flat-schema config. It is the expected input shape for the active Python runner and the default filename expected by `R/prep_configs.R`.
-
-`config/legacy/base2_pre_migration_franzosenwiese.yml` is a separate/manual fork config with project-specific paths and Ortho+ oriented settings. It uses the same active flat/camelCase schema, including `buildModel.noiterations` and `buildOrthomosaic.orthoRes`.
-
-`config/derived.yml` contains partial config fragments for `R/prep_configs.R`. These fragments are merged into `base.yml` to produce full generated configs. They must target active paths such as `addPhotos.multispectral` and `buildPointCloud`.
-
-`config/config-example.yml` is an upstream reference config. It uses the upstream nested snake_case schema and is not the active schema for the recovered procedural runner.
-
-## Product Analysis Preset
-
-The active product starter preset is:
+## Active product-analysis chain
 
 ```text
-config/experiments/presets/mesh_facecount_smoothing_3x3.json
+prepare -> run-analysis / resume-analysis -> evaluate -> review
 ```
 
-It defines a mesh orthomosaic product analysis that varies:
+The workflow analyzes candidate orthomosaic products for one image set. It prepares run-local controls, executes repeated Metashape builds across variants and replicates, evaluates internal repeated-build stability and support persistence, and writes review artifacts. It does not convert the selected product into external truth.
+
+## Prepare stage
+
+`metashape-qc prepare` generates a concrete run directory from an image directory, product id, preset, replicate count, and output root.
+
+Implemented behavior:
+
+- validates that the image directory exists and contains supported image files;
+- reads a preset JSON file;
+- expands the Cartesian product of preset factor values;
+- writes `<run_dir>/config.yml`;
+- writes `<run_dir>/variants.csv`;
+- prints the run directory, variant count, replicate count, total run count, and the `metashape-qc run-analysis` command.
+
+The generated files are run artifacts. They belong in the run directory, not in the source repository.
+
+Preset JSON still uses the internal field name `experiment_dir_template`; active user-facing documentation should call the resulting path the run directory.
+
+## Runner stage
+
+`metashape-qc run-analysis` consumes the run-local `config.yml` and `variants.csv`.
+
+Implemented behavior:
+
+- reads the base YAML config;
+- reads the variants CSV, or uses one `default` variant if none is supplied;
+- requires at least two replicates;
+- applies CSV override columns as dotted YAML keys;
+- creates per-variant and per-replicate directories under `<run_dir>/variants/<variant_id>/`;
+- writes replicate configs under `configs/`;
+- writes projects, outputs, and launcher logs under `runs/<rep_label>/`;
+- forces each replicate config to use a fresh project;
+- calls `scripts/run_metashape_workflow.sh <rep_config>`;
+- appends every attempt to `<run_dir>/manifest.csv`;
+- continues after failed replicates and returns nonzero if any new failure occurred.
+
+Manifest statuses are `ok`, `ok_no_ortho`, and `failed`. The analyzer uses only rows with `status == "ok"`, a non-empty `ortho_file`, and an existing raster file.
+
+## Resume behavior
+
+`metashape-qc resume-analysis` uses the same runner contract as `run-analysis` and the same run directory. It reads existing manifest history, skips successful variant/replicate combinations, and reruns failed or missing combinations. Rerun attempts keep the same variant and replicate identity while using attempt labels such as `rep_001_attempt_002`.
+
+`--experiment-dir` may still exist as a legacy alias for `--run-dir`; active instructions use `--run-dir`.
+
+## Metashape runtime bridge
+
+Metashape workflow execution requires the Agisoft Metashape Python runtime or launcher environment. The active bridge is:
 
 ```text
-buildModel.face_count_custom
-buildModel.noiterations
+scripts/run_metashape_workflow.sh
 ```
 
-Preset factor values are used by default. The current starter script also implements `--factor COLUMN=VALUE1,VALUE2,...`, `--face-counts`, `--smoothing`, and `--variant-id-template` overrides.
+The bridge resolves `metashape.sh`, adds repo-local vendored Python dependencies to `PYTHONPATH`, and runs:
 
-## YAML Parser
-
-`python/read_yaml.py` loads YAML with `yaml.SafeLoader`, then walks the resulting dictionary and converts string values containing `Metashape` into live Metashape objects with `eval()`.
-
-This is why active configs can contain values such as:
-
-- `Metashape.ReferencePreselectionSource`
-- `Metashape.ModerateFiltering`
-- `Metashape.MosaicBlending`
-
-The parser is imported by `python/metashape_workflow.py` as either `from python import read_yaml` or `import read_yaml`, depending on how the script is launched.
-
-## Runner Startup
-
-`python/metashape_workflow.py` starts the chain.
-
-Config selection is:
-
-```python
-if len(sys.argv) > 1:
-    config_file = sys.argv[1]
-else:
-    config_file = manual_config_file
+```text
+python/metashape_workflow.py <rep_config>
 ```
 
-Then it calls:
+`metashape-qc run` invokes this bridge once for a single config. `run-analysis` and `resume-analysis` invoke it once per generated candidate/replicate config and capture launcher stdout/stderr in each replicate `launcher.log`.
 
-```python
-cfg = read_yaml.read_yaml(config_file)
-```
+The analyzer and evaluator run in a normal Python environment when required geospatial dependencies are available. They do not require the Metashape runtime unless they are launching workflow execution.
 
-The parsed config is passed into the procedural functions in `python/metashape_workflow_functions.py`.
+## Procedural Metashape runtime schema
 
-## Function Order
+The active runtime schema is the flat/camelCase YAML schema used by `config/base.yml` and `config/experiments/*.yml`.
 
-The runner calls the workflow functions in this order:
+`python/read_yaml.py` loads YAML with `yaml.SafeLoader`, then converts string values containing `Metashape` into live Metashape objects, except for path/project/name fields. Lists containing Metashape object strings are converted to lists of evaluated Metashape objects.
 
-1. `project_setup(cfg, config_file)`
-2. `enable_and_log_gpu(log, cfg)`
-3. `add_photos(doc, cfg)` when `photo_path` is non-empty and `addPhotos.enabled` is true
-4. `calibrate_reflectance(doc, cfg)` when enabled
-5. `align_photos(doc, log, run_id, cfg)` when enabled
-6. `reset_region(doc)` after alignment
-7. `filter_points_usgs_part1(doc, log, cfg)` when enabled
-8. `reset_region(doc)` after filtering part 1
-9. `add_gcps(doc, cfg)` when enabled
-10. `reset_region(doc)` after GCP import
-11. `optimize_cameras(doc, log, run_id, cfg)` when enabled
-12. `reset_region(doc)` after camera optimization
-13. `filter_points_usgs_part2(doc, log, cfg)` when enabled
-14. `reset_region(doc)` after filtering part 2
-15. `build_depth_maps(doc, log, cfg)` when enabled
-16. `build_point_cloud(doc, log, run_id, cfg)` when enabled
-17. `build_model(doc, log, run_id, cfg)` when enabled
-18. `build_dem_orthomosaic(doc, log, run_id, cfg)` always called; internal config flags decide DEM and orthomosaic work
-19. `add_align_secondary_photos(doc, log, run_id, cfg)` when `photo_path_secondary` is non-empty
-20. `export_report(doc, run_id, cfg)`
-21. `finish_run(log, config_file)`
+The active runner is procedural. It does not use the upstream class workflow or the upstream nested snake_case config schema.
 
-Helper functions used inside those steps include `export_cameras()`, `classify_ground_points()`, and `build_export_orthomosaic()`.
+Active function order in `python/metashape_workflow.py`:
 
-## Ortho, DEM, and Orthomosaic Logic
+1. `project_setup`
+2. `enable_and_log_gpu`
+3. optional `add_photos`
+4. optional `calibrate_reflectance`
+5. optional `align_photos`
+6. optional `filter_points_usgs_part1`
+7. optional `add_gcps`
+8. optional `optimize_cameras`
+9. optional `filter_points_usgs_part2`
+10. optional `build_depth_maps`
+11. optional `build_point_cloud`
+12. optional `build_model`
+13. `build_dem_orthomosaic`
+14. optional `add_align_secondary_photos`
+15. `export_report`
+16. `finish_run`
 
-DEM and orthomosaic behavior is concentrated in:
+`build_dem_orthomosaic` is always called, but DEM and orthomosaic work are controlled by nested config flags.
 
-- `build_model()`
-- `build_dem_orthomosaic()`
-- `build_export_orthomosaic()`
+## Analyzer/evaluator stage
 
-`build_model()` builds and exports the model/mesh according to `buildModel` settings.
+`metashape-qc evaluate <run_dir>` uses `<run_dir>/stability_union` as the analyzer/evaluator output directory.
 
-`build_dem_orthomosaic()` handles DEM surfaces from `buildDem.surface`, including `DSM-ptcloud`, `DTM-ptcloud`, and `DSM-mesh`. It exports DEM rasters when `buildDem.export` is true.
+By default it runs the orthomosaic stability analyzer first. With `--skip-analyzer`, it reuses existing analyzer outputs. The evaluator then reads analyzer summaries and the manifest, computes support metrics from `valid_count.tif`, ranks candidates, writes compact review tables, writes threshold review products, and records the selected-product trace.
 
-`build_export_orthomosaic()` builds an orthomosaic from either mesh/model data or active elevation data. It uses the active fork key `buildOrthomosaic.orthoRes` for orthomosaic resolution and exports raster output when `buildOrthomosaic.export` is true.
+Analyzer outputs include:
 
-## Manual Run
+- `stability_union/canonical_grid.json`
+- `stability_union/summary.csv`
+- `stability_union/aligned/<variant_id>/<replicate>_aligned.tif`
+- `stability_union/variants/<variant_id>/valid_count.tif`
+- `stability_union/variants/<variant_id>/median_ortho.tif`
+- `stability_union/variants/<variant_id>/mad_rgb.tif`
+- `stability_union/variants/<variant_id>/rmse_to_median.tif`
+- `stability_union/variants/<variant_id>/stable_mask_rmse<THRESH>.tif`
+- `stability_union/variants/<variant_id>/unstable_mask_rmse<THRESH>.tif`
 
-Run with an explicit config path so the old local fallback path is not used:
+Evaluator/review outputs include:
 
-```bash
-python python/metashape_workflow.py config/base.yml
-```
+- `stability_union/summary_key_metrics.tsv`
+- `stability_union/support_valid_count_histogram.tsv`
+- `stability_union/qgis_layers.txt`
+- `stability_union/evaluation_report.md`
+- `<run_dir>/threshold_review/threshold_sensitivity.tsv`
+- `<run_dir>/threshold_review/threshold_winners.tsv`
+- `<run_dir>/threshold_review/rmse<THRESH>/variants/<variant_id>/quality_flag_rmse<THRESH>.tif`
+- `<run_dir>/selected_product.json`
+- QGIS launcher scripts in the run directory
 
-or:
+`quality_flag_rmse` rasters are threshold review guards. They do not clean or modify orthomosaics.
 
-```bash
-python python/metashape_workflow.py config/legacy/base2_pre_migration_franzosenwiese.yml
-```
+## Selected-product trace and QGIS review
 
-In production, run this with the Python interpreter provided by Agisoft Metashape or an environment where the `Metashape` module is installed.
+`selected_product.json` records the implemented selection procedure. It is a technical trace, not a claim of absolute truth.
 
-## Known Caveats
+The current policy is `continuous_first`: continuous stability selects the primary candidate, support persistence provides guard/context information, and threshold quality flags provide threshold-dependent review context. The median orthomosaic is synthetic. When medoid scoring succeeds, the evaluator also records the closest original Metashape replicate for the selected variant.
 
-- The Agisoft `Metashape` Python module is required. Ordinary system Python can parse the files but cannot execute the real workflow.
-- The no-argument fallback path is old/local: `~/dev/metashape-qc-engine/config/base.yml`.
-- `config/config-example.yml` is an upstream reference file, not the active schema for this recovered workflow.
+QGIS launchers open selected-product and threshold-review layers for inspection. Review remains required before using an output product.
+
+## MOF reference benchmark
+
+The current reference benchmark is MOF:
+
+- Image directory: `/datadisk/data/uav/MOF_repro_test_recovered/input-images`
+- Preset: `config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json`
+- Matrix: Alignment-Mesh-Ortho sensitivity
+- Factors: `alignPhotos.downscale`, `alignPhotos.adaptive_fitting`, `buildModel.face_count_custom`, `buildModel.noiterations`, `buildOrthomosaic.orthoRes`
+- Size: `2 x 2 x 3 x 2 x 2 = 48` candidates
+- Expected run count with `--reps 5`: `48 x 5 = 240` Metashape runs
+
+The MOF template disables Dense/Depth/PointCloud/DEM products and builds mesh-based orthomosaics. `buildOrthomosaic.orthoRes` is a requested sampling/product-resolution factor, not an accuracy claim.
+
+## Legacy wrappers and upstream/background note
+
+Implemented compatibility wrappers:
+
+- `metashape-qc run`: direct single-config wrapper around the Metashape runtime bridge.
+- `metashape-qc experiment`: legacy wrapper around the reproducibility runner.
+- `metashape-qc analyze`: direct wrapper around the orthomosaic stability analyzer.
+
+The AM2/automate-metashape upstream and class workflow material is useful background and attribution context. It is not the current architecture contract. R/config-generation helpers are retained compatibility/background material, not the primary product-analysis workflow.
+
+## Non-scope
+
+The current MOF reference benchmark does not establish:
+
+- absolute geometric accuracy;
+- GCP/checkpoint validation;
+- cross-date accuracy;
+- change-detection suitability;
+- platform comparison;
+- Dense/Depth-Map/DSM quality;
+- 3D reconstruction quality;
+- building reconstruction quality.
+
+Franzosenwiese is a boundary/stress case, not the current reference benchmark.

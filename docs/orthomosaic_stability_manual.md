@@ -1,466 +1,282 @@
 # Orthomosaic Stability Workflow Manual
 
-This manual describes the standard workflow for repeatable UAV orthomosaic experiments with Metashape and stability analysis.
+## Status
 
-The workflow has three stages:
+This is the maintained detailed workflow and interpretation manual for the active product-analysis architecture. It describes the current `prepare -> run-analysis/resume-analysis -> evaluate -> review` chain and the interpretation of analyzer and evaluator products.
 
-1. Single Metashape orthomosaic run
-2. Variants x replicates with the reproducibility runner
-3. Canonical-grid stability analysis
+Implementation truth comes from the code, config, presets, CSV matrices, runner, analyzer, and evaluator, with `docs/current_system_reference.md` as the committed technical reference.
 
-Full YAML and parameter details are in the appendix:
-[Parameter and File Reference](orthomosaic_stability_reference.md)
+## Purpose
 
-## Product-oriented preparation layer
+The workflow supports reproducible Agisoft Metashape orthomosaic candidate selection. It tests processing candidates with repeated Metashape builds, compares successful orthomosaics on a canonical grid, summarizes internal stability and support persistence, and writes a selected-product trace for user and domain review.
 
-The product-oriented workflow separates dataset identity from concrete run paths:
+The output is a documented candidate-selection procedure, not an automatic validation of scientific correctness.
 
-`image directory`
-is the actual directory containing the input images used by Metashape.
+## What the workflow evaluates
 
-`product id`
-is the logical dataset or product identifier used in generated names.
+The current workflow evaluates:
 
-`output root`
-is the parent directory where experiment runs are created.
+- repeated-build orthomosaic stability for tested processing candidates;
+- support consistency across successful replicates;
+- image-value deviation from each candidate's median orthomosaic;
+- threshold-dependent RMSE review flags;
+- manifest-tracked execution status and paths;
+- a selected-product trace under the implemented `continuous_first` policy.
 
-`experiment directory`
-is the concrete run directory for one prepared experiment.
+## What it does not evaluate
 
-`preset`
-is an experiment-design template. It is not a dataset.
+The current MOF reference workflow does not evaluate:
 
-The preparation script writes the generated `config.yml` and `variants.csv` into the experiment directory. These generated files are run artifacts and should not be committed.
+- absolute geometric accuracy;
+- GCP/checkpoint validation;
+- cross-date accuracy;
+- change-detection suitability;
+- platform comparison;
+- Dense Cloud, Depth Map, Point Cloud, DSM/DEM quality;
+- 3D reconstruction or building reconstruction quality.
 
-Example:
+Internal stability is not external accuracy. A candidate can be reproducible and still be geometrically wrong.
 
-```bash
-python3 python/prepare_product_experiment.py \
-  --image-dir /data/product/images \
-  --product-id product-001 \
-  --preset config/experiments/presets/mesh_facecount_smoothing_3x3.json \
-  --reps 10 \
-  --output-root /data/metashape-qc-runs
-```
+## Why repeated-build stability is needed
 
-This creates a product-specific experiment directory under the output root and prints the `metashape-qc experiment` command that uses the generated config and variants.
+An orthomosaic is a synthetic photogrammetric product. It depends on alignment, tie points, projection surface, seamlines, blending, export sampling, and implementation/runtime behavior. A single successful export only proves that one processing path completed. It does not show whether the same candidate repeatedly produces stable image support and stable image values.
 
-### Factor overrides
+Repeated builds provide samples from the implemented processing procedure. The analyzer aligns successful orthomosaics onto one canonical grid and measures how much valid support and RGB values vary across replicates for each candidate.
 
-The preset defines the default factor matrix. For a prepared product experiment, the matrix can be adjusted from the command line:
+## Product analysis workflow
 
-```text
---factor COLUMN=VALUE1,VALUE2,...
---face-counts VALUE1,VALUE2,...
---smoothing VALUE1,VALUE2,...
---variant-id-template TEMPLATE
-```
-
-`--factor` overrides or adds one factor column and may be repeated. `--face-counts` is a shortcut for `buildModel.face_count_custom`. `--smoothing` is a shortcut for `buildModel.noiterations`. `--variant-id-template` overrides the preset template used to generate `variant_id` values.
-
-## 1. Project Structure
-
-Each dataset gets its own project directory.
-
-```text
-PROJECT_ROOT/
-  input-images/
-  runs/
-```
-
-Input imagery is stored only in:
-
-```text
-PROJECT_ROOT/input-images/
-```
-
-All generated products are written below:
-
-```text
-PROJECT_ROOT/runs/
-```
-
-Example:
-
-```text
-/datadisk/data/uav/MOF_repro_test_recovered/
-  input-images/
-    DJI_....JPG
-    DJI_....JPG
-    ...
-  runs/
-```
-
-`input-images/` is the clean Metashape input folder. It contains only the images that should be processed. `runs/` contains Metashape projects, orthomosaics, logs, manifests, and stability products.
-
-The central dataset control file is:
-
-```text
-config/experiments/test_mesh_ortho_mof_forest_knoll_rgb.yml
-```
-
-It points to `input-images/` and to output directories below `runs/`.
-
-The variant matrix is:
-
-```text
-config/experiments/repro_variants_mesh_regularization.csv
-```
-
-It defines the three standard variants `flat_mesh`, `moderate_mesh`, and `light_mesh`.
-
-## 2. Single Metashape Orthomosaic Run
-
-Minimal default call:
+Prepare run-local controls:
 
 ```bash
-cd ~/dev/metashape-qc-engine
-
-METASHAPE_DIR="/home/creu/apps/metashape-pro" \
-scripts/run_metashape_workflow.sh config/experiments/test_mesh_ortho_mof_forest_knoll_rgb.yml
-```
-
-This run executes exactly the base YAML. It creates one Metashape run without variants and without repeated replicates.
-
-The single run checks whether the base workflow works: images are loaded, photos are aligned, tie points are filtered, cameras are optimized, a mesh is built from tie points, the mesh is smoothed, and that mesh is used as the orthomosaic projection surface.
-
-The default is intentionally mesh-based:
-
-```text
-TiePointsData -> smoothed mesh -> mesh orthomosaic
-```
-
-Depth maps, dense cloud generation, and DEM/DSM generation are disabled by default. The current test is not asking for the best dense reconstruction; it evaluates the stability of orthoprojection over a regularized mesh surface.
-
-The key default setting is:
-
-```yaml
-buildOrthomosaic:
-  surface: ["Mesh"]
-```
-
-and:
-
-```yaml
-buildModel:
-  source_data: Metashape.TiePointsData
-```
-
-The orthomosaic is therefore not built from a DSM. It is built from a mesh that was generated from tie points and smoothed.
-
-The single-run output goes to the paths configured in the base YAML:
-
-```text
-PROJECT_ROOT/runs/single_run/psx/
-PROJECT_ROOT/runs/single_run/output/
-```
-
-## 3. Variants x Replicates
-
-Minimal default call:
-
-```bash
-cd ~/dev/metashape-qc-engine
-
-EXP=/datadisk/data/uav/MOF_repro_test_recovered/runs/experiment_mesh_variants_reps5
-
-python3 python/reproducibility_runner.py \
-  config/experiments/test_mesh_ortho_mof_forest_knoll_rgb.yml \
-  --variants config/experiments/repro_variants_mesh_regularization.csv \
+metashape-qc prepare \
+  --image-dir "/path/to/input-images" \
+  --product-id "product_id" \
+  --preset "config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json" \
   --reps 5 \
-  --experiment-dir "$EXP" \
-  --metashape-dir /home/creu/apps/metashape-pro
+  --output-root "/path/to/runs"
 ```
 
-This step is the actual reproducibility experiment.
+Run the candidate x replicate matrix:
 
-The runner takes the base YAML and creates concrete YAML files from it: one per variant and replicate. Each generated YAML has its own output directory, project directory, and `run_name`.
+```bash
+metashape-qc run-analysis "<run_dir>/config.yml" \
+  --variants "<run_dir>/variants.csv" \
+  --reps 5 \
+  --run-dir "<run_dir>" \
+  --metashape-dir "$METASHAPE_DIR"
+```
 
-With the default setup this creates:
+Resume failed or missing work:
+
+```bash
+metashape-qc resume-analysis "<run_dir>/config.yml" \
+  --variants "<run_dir>/variants.csv" \
+  --reps 5 \
+  --run-dir "<run_dir>" \
+  --metashape-dir "$METASHAPE_DIR"
+```
+
+Evaluate the run directory:
+
+```bash
+metashape-qc evaluate "<run_dir>"
+```
+
+Reuse existing analyzer outputs when appropriate:
+
+```bash
+metashape-qc evaluate "<run_dir>" --skip-analyzer
+```
+
+Historical/contextual note: older direct script calls and the legacy `metashape-qc experiment` wrapper may still exist, but active operational documentation uses the command sequence above and run directory terminology.
+
+## Run directory structure
+
+A prepared and executed run directory contains:
 
 ```text
-3 variants x 5 replicates = 15 Metashape runs
-```
-
-The three default variants test regularization of the projection surface:
-
-```text
-flat_mesh      strongly smoothed, simple mesh
-moderate_mesh  medium mesh regularization
-light_mesh     more detailed, lightly smoothed mesh
-```
-
-The main parameter is:
-
-```yaml
-buildModel:
-  noiterations: ...
-```
-
-It controls mesh smoothing.
-
-The second important parameter is:
-
-```yaml
-buildModel:
-  face_count: ...
-```
-
-It controls mesh complexity.
-
-The standard variants represent a simple axis:
-
-```text
-strongly regularized -> medium regularized -> weakly regularized
-```
-
-The runner produces an experiment directory:
-
-```text
-PROJECT_ROOT/runs/experiment_mesh_variants_reps5/
+<run_dir>/
+  config.yml
+  variants.csv
   manifest.csv
+  selected_product.json
+  qgis_open_selected.sh
+  qgis_open_selected.bat
+  qgis_open_threshold_review.sh
+  qgis_open_threshold_review.bat
   variants/
-    flat_mesh/
-    moderate_mesh/
-    light_mesh/
+    <variant_id>/
+      configs/
+        rep_###.yml
+      runs/
+        rep_###/
+          launcher.log
+          output/
+          psx/
+  stability_union/
+    canonical_grid.json
+    summary.csv
+    summary_key_metrics.tsv
+    support_valid_count_histogram.tsv
+    evaluation_report.md
+    aligned/
+    variants/
+  threshold_review/
 ```
 
-The key file is:
+The image directory is outside this structure and should contain only the input images intended for Metashape.
 
-```text
-manifest.csv
-```
+## Manifest and statuses
 
-The manifest is the experiment index. It records which variant and replicate correspond to which Metashape project, launcher log, and exported orthomosaic.
+`manifest.csv` is the execution history for the run directory. It records candidate/replicate status, return code, generated config, project directory, output directory, project file, orthomosaic file, launcher log, and elapsed time.
 
-## 4. Stability Analysis
+Current statuses:
 
-Minimal default call:
+- `ok`: launcher returned `0` and an orthomosaic TIFF was found.
+- `ok_no_ortho`: launcher returned `0` but no orthomosaic TIFF was found.
+- `failed`: launcher returned nonzero.
+
+The analyzer uses only manifest rows with `status == "ok"`, a non-empty `ortho_file`, and an existing raster file. Resume preserves manifest history and appends new attempts.
+
+## Analyzer products
+
+The analyzer compares successful orthomosaics on a canonical grid. Default evaluation uses `stability_union` and `grid-mode=union`.
+
+Per-variant analyzer products:
+
+- `median_ortho.tif`: synthetic per-pixel median orthomosaic from aligned successful replicates.
+- `valid_count.tif`: number of successful replicates with valid support at each pixel.
+- `mad_rgb.tif`: median absolute deviation from the median RGB values.
+- `rmse_to_median.tif`: RMSE deviation from the median RGB values.
+- `stable_mask_rmse<THRESH>.tif`: pixels with full replicate support and RMSE at or below the configured threshold.
+- `unstable_mask_rmse<THRESH>.tif`: supported pixels that do not meet the stable condition.
+
+The stable and unstable masks are analyzer products. Threshold-review `quality_flag_rmse` rasters are evaluator products.
+
+## Evaluator/review products
+
+The evaluator adds compact tables, threshold review, product-selection trace, and QGIS launchers.
+
+Key products:
+
+- `stability_union/summary_key_metrics.tsv`: compact candidate metrics for review.
+- `stability_union/support_valid_count_histogram.tsv`: support-count distribution by candidate.
+- `stability_union/evaluation_report.md`: human-readable evaluation summary.
+- `threshold_review/threshold_sensitivity.tsv`: threshold-dependent stability summaries.
+- `threshold_review/threshold_winners.tsv`: threshold-dependent candidate summaries.
+- `threshold_review/rmse<THRESH>/variants/<variant_id>/quality_flag_rmse<THRESH>.tif`: Byte review rasters where `0` means invalid/no support, `1` means stable/usable under the threshold, and `2` means unstable/review or exclude.
+- `selected_product.json`: machine-readable trace of the implemented selection procedure.
+- QGIS launchers: scripts for opening selected-product and threshold-review layers.
+
+`quality_flag_rmse` rasters are interpretation guards. They do not clean, mask, edit, or improve the source orthomosaics.
+
+## Support interpretation
+
+The canonical grid is the rectangular analysis grid used to compare aligned orthomosaics. It may include pixels outside the actual supported footprint of a candidate. This is why both grid fractions and footprint-conditioned support metrics are needed.
+
+Support metrics:
+
+- `any_support_fraction_grid`: fraction of the rectangular canonical grid with valid support in at least one replicate.
+- `full_support_fraction_grid`: fraction of the rectangular canonical grid with valid support in all replicates.
+- `variable_support_fraction_grid`: fraction of the rectangular canonical grid with support in some but not all replicates.
+- `support_persistence_footprint`: `full_support / any_support`, measuring support persistence inside pixels that have any support.
+- `support_dropout_footprint`: `variable_support / any_support`, measuring replicate-to-replicate support dropout inside pixels that have any support.
+
+Grid fractions describe the full analysis rectangle. Footprint fractions describe the actual supported footprint. Support persistence is support consistency, not geometric accuracy.
+
+## Selection logic
+
+The current selection policy is `continuous_first`.
+
+Continuous stability is primary. The primary candidate is ranked by lower `p95_rmse_to_median`, lower `mean_rmse_to_median`, lower `p95_mad_rgb`, and lower `mean_mad_rgb`.
+
+Support persistence is a guard/context layer. It identifies candidates with low support dropout and high support persistence, but it does not automatically override the continuous-stability primary candidate.
+
+Threshold quality flags are a guard/context layer. They show how candidate interpretation changes across RMSE thresholds and record warning context when threshold candidates differ from the continuous-stability primary candidate.
+
+`selected_product.json` records:
+
+- `selection_policy`;
+- primary variant id;
+- selected median orthomosaic path;
+- optional medoid original replicate when scoring succeeds;
+- support-persistence context;
+- threshold-guard context;
+- source files;
+- warnings.
+
+`median_ortho.tif` is synthetic. The optional medoid original replicate is the original Metashape orthomosaic whose aligned raster is closest to the selected variant median on common valid pixels. If medoid scoring cannot be completed, evaluation remains nonfatal and the warning is recorded.
+
+## Interpretation limits
+
+The selected product is not truth. It is the selected candidate under the implemented ranking within the tested parameter space.
+
+Stability is not accuracy. RMSE/MAD to the median orthomosaic measures internal repeated-build consistency, not external geometric correctness or true detail.
+
+Quality flags are not cleaning. They are threshold-derived interpretation guards based on `rmse_to_median.tif`.
+
+The current workflow does not establish change-detection suitability, cross-date accuracy, platform comparison, or GCP/checkpoint accuracy.
+
+`buildOrthomosaic.orthoRes` is requested orthomosaic pixel size / sampling resolution. Smaller requested pixel size should not be described as better accuracy without external validation.
+
+## MOF reference benchmark
+
+MOF is the current reference benchmark for the implemented workflow.
+
+Reference prepare command:
 
 ```bash
-python3 python/ortho_stability_analyzer.py \
-  "$EXP/manifest.csv" \
-  --output-dir "$EXP/stability_union" \
-  --grid-mode union \
-  --bands 3 \
-  --stable-rmse-threshold 15 \
-  --overwrite
+metashape-qc prepare \
+  --image-dir "/datadisk/data/uav/MOF_repro_test_recovered/input-images" \
+  --product-id "mof_alignment_mesh_ortho_reference_v1" \
+  --preset "config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json" \
+  --reps 5 \
+  --output-root "/datadisk/data/uav/MOF_repro_reference/runs"
 ```
 
-The analyzer reads `manifest.csv` and uses successful orthomosaic exports.
+The MOF matrix varies:
 
-Metashape orthomosaics from repeated runs can have slightly different raster extents. Before comparison, they are warped to one shared analysis raster. This raster is the canonical grid.
+- `alignPhotos.downscale`;
+- `alignPhotos.adaptive_fitting`;
+- `buildModel.face_count_custom`;
+- `buildModel.noiterations`;
+- `buildOrthomosaic.orthoRes`.
 
-The default is:
+It expands to `2 x 2 x 3 x 2 x 2 = 48` processing candidates. With `5` replicates, it represents `48 x 5 = 240` Metashape runs.
 
-```text
---grid-mode union
-```
+The MOF template disables Dense/Depth/PointCloud/DEM products and uses mesh-based orthomosaic production. Dense Cloud, Depth Maps, DSM/DEM quality, and 3D reconstruction quality are not part of this reference benchmark.
 
-`union` means the shared raster covers the combined extent of all orthomosaics. This preserves changing borders and variable image support.
+No completed MOF result claims should be made from the benchmark description alone. Result claims require existing run outputs and inspected evaluation products.
 
-For RGB orthomosaics the default is:
+## Franzosenwiese boundary/stress case
 
-```text
---bands 3
-```
+Franzosenwiese is useful as a boundary/stress case. It can exercise warning paths, candidate disagreement, high support dropout, or high review burden.
 
-The first three bands are analyzed as RGB.
+It is not the current reference benchmark and does not establish change-detection suitability.
 
-The stability mask is generated with this threshold:
+## Practical review checklist
 
-```text
---stable-rmse-threshold 15
-```
+Review execution first:
 
-A pixel is stable when it is valid in all replicates and its RMSE deviation from the median orthomosaic is at most 15 DN. For 8-bit RGB data, the image scale is 0-255.
+- inspect `manifest.csv` for `failed` and `ok_no_ortho` rows;
+- confirm the number of successful replicates per candidate is sufficient for interpretation;
+- resume missing or failed work when needed.
 
-The main analyzer products are:
+Review stability and support:
 
-```text
-valid_count.tif
-median_ortho.tif
-mad_rgb.tif
-rmse_to_median.tif
-summary.csv
-threshold_review/rmse15/variants/<variant_id>/quality_flag_rmse15.tif
-```
+- compare candidates in `stability_union/summary_key_metrics.tsv`;
+- inspect `support_valid_count_histogram.tsv`;
+- open `valid_count.tif`, `median_ortho.tif`, `mad_rgb.tif`, and `rmse_to_median.tif` for selected and competing candidates.
 
-`valid_count.tif` shows how many replicates have valid image support for each pixel.
+Review guards:
 
-`median_ortho.tif` is the robust median orthomosaic for one variant.
+- inspect `threshold_review/threshold_sensitivity.tsv`;
+- inspect `quality_flag_rmse` rasters for relevant thresholds;
+- check whether support-persistence or threshold candidates disagree with the continuous-stability primary candidate.
 
-`mad_rgb.tif` shows robust deviations from the median image.
+Review the selected-product trace:
 
-`rmse_to_median.tif` shows RMSE deviations from the median image.
-
-`summary.csv` summarizes stability by variant.
-
-Threshold review writes separate threshold quality flags under
-`threshold_review/rmse<THR>/variants/<variant_id>/quality_flag_rmse<THR>.tif`.
-These Byte GeoTIFFs use 0 for invalid/no support, 1 for stable/usable, and 2
-for unstable/review or exclude under that RMSE threshold. Threshold quality
-flags do not modify or clean the orthomosaic.
-
-## 5. Reading Results
-
-A variant is more stable when, overall, it has:
-
-```text
-more complete image support
-lower MAD values
-lower RMSE values
-a higher stable support fraction
-a lower unstable support fraction
-```
-
-The most important summary columns are:
-
-```text
-full_support_fraction
-mean_mad_rgb
-p95_mad_rgb
-mean_rmse_to_median
-p95_rmse_to_median
-stable_fraction_support_rmse
-unstable_fraction_support_rmse
-```
-
-These values measure reproducibility of the orthomosaic product. They do not prove absolute geometric correctness. A variant can be reproducible and still be geometrically wrong. Geometric accuracy requires separate validation.
-
-For QGIS inspection, these layers are central:
-
-```text
-median_ortho.tif
-valid_count.tif
-rmse_to_median.tif
-threshold_review/rmse15/variants/<variant_id>/quality_flag_rmse15.tif
-```
-
-`median_ortho.tif` is useful as a background. `rmse_to_median.tif` shows
-deviation hotspots. `valid_count.tif` shows stable or unstable image support.
-The threshold quality flag separates invalid/no support, stable/usable, and
-unstable/review-or-exclude areas without modifying or cleaning the orthomosaic.
-
-## 6. Changing Defaults
-
-Most settings remain unchanged. Normally only these values are adjusted:
-
-`photo_path`
-points to the current dataset's `input-images/` folder.
-
-`output_path` and `project_path`
-point to subdirectories below `runs/`.
-
-`run_name`
-names the dataset and workflow.
-
-`project_crs`
-sets the target coordinate reference system for exports.
-
-`orthoRes`
-sets the orthomosaic resolution.
-
-`--reps`
-sets the number of replicates.
-
-`--stable-rmse-threshold`
-sets the threshold for stable pixels.
-
-The full parameter reference is in the appendix:
-[Parameter and File Reference](orthomosaic_stability_reference.md)
-
-## Evaluation
-
-After the Metashape replicates finish, run evaluation with one script:
-
-```bash
-cd ~/dev/metashape-qc-engine
-
-python3 python/evaluate_ortho_stability.py \
-  /datadisk/data/uav/MOF_repro_test_recovered/runs/experiment_mesh_variants_reps5
-```
-
-The script runs the stability analyzer, reads `summary.csv`, and writes a compact evaluation report.
-
-The results are written to:
-
-```text
-PROJECT_ROOT/runs/experiment_mesh_variants_reps5/stability_union/
-```
-
-The most important files are:
-
-```text
-evaluation_report.md
-summary_key_metrics.tsv
-support_valid_count_histogram.tsv
-qgis_layers.txt
-summary.csv
-../qgis_open_selected.sh
-../qgis_open_selected.bat
-../qgis_open_threshold_review.sh
-../qgis_open_threshold_review.bat
-../threshold_review/threshold_sensitivity.tsv
-../threshold_review/threshold_winners.tsv
-```
-
-`evaluation_report.md` contains the compact variant evaluation.
-
-`summary_key_metrics.tsv` contains the key metrics in a reduced table.
-
-`support_valid_count_histogram.tsv` contains support histograms derived from `valid_count.tif`.
-
-`qgis_layers.txt` lists the relevant raster products for spatial inspection.
-
-`summary.csv` contains the full analyzer result table.
-
-The evaluator also writes standard QGIS launchers at the experiment directory
-root. Both POSIX `.sh` and Windows `.bat` launchers are generated. Launcher
-raster arguments are relative to the experiment directory; Windows users may
-set `QGIS_BIN` to override the default `qgis-bin.exe`.
-
-`threshold_review/threshold_sensitivity.tsv` and
-`threshold_review/threshold_winners.tsv` are derived from existing
-`rmse_to_median.tif` rasters. This threshold review does not rerun Metashape,
-does not rerun the full stability analyzer, and is a guard / sensitivity layer
-rather than the primary product selector.
-
-The compact default table is sorted by continuous image-value stability:
-
-```text
-1. lower p95 RMSE to the median orthomosaic
-2. lower mean RMSE to the median orthomosaic
-3. lower p95 MAD RGB
-4. lower mean MAD RGB
-```
-
-The evaluator also reports separate threshold quality-flag and
-support-persistence candidates. These candidate categories are not collapsed
-into one canonical winner.
-
-This evaluation describes reproducibility of the orthomosaic product. It does not replace independent geometric validation.
-
-### Selected product trace
-
-`selected_product.json` records the technical selection trace produced by evaluation.
-
-Continuous stability selects the primary variant. Support persistence is feasibility and coverage context. Threshold quality-flag metrics are rejection and warning guard context.
-
-`median_ortho` is the robust analysis product for the selected variant. `medoid_replicate` is the original Metashape orthomosaic closest to the selected variant median.
-
-Warnings require review. The selected product trace is not an automatic scientific correctness claim.
-
-### Evaluator dependencies
-
-`metashape-qc evaluate` requires `numpy`, `rasterio`, and GDAL Python bindings. The project virtual environment must be able to import GDAL array support:
-
-```bash
-python3 -c "from osgeo import gdal_array"
-```
-
-Use the project helper inside the virtual environment:
-
-```bash
-scripts/install_evaluator_deps.sh
-```
+- read `selected_product.json`;
+- inspect all warnings;
+- treat the median product as synthetic;
+- use the medoid original replicate only when it is present and appropriate for the downstream task.

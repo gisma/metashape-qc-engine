@@ -55,6 +55,15 @@ Ambiguous: scientific interpretation of the selected product depends on external
 - Key arguments: same as `run-analysis`; `--experiment-dir` remains a legacy alias for `--run-dir`.
 - Source: `metashape_qc_engine/cli.py`, `python/reproducibility_runner.py`.
 
+Additional `run-analysis` argument after implementation:
+
+* `--generic-ortho-resolution`: run one no-variants probe with `buildOrthomosaic.orthoRes` forced to `0`, then report the actual exported orthomosaic pixel size from the GeoTIFF geotransform.
+
+Additional run-analysis behavior after implementation:
+
+* When `--generic-ortho-resolution` is used, the runner requires `--reps 1` and no `--variants`, writes the normal manifest, reads the exported orthomosaic GeoTransform, and writes `generic_ortho_resolution.tsv`, `generic_ortho_resolution.json`, and `generic_ortho_resolution.md` to the run directory.
+
+
 `metashape-qc evaluate`
 
 - Status: current.
@@ -175,6 +184,7 @@ Implemented behavior:
 
 - Uses `<run_dir>/stability_union` as the evaluation/analyzer output directory.
 - Runs `python/ortho_stability_analyzer.py` unless `--skip-analyzer` is supplied.
+- Before launching the analyzer, checks usable manifest orthomosaics for mixed raster resolution and aborts with an actionable message instead of silently resampling.
 - Reads `stability_union/summary.csv`.
 - Reads `<run_dir>/manifest.csv`.
 - Computes support metrics from per-variant `valid_count.tif`.
