@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Chris Reudenbach, Lars Opgenoorth, Christian Mestre Runge
 """Metashape GUI menu launcher for the metashape-qc command line tool."""
 
 from __future__ import annotations

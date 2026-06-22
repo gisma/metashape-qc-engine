@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Chris Reudenbach, Lars Opgenoorth, Christian Mestre Runge
 """
 Evaluate a completed orthomosaic reproducibility experiment.
 
