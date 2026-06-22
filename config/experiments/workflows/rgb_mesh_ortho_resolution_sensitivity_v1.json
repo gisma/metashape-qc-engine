@@ -1,0 +1,25 @@
+{
+  "profile_type": "workflow_metadata",
+  "workflow_id": "rgb_mesh_ortho_resolution_sensitivity_v1",
+  "purpose": "Define configurable fixed sampling strata for RGB mesh orthomosaic product analysis.",
+  "required_first_step": "Run generic_ortho_resolution_probe_v1 before fixed-stratum analysis.",
+  "sampling_strata": {
+    "native_generic": "Value from the generic probe, rounded to a user-visible precision such as millimeters.",
+    "optional_fine": "User-configured value finer than native_generic.",
+    "optional_robust": "User-configured value coarser than native_generic.",
+    "optional_coarse": "User-configured value clearly coarser than native_generic."
+  },
+  "run_directory_policy": "Each sampling stratum gets its own run directory.",
+  "preset_invocation": {
+    "preset": "config/experiments/presets/rgb_mesh_ortho_reference_v1.json",
+    "per_stratum_behavior": "Invoke the normal reference preset once per fixed stratum using --factor buildOrthomosaic.orthoRes=<single_value>."
+  },
+  "constraints": [
+    "No mixed-resolution normal evaluate run is allowed."
+  ],
+  "non_claims": [
+    "Sampling sensitivity only.",
+    "Not external accuracy.",
+    "Not true scene detail."
+  ]
+}

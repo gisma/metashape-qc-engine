@@ -1,0 +1,28 @@
+{
+  "template_config": "config/experiments/templates/rgb_mesh_ortho_template.yml",
+  "template_variants_csv": "config/experiments/templates/rgb_mesh_ortho_base_variants.csv",
+  "experiment_dir_template": "{output_root}/{product_id}_rgb_mesh_ortho_reference_reps{reps}",
+  "variant_id_template": "ds{alignPhotos.downscale}_af{alignPhotos.adaptive_fitting}_fc{buildModel.face_count_custom:k}_smooth{buildModel.noiterations}_or{buildOrthomosaic.orthoRes}",
+  "factors": {
+    "alignPhotos.downscale": [
+      1,
+      2
+    ],
+    "alignPhotos.adaptive_fitting": [
+      true,
+      false
+    ],
+    "buildModel.face_count_custom": [
+      50000,
+      100000,
+      250000
+    ],
+    "buildModel.noiterations": [
+      5,
+      35
+    ],
+    "buildOrthomosaic.orthoRes": [
+      0.05
+    ]
+  }
+}

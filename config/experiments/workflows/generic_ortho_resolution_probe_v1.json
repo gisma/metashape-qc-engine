@@ -1,0 +1,17 @@
+{
+  "profile_type": "workflow_metadata",
+  "workflow_id": "generic_ortho_resolution_probe_v1",
+  "purpose": "Estimate the dataset/config-specific technical sampling resolution produced by the generic orthomosaic path.",
+  "wraps_existing_cli_behavior": {
+    "command": "metashape-qc run-analysis CONFIG --reps 1 --run-dir RUN_DIR --generic-ortho-resolution"
+  },
+  "outputs": {
+    "technical_sampling_estimate": "Computed from the exported GeoTIFF geotransform for the supplied config and run directory."
+  },
+  "recommended_usage": "Use the estimated value as the first recommended sampling stratum for later fixed-resolution product analysis.",
+  "non_claims": [
+    "Not an external accuracy estimate.",
+    "Not a measure of true scene detail.",
+    "Not checkpoint validation."
+  ]
+}

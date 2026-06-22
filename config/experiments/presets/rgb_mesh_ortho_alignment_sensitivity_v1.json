@@ -1,0 +1,34 @@
+{
+  "template_config": "config/experiments/templates/rgb_mesh_ortho_template.yml",
+  "template_variants_csv": "config/experiments/templates/rgb_mesh_ortho_alignment_base_variants.csv",
+  "experiment_dir_template": "{output_root}/{product_id}_rgb_mesh_ortho_alignment_sensitivity_reps{reps}",
+  "variant_id_template": "ds{alignPhotos.downscale}_af{alignPhotos.adaptive_fitting}_gp{alignPhotos.generic_preselection}_rp{alignPhotos.reference_preselection}_or{buildOrthomosaic.orthoRes}",
+  "factors": {
+    "alignPhotos.downscale": [
+      1,
+      2,
+      4
+    ],
+    "alignPhotos.adaptive_fitting": [
+      true,
+      false
+    ],
+    "alignPhotos.generic_preselection": [
+      true,
+      false
+    ],
+    "alignPhotos.reference_preselection": [
+      true,
+      false
+    ],
+    "buildModel.face_count_custom": [
+      100000
+    ],
+    "buildModel.noiterations": [
+      35
+    ],
+    "buildOrthomosaic.orthoRes": [
+      0.05
+    ]
+  }
+}
