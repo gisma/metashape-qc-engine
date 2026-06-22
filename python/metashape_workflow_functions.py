@@ -122,11 +122,13 @@ def project_setup(cfg, config_file):
         chunk.crs = Metashape.CoordinateSystem(cfg["project_crs"])
 
         # Camera reference CRS. DJI/EXIF geotags are normally stored as WGS84 lon/lat.
-        # This must be explicit when project_crs is projected, e.g. EPSG::32632.
+        # This must be explicit when project_crs is projected.
         chunk.camera_crs = Metashape.CoordinateSystem(cfg.get("camera_crs", "EPSG::4326"))
 
-        # Marker/GCP CRS remains configurable because GCPs may be measured in a projected CRS.
-        chunk.marker_crs = Metashape.CoordinateSystem(cfg["addGCPs"]["gcp_crs"])
+        # Marker/GCP CRS remains configurable because GCPs may be measured in a distinct CRS.
+        add_gcps_cfg = cfg.get("addGCPs", {})
+        if add_gcps_cfg.get("enabled"):
+            chunk.marker_crs = Metashape.CoordinateSystem(add_gcps_cfg["gcp_crs"])
 
     # Save doc doc as new project (even if we opened an existing project, save as a separate one so the existing project remains accessible in its original state)
     doc.save(project_file)

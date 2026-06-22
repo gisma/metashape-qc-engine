@@ -8,6 +8,7 @@ import csv
 import itertools
 import json
 import re
+import shutil
 import shlex
 import sys
 from pathlib import Path
@@ -36,8 +37,17 @@ REQUIRED_CONFIG_KEYS = {
     "photo_path",
     "output_path",
     "project_path",
+    "project_crs",
+    "camera_crs",
     "run_name",
 }
+
+CONFIG_SCALAR_OVERRIDE_KEYS = {
+    "project_crs",
+    "camera_crs",
+    "addGCPs.gcp_crs",
+}
+CRS_SENTINEL = "USER_MUST_SET_PROJECT_CRS"
 
 
 def repo_root() -> Path:
@@ -108,12 +118,55 @@ def replace_top_level_scalar(text: str, key: str, value: str) -> str:
     )
 
 
+def replace_nested_scalar(text: str, key_path: str, value: str) -> str:
+    parts = key_path.split(".")
+    if len(parts) == 1:
+        return replace_top_level_scalar(text, key_path, value)
+    if len(parts) != 2:
+        fail(f"Nested scalar override is only supported for one parent level: {key_path}")
+    parent, child = parts
+    lines = text.splitlines(keepends=True)
+    parent_index = None
+    parent_indent = 0
+    for index, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0 and re.match(rf"^{re.escape(parent)}:\s*(?:#.*)?$", line.strip()):
+            parent_index = index
+            parent_indent = indent
+            break
+    if parent_index is None:
+        fail(
+            "Template config is missing required existing key "
+            f"'{parent}'. Cannot safely generate product config."
+        )
+    child_pattern = re.compile(rf"^(?P<indent>\s+)(?P<key>{re.escape(child)}:\s*).*$")
+    for index in range(parent_index + 1, len(lines)):
+        line = lines[index]
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent <= parent_indent:
+            break
+        match = child_pattern.match(line)
+        if match:
+            newline = "\n" if line.endswith("\n") else ""
+            lines[index] = f"{match.group('indent')}{match.group('key')}{quote_yaml_scalar(value)}{newline}"
+            return "".join(lines)
+    fail(
+        "Template config is missing required existing key "
+        f"'{key_path}'. Cannot safely generate product config."
+    )
+
+
 def generate_config(
     template_config: Path,
     generated_config: Path,
     product_id: str,
     image_dir: Path,
     experiment_dir: Path,
+    scalar_overrides: dict[str, str] | None = None,
 ) -> None:
     if not template_config.is_file():
         fail(f"Template config is missing: {template_config}")
@@ -146,6 +199,13 @@ def generate_config(
         str(experiment_dir / "single_run" / "psx") + "/",
     )
     text = replace_top_level_scalar(text, "run_name", product_id)
+    for key, value in (scalar_overrides or {}).items():
+        text = replace_nested_scalar(text, key, value)
+    if CRS_SENTINEL in text:
+        fail(
+            "Generated config would still contain an unset CRS sentinel. "
+            "Set project_crs and all runtime CRS fields before running."
+        )
 
     try:
         generated_config.parent.mkdir(parents=True, exist_ok=True)
@@ -254,7 +314,11 @@ def generate_variants(
     if "variant_id" not in header:
         fail("Template variants CSV must contain a 'variant_id' column.")
 
-    missing_factor_columns = [column for column in factors if column not in header]
+    missing_factor_columns = [
+        column
+        for column in factors
+        if column not in header and column not in CONFIG_SCALAR_OVERRIDE_KEYS
+    ]
     if missing_factor_columns:
         fail(
             "Template variants CSV is missing factor column(s): "
@@ -262,7 +326,7 @@ def generate_variants(
         )
 
     base_row = dict(rows[0])
-    factor_names = list(factors)
+    factor_names = [name for name in factors if name in header]
     factor_values = [factors[name] for name in factor_names]
 
     output_rows: list[dict[str, Any]] = []
@@ -295,6 +359,29 @@ def generate_variants(
         fail(f"Could not write generated variants CSV: {generated_variants_csv}: {exc}")
 
     return len(output_rows)
+
+
+def single_factor_value(factors: dict[str, list[Any]], key: str) -> str | None:
+    if key not in factors:
+        return None
+    values = factors[key]
+    if len(values) != 1:
+        fail(f"{key} must have exactly one value for generated config.yml.")
+    value = str(values[0]).strip()
+    if not value:
+        fail(f"{key} must not be empty.")
+    return value
+
+
+def config_scalar_overrides_from_factors(factors: dict[str, list[Any]]) -> dict[str, str]:
+    scalar_overrides = {}
+    for key in sorted(CONFIG_SCALAR_OVERRIDE_KEYS):
+        value = single_factor_value(factors, key)
+        if value is not None:
+            scalar_overrides[key] = value
+    if "project_crs" in scalar_overrides and "addGCPs.gcp_crs" not in scalar_overrides:
+        scalar_overrides["addGCPs.gcp_crs"] = scalar_overrides["project_crs"]
+    return scalar_overrides
 
 
 def format_template(template: str, values: dict[str, Any]) -> str:
@@ -332,6 +419,39 @@ def print_next_commands(
     print("Next commands:")
     for command in commands:
         print(f"  {shell_join(command)}")
+
+
+def safe_overwrite_experiment_dir(
+    experiment_dir: Path,
+    output_root: Path,
+    image_dir: Path,
+    preset_path: Path,
+) -> None:
+    if not experiment_dir.exists():
+        return
+    if not experiment_dir.is_dir():
+        fail(f"--overwrite target exists but is not a directory: {experiment_dir}")
+
+    target = experiment_dir.resolve()
+    protected = {
+        output_root.resolve(),
+        image_dir.resolve(),
+        repo_root().resolve(),
+        preset_path.parent.resolve(),
+    }
+    if target in protected:
+        fail(f"Refusing to overwrite protected directory: {target}")
+    if not str(target).startswith(str(output_root.resolve()) + "/"):
+        fail(f"Refusing to overwrite directory outside output root: {target}")
+
+    has_prepare_artifact = (target / "config.yml").exists() or (target / "variants.csv").exists()
+    if not has_prepare_artifact and any(target.iterdir()):
+        fail(
+            "Refusing to overwrite existing directory without config.yml or variants.csv: "
+            f"{target}"
+        )
+
+    shutil.rmtree(target)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -392,6 +512,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--variant-id-template",
         help="Override the preset variant_id_template.",
     )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Safely remove the exact prepared output directory before writing it.",
+    )
     return parser
 
 
@@ -420,7 +545,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.reps < 1:
             fail("--reps must be at least 1.")
 
-        preset = read_preset(resolve_repo_path(args.preset))
+        preset_path = resolve_repo_path(args.preset)
+        preset = read_preset(preset_path)
         output_root = Path(args.output_root).expanduser().resolve()
 
         try:
@@ -440,10 +566,16 @@ def main(argv: list[str] | None = None) -> int:
         generated_config = experiment_dir / "config.yml"
         generated_variants_csv = experiment_dir / "variants.csv"
 
+        if args.overwrite:
+            safe_overwrite_experiment_dir(experiment_dir, output_root, image_dir, preset_path)
+
         try:
             experiment_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             fail(f"Could not create experiment directory: {experiment_dir}: {exc}")
+
+        factors = build_effective_factors(args, preset)
+        scalar_overrides = config_scalar_overrides_from_factors(factors)
 
         generate_config(
             resolve_repo_path(preset["template_config"]),
@@ -451,8 +583,8 @@ def main(argv: list[str] | None = None) -> int:
             args.product_id,
             image_dir,
             experiment_dir,
+            scalar_overrides=scalar_overrides,
         )
-        factors = build_effective_factors(args, preset)
         variant_id_template = args.variant_id_template or preset["variant_id_template"]
         variant_count = generate_variants(
             resolve_repo_path(preset["template_variants_csv"]),

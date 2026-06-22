@@ -159,17 +159,42 @@ def apply_overrides(cfg: dict[str, Any], overrides: dict[str, Any]) -> dict[str,
     return out
 
 
+PREPARED_CONTROL_FILES = {"config.yml", "variants.csv"}
+
+
+def is_run_dir_only_prepared_controls(path: Path) -> bool:
+    if not path.exists():
+        return True
+    if not path.is_dir():
+        return False
+    entries = list(path.iterdir())
+    if not entries:
+        return True
+    return all(entry.is_file() and entry.name in PREPARED_CONTROL_FILES for entry in entries)
+
+
 def ensure_experiment_dir(path: Path, overwrite: bool) -> None:
     if path.exists() and any(path.iterdir()) and not overwrite:
-        raise RuntimeError(
-            "Run directory is already populated.\n"
-            f"Conflicting path: {path}\n"
-            "Execution stopped to avoid mixing this run with existing files.\n"
-            "Safe options:\n"
-            "  1. Choose a new --run-dir.\n"
-            "  2. Use resume-analysis for an interrupted run.\n"
-            "  3. Use --overwrite only if intentionally reusing or replacing an existing run directory."
-        )
+        if is_run_dir_only_prepared_controls(path):
+            print(
+                f"Run directory contains only prepared control files; continuing without --overwrite: {path}",
+                file=sys.stderr,
+            )
+        else:
+            raise RuntimeError(
+                "Run directory contains analysis artifacts or unrecognized files.\n"
+                f"Conflicting path: {path}\n"
+                "Execution stopped to avoid mixing this run with existing files.\n"
+                "Prepared-control-only directories containing config.yml and/or variants.csv are accepted without --overwrite.\n"
+                "Analysis artifacts such as manifest.csv, replicate directories, Metashape project files, "
+                "orthomosaic outputs, stability/evaluation outputs, selected_product.json, "
+                "generic_ortho_resolution.* reports, or analyzer/evaluation output directories require a new "
+                "run directory or explicit --overwrite.\n"
+                "Safe options:\n"
+                "  1. Choose a new --run-dir.\n"
+                "  2. Use resume-analysis for an interrupted run.\n"
+                "  3. Use --overwrite only if intentionally reusing or replacing an existing run directory."
+            )
 
     path.mkdir(parents=True, exist_ok=True)
 
@@ -265,6 +290,14 @@ def print_next_commands(
         print(f"  {shell_join(evaluate_cmd)}")
 
 
+def print_generic_field_screening_next_step() -> None:
+    print("Next step:")
+    print(
+        "  Use recommended_sampling_m_per_px as the technical sampling reference for follow-up product analysis."
+    )
+    print("  Optional: run product analysis from the GUI if a full analysis is needed.")
+
+
 def validate_manifest_row(row: dict[str, str]) -> None:
     missing = [col for col in MANIFEST_COLUMNS if col not in row]
     if missing:
@@ -343,6 +376,58 @@ def find_latest(pattern_dir: Path, pattern: str) -> str:
     return str(files[0]) if files else ""
 
 
+def count_input_images(cfg: dict[str, Any]) -> str:
+    photo_paths = cfg.get("photo_path")
+    if isinstance(photo_paths, str):
+        photo_paths = [photo_paths]
+    if not isinstance(photo_paths, list):
+        return "unknown"
+
+    total = 0
+    found_any_path = False
+    for raw_path in photo_paths:
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            continue
+        photo_path = Path(raw_path).expanduser()
+        if not photo_path.is_dir():
+            continue
+        found_any_path = True
+        for path in photo_path.rglob("*"):
+            if not path.is_file():
+                continue
+            suffix = path.suffix.lower()
+            if suffix in {".jpg", ".jpeg", ".tif", ".tiff"} and path.name != "dem_usgs.tif":
+                total += 1
+
+    if not found_any_path:
+        return "unknown"
+    return str(total)
+
+
+def read_ortho_pixel_size_m_per_px(ortho_file: str) -> float | None:
+    if not ortho_file:
+        return None
+    try:
+        from osgeo import gdal
+    except ImportError:
+        return None
+
+    gdal.DontUseExceptions()
+    dataset = gdal.Open(ortho_file)
+    if dataset is None:
+        return None
+
+    gt = dataset.GetGeoTransform()
+    if gt is None:
+        dataset = None
+        return None
+
+    xres = abs(gt[1])
+    yres = abs(gt[5])
+    dataset = None
+    return (xres + yres) / 2
+
+
 def write_manifest(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -354,7 +439,40 @@ def write_manifest(path: Path, rows: list[dict[str, str]]) -> None:
             writer.writerow(row)
 
 
-def write_generic_ortho_resolution_reports(experiment_dir: Path) -> None:
+def generic_ortho_resolution_report(row: dict[str, str]) -> dict[str, Any] | None:
+    ortho_file = row["ortho_file"]
+    pixel_size_mean = read_ortho_pixel_size_m_per_px(ortho_file)
+    if pixel_size_mean is None:
+        return None
+
+    from osgeo import gdal
+
+    gdal.DontUseExceptions()
+    dataset = gdal.Open(ortho_file)
+    if dataset is None:
+        return None
+
+    gt = dataset.GetGeoTransform()
+    if gt is None:
+        dataset = None
+        return None
+
+    xres = abs(gt[1])
+    yres = abs(gt[5])
+    report = {
+        "ortho_file": ortho_file,
+        "xres": xres,
+        "yres": yres,
+        "pixel_size_mean": pixel_size_mean,
+        "xsize": dataset.RasterXSize,
+        "ysize": dataset.RasterYSize,
+        "recommended_numeric_orthoRes": pixel_size_mean,
+    }
+    dataset = None
+    return report
+
+
+def write_generic_ortho_resolution_reports(experiment_dir: Path) -> dict[str, Any] | None:
     manifest_file = experiment_dir / "manifest.csv"
     rows = read_manifest(manifest_file)
     usable_rows = [
@@ -371,37 +489,13 @@ def write_generic_ortho_resolution_reports(experiment_dir: Path) -> None:
             f"for --generic-ortho-resolution; found {len(usable_rows)}."
         )
 
-    ortho_file = usable_rows[0]["ortho_file"]
-
-    try:
-        from osgeo import gdal
-    except ImportError as exc:
-        raise RuntimeError(
-            "GDAL Python bindings are required for --generic-ortho-resolution reports."
-        ) from exc
-
-    gdal.DontUseExceptions()
-    dataset = gdal.Open(ortho_file)
-    if dataset is None:
-        raise RuntimeError(f"GDAL could not open ortho_file: {ortho_file}")
-
-    gt = dataset.GetGeoTransform()
-    if gt is None:
-        raise RuntimeError(f"GDAL GeoTransform is unavailable for ortho_file: {ortho_file}")
-
-    xres = abs(gt[1])
-    yres = abs(gt[5])
-    pixel_size_mean = (xres + yres) / 2
-    report = {
-        "ortho_file": ortho_file,
-        "xres": xres,
-        "yres": yres,
-        "pixel_size_mean": pixel_size_mean,
-        "xsize": dataset.RasterXSize,
-        "ysize": dataset.RasterYSize,
-        "recommended_numeric_orthoRes": pixel_size_mean,
-    }
-    dataset = None
+    report = generic_ortho_resolution_report(usable_rows[0])
+    if report is None:
+        print(
+            "Generic ortho resolution report unavailable: could not read produced GeoTIFF pixel size.",
+            file=sys.stderr,
+        )
+        return None
 
     with (experiment_dir / "generic_ortho_resolution.json").open(
         "w", encoding="utf-8"
@@ -426,6 +520,108 @@ def write_generic_ortho_resolution_reports(experiment_dir: Path) -> None:
         f.write(
             "- recommended_numeric_orthoRes is the value to use manually in later normal product preparation.\n"
         )
+    return report
+
+
+def field_screening_interpretation(
+    status: str,
+    orthomosaic: str,
+    sampling: str,
+) -> str:
+    if status == "SUCCESS" and orthomosaic == "CREATED":
+        if sampling != "unavailable":
+            return (
+                "Flight is processable; use ~%s m/px as technical sampling reference."
+                % sampling
+            )
+        return "Flight is processable; technical sampling could not be read."
+    if status == "FAILED":
+        return "Flight is not processable enough for this first-pass orthomosaic check."
+    return "Flight needs review before it is used for follow-up analysis."
+
+
+def format_field_screening_block(summary: dict[str, str]) -> str:
+    keys = [
+        "status",
+        "images",
+        "aligned_cameras",
+        "alignment",
+        "orthomosaic",
+        "technical_sampling_m_per_px",
+        "recommended_sampling_m_per_px",
+        "interpretation",
+        "ortho_path",
+        "run_dir",
+    ]
+    lines = ["FIELD SCREENING RESULT"]
+    lines.extend("%s: %s" % (key, summary[key]) for key in keys)
+    lines.append("END FIELD SCREENING RESULT")
+    return "\n".join(lines)
+
+
+def write_field_screening_summary(
+    *,
+    experiment_dir: Path,
+    base_cfg: dict[str, Any],
+    row: dict[str, str] | None,
+    failed_count: int,
+) -> dict[str, str]:
+    ortho_file = row.get("ortho_file", "") if row else ""
+    return_code_ok = bool(row and row.get("return_code") == "0")
+    ortho_exists = bool(ortho_file and Path(ortho_file).is_file())
+
+    if ortho_exists and return_code_ok:
+        status = "SUCCESS"
+        orthomosaic = "CREATED"
+    elif not ortho_exists:
+        status = "FAILED"
+        orthomosaic = "MISSING"
+    elif failed_count:
+        status = "CRITICAL"
+        orthomosaic = "CREATED"
+    else:
+        status = "CRITICAL"
+        orthomosaic = "CREATED"
+
+    pixel_size = read_ortho_pixel_size_m_per_px(ortho_file) if ortho_exists else None
+    if pixel_size is None:
+        sampling = "unavailable"
+    else:
+        sampling = format(pixel_size, ".12g")
+
+    if orthomosaic == "CREATED":
+        alignment = "OK"
+    elif status == "FAILED":
+        alignment = "UNKNOWN"
+    else:
+        alignment = "CRITICAL"
+
+    summary = {
+        "status": status,
+        "images": count_input_images(base_cfg),
+        "aligned_cameras": "unknown",
+        "alignment": alignment,
+        "orthomosaic": orthomosaic,
+        "technical_sampling_m_per_px": sampling,
+        "recommended_sampling_m_per_px": sampling,
+        "interpretation": field_screening_interpretation(status, orthomosaic, sampling),
+        "ortho_path": ortho_file if ortho_exists else "unavailable",
+        "run_dir": str(experiment_dir),
+    }
+
+    block = format_field_screening_block(summary)
+    print(block, flush=True)
+    with (experiment_dir / "field_screening_summary.txt").open(
+        "w", encoding="utf-8"
+    ) as f:
+        f.write(block)
+        f.write("\n")
+    with (experiment_dir / "field_screening_summary.json").open(
+        "w", encoding="utf-8"
+    ) as f:
+        json.dump(summary, f, indent=2)
+        f.write("\n")
+    return summary
 
 
 def make_replicate_config(
@@ -719,25 +915,35 @@ def main() -> int:
         f"failed={failed_count}, "
         f"skipped={skipped_count}"
     )
-    print_next_commands(
-        resume=args.resume,
-        failed_count=failed_count,
-        remaining_failures=has_remaining_failures(
-            variants=variants,
+    if args.generic_ortho_resolution:
+        row = latest_rows.get(("default", "rep_001"))
+        if row and row.get("status") == "ok":
+            write_generic_ortho_resolution_reports(experiment_dir)
+        write_field_screening_summary(
+            experiment_dir=experiment_dir,
+            base_cfg=base_cfg,
+            row=row,
+            failed_count=failed_count,
+        )
+        print_generic_field_screening_next_step()
+    else:
+        print_next_commands(
+            resume=args.resume,
+            failed_count=failed_count,
+            remaining_failures=has_remaining_failures(
+                variants=variants,
+                reps=args.reps,
+                latest_rows=latest_rows,
+            ),
+            base_config=base_config,
+            variants_file=variants_file,
+            experiment_dir=experiment_dir,
             reps=args.reps,
-            latest_rows=latest_rows,
-        ),
-        base_config=base_config,
-        variants_file=variants_file,
-        experiment_dir=experiment_dir,
-        reps=args.reps,
-        metashape_dir=args.metashape_dir,
-    )
+            metashape_dir=args.metashape_dir,
+        )
+
     if failed_count:
         return 1
-
-    if args.generic_ortho_resolution:
-        write_generic_ortho_resolution_reports(experiment_dir)
 
     return 0
 

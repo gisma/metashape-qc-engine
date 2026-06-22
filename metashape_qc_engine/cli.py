@@ -128,6 +128,8 @@ def _run_prepare(args: argparse.Namespace) -> int:
         cmd.extend(["--smoothing", args.smoothing])
     if args.variant_id_template:
         cmd.extend(["--variant-id-template", args.variant_id_template])
+    if args.overwrite:
+        cmd.append("--overwrite")
 
     return _run(cmd)
 
@@ -254,6 +256,7 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--face-counts", metavar="VALUES")
     prepare.add_argument("--smoothing", metavar="VALUES")
     prepare.add_argument("--variant-id-template", metavar="TEMPLATE")
+    prepare.add_argument("--overwrite", action="store_true")
     prepare.set_defaults(func=_run_prepare)
 
     experiment = subparsers.add_parser(
