@@ -6,6 +6,8 @@ This project is an independent continuation and extension of an AM2 / automate-m
 
 The repository contains adapted components from the UC Davis / AM2 / automate-metashape code base. These upstream-derived components remain distributed under the BSD 3-Clause License, and the original copyright, author, license, and disclaimer notices are retained in `LICENSE`.
 
+Selected active project scripts are Copyright (c) 2026 Chris Reudenbach, Lars Opgenoorth, and Christian Mestre Runge.
+
 Additional development in `metashape-qc-engine` includes reproducibility experiment control, variant and replicate execution, orthomosaic stability analysis, support-aware evaluation reporting, and controlled product-generation logic.
 
 The original authors, institutions, and contributors listed in `LICENSE` are credited for the upstream-derived components. Their names are not used to imply endorsement of this derived project.

@@ -85,3 +85,5 @@ Dense Cloud, Depth Maps, Point Cloud, DSM/DEM quality, 3D reconstruction quality
 This repository is distributed under the BSD 3-Clause License.
 
 It contains adapted components from the UC Davis / AM2 / automate-metashape code base. Original copyright, author, license, and disclaimer notices are retained in `LICENSE`; project-specific attribution and scope notes are provided in `NOTICE.md`.
+
+Selected active project scripts are Copyright (c) 2026 Chris Reudenbach, Lars Opgenoorth, and Christian Mestre Runge.
