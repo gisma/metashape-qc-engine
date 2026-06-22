@@ -138,7 +138,11 @@ def _run_experiment(args: argparse.Namespace) -> int:
     _require_file(args.base_config, "BASE_CONFIG")
     if args.variants:
         _require_file(args.variants, "CSV")
-    if args.reps < 2:
+    if getattr(args, "generic_ortho_resolution", False) and args.variants:
+        raise RuntimeError("--generic-ortho-resolution cannot be used with --variants.")
+    if getattr(args, "generic_ortho_resolution", False) and args.reps != 1:
+        raise RuntimeError("--generic-ortho-resolution requires --reps 1.")
+    if args.reps < 2 and not getattr(args, "generic_ortho_resolution", False):
         raise RuntimeError("--reps must be at least 2 for a product analysis.")
     if args.metashape_dir:
         _require_dir(args.metashape_dir, "METASHAPE_DIR")
@@ -156,6 +160,8 @@ def _run_experiment(args: argparse.Namespace) -> int:
 
     if args.variants:
         cmd.extend(["--variants", args.variants])
+    if getattr(args, "generic_ortho_resolution", False):
+        cmd.append("--generic-ortho-resolution")
     if args.metashape_dir:
         cmd.extend(["--metashape-dir", args.metashape_dir])
     if args.overwrite:
@@ -284,6 +290,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Legacy alias for --run-dir.",
     )
     run_analysis.add_argument("--variants", metavar="CSV")
+    run_analysis.add_argument("--generic-ortho-resolution", action="store_true")
     run_analysis.add_argument("--metashape-dir", metavar="DIR")
     run_analysis.add_argument("--overwrite", action="store_true")
     run_analysis.set_defaults(func=_run_experiment, resume=False)

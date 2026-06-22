@@ -20,8 +20,10 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -160,11 +162,107 @@ def apply_overrides(cfg: dict[str, Any], overrides: dict[str, Any]) -> dict[str,
 def ensure_experiment_dir(path: Path, overwrite: bool) -> None:
     if path.exists() and any(path.iterdir()) and not overwrite:
         raise RuntimeError(
-            f"Directory already exists and is not empty: {path}\n"
-            f"Use --overwrite only when you intentionally want to reuse this experiment folder."
+            "Run directory is already populated.\n"
+            f"Conflicting path: {path}\n"
+            "Execution stopped to avoid mixing this run with existing files.\n"
+            "Safe options:\n"
+            "  1. Choose a new --run-dir.\n"
+            "  2. Use resume-analysis for an interrupted run.\n"
+            "  3. Use --overwrite only if intentionally reusing or replacing an existing run directory."
         )
 
     path.mkdir(parents=True, exist_ok=True)
+
+
+def format_existing_manifest_error(manifest_file: Path) -> str:
+    return (
+        "Run manifest already exists.\n"
+        f"Conflicting path: {manifest_file}\n"
+        "Execution stopped to avoid overwriting or appending to an existing run manifest.\n"
+        "Safe options:\n"
+        "  1. Choose a new --run-dir.\n"
+        "  2. Use resume-analysis for an interrupted run.\n"
+        "  3. Use --overwrite only if intentionally reusing or replacing an existing run directory."
+    )
+
+
+def shell_join(command: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in command)
+
+
+def analysis_command(
+    command_name: str,
+    base_config: Path,
+    variants_file: Path | None,
+    experiment_dir: Path,
+    reps: int,
+    metashape_dir: str | None,
+) -> list[str]:
+    command = [
+        "metashape-qc",
+        command_name,
+        str(base_config),
+        "--reps",
+        str(reps),
+        "--run-dir",
+        str(experiment_dir),
+    ]
+    if variants_file is not None:
+        command.extend(["--variants", str(variants_file)])
+    if metashape_dir:
+        command.extend(["--metashape-dir", metashape_dir])
+    return command
+
+
+def evaluate_command(experiment_dir: Path) -> list[str]:
+    return ["metashape-qc", "evaluate", str(experiment_dir)]
+
+
+def has_remaining_failures(
+    variants: list[dict[str, Any]],
+    reps: int,
+    latest_rows: dict[tuple[str, str], dict[str, str]],
+) -> bool:
+    for variant in variants:
+        variant_id = variant["variant_id"]
+        for i in range(1, reps + 1):
+            row = latest_rows.get((variant_id, f"rep_{i:03d}"))
+            if row is None or row.get("status") == "failed":
+                return True
+    return False
+
+
+def print_next_commands(
+    *,
+    resume: bool,
+    failed_count: int,
+    remaining_failures: bool,
+    base_config: Path,
+    variants_file: Path | None,
+    experiment_dir: Path,
+    reps: int,
+    metashape_dir: str | None,
+) -> None:
+    resume_cmd = analysis_command(
+        "resume-analysis",
+        base_config,
+        variants_file,
+        experiment_dir,
+        reps,
+        metashape_dir,
+    )
+    evaluate_cmd = evaluate_command(experiment_dir)
+
+    print("Next commands:")
+    if resume:
+        print(f"  {shell_join(evaluate_cmd)}")
+        if failed_count or remaining_failures:
+            print(f"  {shell_join(resume_cmd)}")
+    elif failed_count:
+        print(f"  {shell_join(resume_cmd)}")
+        print(f"  After successful or partial runs: {shell_join(evaluate_cmd)}")
+    else:
+        print(f"  {shell_join(evaluate_cmd)}")
 
 
 def validate_manifest_row(row: dict[str, str]) -> None:
@@ -254,6 +352,80 @@ def write_manifest(path: Path, rows: list[dict[str, str]]) -> None:
         for row in rows:
             validate_manifest_row(row)
             writer.writerow(row)
+
+
+def write_generic_ortho_resolution_reports(experiment_dir: Path) -> None:
+    manifest_file = experiment_dir / "manifest.csv"
+    rows = read_manifest(manifest_file)
+    usable_rows = [
+        row
+        for row in rows
+        if row["status"] == "ok"
+        and row["ortho_file"].strip()
+        and Path(row["ortho_file"]).is_file()
+    ]
+
+    if len(usable_rows) != 1:
+        raise RuntimeError(
+            "Expected exactly one successful manifest row with an existing ortho_file "
+            f"for --generic-ortho-resolution; found {len(usable_rows)}."
+        )
+
+    ortho_file = usable_rows[0]["ortho_file"]
+
+    try:
+        from osgeo import gdal
+    except ImportError as exc:
+        raise RuntimeError(
+            "GDAL Python bindings are required for --generic-ortho-resolution reports."
+        ) from exc
+
+    gdal.DontUseExceptions()
+    dataset = gdal.Open(ortho_file)
+    if dataset is None:
+        raise RuntimeError(f"GDAL could not open ortho_file: {ortho_file}")
+
+    gt = dataset.GetGeoTransform()
+    if gt is None:
+        raise RuntimeError(f"GDAL GeoTransform is unavailable for ortho_file: {ortho_file}")
+
+    xres = abs(gt[1])
+    yres = abs(gt[5])
+    pixel_size_mean = (xres + yres) / 2
+    report = {
+        "ortho_file": ortho_file,
+        "xres": xres,
+        "yres": yres,
+        "pixel_size_mean": pixel_size_mean,
+        "xsize": dataset.RasterXSize,
+        "ysize": dataset.RasterYSize,
+        "recommended_numeric_orthoRes": pixel_size_mean,
+    }
+    dataset = None
+
+    with (experiment_dir / "generic_ortho_resolution.json").open(
+        "w", encoding="utf-8"
+    ) as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
+
+    with (experiment_dir / "generic_ortho_resolution.tsv").open(
+        "w", encoding="utf-8", newline=""
+    ) as f:
+        writer = csv.DictWriter(f, fieldnames=list(report.keys()), delimiter="\t")
+        writer.writeheader()
+        writer.writerow(report)
+
+    with (experiment_dir / "generic_ortho_resolution.md").open(
+        "w", encoding="utf-8"
+    ) as f:
+        f.write("- buildOrthomosaic.orthoRes was forced to 0 for this probe run.\n")
+        f.write(
+            "- The reported resolution was read from the exported GeoTIFF GeoTransform.\n"
+        )
+        f.write(
+            "- recommended_numeric_orthoRes is the value to use manually in later normal product preparation.\n"
+        )
 
 
 def make_replicate_config(
@@ -380,6 +552,11 @@ def main() -> int:
         action="store_true",
         help="Resume an existing experiment by skipping successful variant/replicate runs.",
     )
+    parser.add_argument(
+        "--generic-ortho-resolution",
+        action="store_true",
+        help="Run one no-variants probe with buildOrthomosaic.orthoRes forced to 0.",
+    )
 
     args = parser.parse_args()
 
@@ -388,15 +565,16 @@ def main() -> int:
     experiment_dir = args.experiment_dir.resolve()
     variants_file = args.variants.resolve() if args.variants else None
 
-    if args.reps < 2:
+    if args.generic_ortho_resolution and variants_file is not None:
+        raise RuntimeError("--generic-ortho-resolution cannot be used with --variants.")
+    if args.generic_ortho_resolution and args.reps != 1:
+        raise RuntimeError("--generic-ortho-resolution requires --reps 1.")
+    if args.reps < 2 and not args.generic_ortho_resolution:
         raise RuntimeError("Use at least --reps 2 for a reproducibility experiment.")
 
     manifest_file = experiment_dir / "manifest.csv"
     if manifest_file.exists() and not args.resume:
-        raise RuntimeError(
-            f"Manifest already exists: {manifest_file}\n"
-            "Pass --resume to continue failed or missing runs, or choose a new experiment directory."
-        )
+        raise RuntimeError(format_existing_manifest_error(manifest_file))
 
     ensure_experiment_dir(experiment_dir, overwrite=args.overwrite or args.resume)
 
@@ -463,6 +641,8 @@ def main() -> int:
                 replicate_index=i,
                 run_label=run_label,
             )
+            if args.generic_ortho_resolution:
+                cfg.setdefault("buildOrthomosaic", {})["orthoRes"] = 0
 
             project_dir.mkdir(parents=True, exist_ok=True)
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -539,8 +719,32 @@ def main() -> int:
         f"failed={failed_count}, "
         f"skipped={skipped_count}"
     )
-    return 1 if failed_count else 0
+    print_next_commands(
+        resume=args.resume,
+        failed_count=failed_count,
+        remaining_failures=has_remaining_failures(
+            variants=variants,
+            reps=args.reps,
+            latest_rows=latest_rows,
+        ),
+        base_config=base_config,
+        variants_file=variants_file,
+        experiment_dir=experiment_dir,
+        reps=args.reps,
+        metashape_dir=args.metashape_dir,
+    )
+    if failed_count:
+        return 1
+
+    if args.generic_ortho_resolution:
+        write_generic_ortho_resolution_reports(experiment_dir)
+
+    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        raise SystemExit(1)

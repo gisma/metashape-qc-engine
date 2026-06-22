@@ -28,6 +28,10 @@ import numpy as np
 from osgeo import gdal
 
 
+RESOLUTION_REL_TOL = 1e-6
+RESOLUTION_ABS_TOL = 1e-7
+DEFAULT_BLOCK_SIZE = 512
+
 KEY_COLUMNS = [
     "variant_id",
     "n_orthos",
@@ -89,6 +93,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bands", type=int, default=3)
     parser.add_argument("--stable-rmse-threshold", type=float, default=15.0)
     parser.add_argument(
+        "--block-size",
+        type=int,
+        default=DEFAULT_BLOCK_SIZE,
+        help=(
+            "Square processing block size in pixels passed to "
+            f"ortho_stability_analyzer.py. Default: {DEFAULT_BLOCK_SIZE}."
+        ),
+    )
+    parser.add_argument(
         "--thresholds",
         default="5,10,15,20,25,30",
         help=(
@@ -102,6 +115,34 @@ def parse_args() -> argparse.Namespace:
         help="Do not pass --overwrite to ortho_stability_analyzer.py.",
     )
     return parser.parse_args()
+
+
+def shell_join(command: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in command)
+
+
+def print_review_commands(experiment_dir: Path, output_dir: Path) -> None:
+    review_targets = [
+        (experiment_dir / "selected_product.json", "xdg-open"),
+        (output_dir / "evaluation_report.md", "xdg-open"),
+        (output_dir / "summary_key_metrics.tsv", "xdg-open"),
+        (experiment_dir / "qgis_open_selected.sh", "bash"),
+        (experiment_dir / "qgis_open_threshold_review.sh", "bash"),
+    ]
+
+    commands = [
+        [program, str(path)]
+        for path, program in review_targets
+        if path.exists()
+    ]
+
+    if not commands:
+        return
+
+    print()
+    print("Review commands:")
+    for command in commands:
+        print(f"  {shell_join(command)}")
 
 
 def threshold_label(value: float) -> str:
@@ -160,6 +201,173 @@ def read_manifest_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def manifest_ortho_path(value: str, manifest: Path) -> Path:
+    stripped = value.strip()
+    path = Path(stripped)
+    if path.is_absolute():
+        return path
+
+    win_path = PureWindowsPath(stripped)
+    if win_path.is_absolute():
+        return Path(stripped)
+
+    return manifest.parent / path
+
+
+def raster_projection_label(projection: str) -> str:
+    return projection.strip() if projection.strip() else "<missing>"
+
+
+def preflight_resolution_key(xres: float, yres: float) -> tuple[str, str]:
+    return (f"{xres:.12g}", f"{yres:.12g}")
+
+
+def resolutions_close(a: tuple[float, float], b: tuple[float, float]) -> bool:
+    return math.isclose(
+        a[0],
+        b[0],
+        rel_tol=RESOLUTION_REL_TOL,
+        abs_tol=RESOLUTION_ABS_TOL,
+    ) and math.isclose(
+        a[1],
+        b[1],
+        rel_tol=RESOLUTION_REL_TOL,
+        abs_tol=RESOLUTION_ABS_TOL,
+    )
+
+
+def collect_usable_ortho_infos(manifest: Path) -> list[dict[str, object]]:
+    rows = read_manifest_rows(manifest)
+    infos: list[dict[str, object]] = []
+
+    for row in rows:
+        if row.get("status", "").strip() != "ok":
+            continue
+
+        ortho_file = row.get("ortho_file", "").strip()
+        if not ortho_file:
+            continue
+
+        path = manifest_ortho_path(ortho_file, manifest)
+        if not path.is_file():
+            continue
+
+        ds = gdal.Open(str(path), gdal.GA_ReadOnly)
+        if ds is None:
+            continue
+
+        gt = ds.GetGeoTransform()
+        infos.append(
+            {
+                "variant_id": row.get("variant_id", "").strip(),
+                "replicate": row.get("replicate", "").strip(),
+                "path": path,
+                "xres": abs(float(gt[1])),
+                "yres": abs(float(gt[5])),
+                "projection": raster_projection_label(ds.GetProjection()),
+                "rotated_or_sheared": bool(gt[2] != 0 or gt[4] != 0),
+            }
+        )
+        ds = None
+
+    return infos
+
+
+def variant_examples(variant_ids: set[str], limit: int = 8) -> str:
+    values = sorted(v for v in variant_ids if v)
+    if not values:
+        return "NA"
+    shown = values[:limit]
+    suffix = f", ... (+{len(values) - limit} more)" if len(values) > limit else ""
+    return ", ".join(shown) + suffix
+
+
+def projection_summary(projections: set[str]) -> str:
+    if not projections:
+        return "none"
+    if len(projections) == 1:
+        value = next(iter(projections))
+        if value == "<missing>":
+            return "missing"
+        return "one projection string"
+    return f"{len(projections)} distinct projection strings"
+
+
+def format_resolution_preflight_error(
+    manifest: Path,
+    infos: list[dict[str, object]],
+    groups: dict[tuple[str, str], list[dict[str, object]]],
+) -> str:
+    lines = [
+        "Mixed raster resolutions detected.",
+        f"Manifest: {manifest}",
+        f"Usable orthomosaics: {len(infos)}",
+        "",
+        "Resolution groups:",
+    ]
+
+    for index, (key, group) in enumerate(
+        sorted(groups.items(), key=lambda item: (float(item[0][0]), float(item[0][1]))),
+        start=1,
+    ):
+        variants = {str(info.get("variant_id", "")) for info in group}
+        variant_replicates = {
+            (str(info.get("variant_id", "")), str(info.get("replicate", "")))
+            for info in group
+        }
+        projections = {str(info.get("projection", "")) for info in group}
+        rotated_count = sum(1 for info in group if bool(info.get("rotated_or_sheared")))
+
+        lines.extend(
+            [
+                f"- Group {index}:",
+                f"  x resolution: {key[0]}",
+                f"  y resolution: {key[1]}",
+                f"  rasters: {len(group)}",
+                f"  variants: {len(variants)}",
+                f"  variant-replicate pairs: {len(variant_replicates)}",
+                f"  example variant ids: {variant_examples(variants)}",
+                f"  projection compatibility: {projection_summary(projections)}",
+                f"  rotated/sheared transforms: {rotated_count}",
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            "Pixelwise stability analysis requires one common raster resolution.",
+            "This is expected when buildOrthomosaic.orthoRes was varied in the matrix.",
+            "Evaluate each resolution stratum separately, for example by running evaluation "
+            "on manifests or run directories that contain only one orthoRes level.",
+            "The evaluator does not silently resample rasters.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def preflight_manifest_raster_resolutions(manifest: Path) -> None:
+    infos = collect_usable_ortho_infos(manifest)
+    if not infos:
+        return
+
+    grouped: list[tuple[tuple[float, float], list[dict[str, object]]]] = []
+    for info in infos:
+        resolution = (float(info["xres"]), float(info["yres"]))
+        for key, group in grouped:
+            if resolutions_close(resolution, key):
+                group.append(info)
+                break
+        else:
+            grouped.append((resolution, [info]))
+
+    groups = {
+        preflight_resolution_key(key[0], key[1]): group
+        for key, group in grouped
+    }
+    if len(groups) > 1:
+        raise RuntimeError(format_resolution_preflight_error(manifest, infos, groups))
+
+
 def write_tsv(rows: list[dict[str, str]], columns: list[str], path: Path) -> None:
     with path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=columns, delimiter="\t")
@@ -194,6 +402,7 @@ def run_analyzer(
     grid_mode: str,
     bands: int,
     threshold: float,
+    block_size: int,
     overwrite: bool,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
@@ -204,6 +413,8 @@ def run_analyzer(
         raise FileNotFoundError(f"Missing manifest file: {manifest}")
     if not analyzer.is_file():
         raise FileNotFoundError(f"Missing analyzer script: {analyzer}")
+
+    preflight_manifest_raster_resolutions(manifest)
 
     cmd = [
         sys.executable,
@@ -217,6 +428,8 @@ def run_analyzer(
         str(bands),
         "--stable-rmse-threshold",
         str(threshold),
+        "--block-size",
+        str(block_size),
     ]
 
     if overwrite:
@@ -224,7 +437,17 @@ def run_analyzer(
 
     print("Running Stability Analyzer")
     print(" ".join(cmd))
-    subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as exc:
+        quoted_cmd = " ".join(shlex.quote(part) for part in cmd)
+        print(
+            f"Analyzer failed with exit code {exc.returncode}.\n"
+            "Rerun the analyzer command directly for full diagnostics:\n"
+            f"{quoted_cmd}",
+            file=sys.stderr,
+        )
+        raise SystemExit(exc.returncode) from exc
 
 
 def read_raster_array(path: Path) -> np.ndarray:
@@ -1061,6 +1284,8 @@ def write_report(
 def main() -> None:
     args = parse_args()
     gdal.UseExceptions()
+    if args.block_size <= 0:
+        raise RuntimeError("--block-size must be a positive integer.")
 
     experiment_dir = Path(args.experiment_dir).resolve()
     output_dir = experiment_dir / "stability_union"
@@ -1075,6 +1300,7 @@ def main() -> None:
             grid_mode=args.grid_mode,
             bands=args.bands,
             threshold=args.stable_rmse_threshold,
+            block_size=args.block_size,
             overwrite=not args.no_overwrite,
         )
 
@@ -1231,7 +1457,12 @@ def main() -> None:
         print(f"Wrote: {threshold_winners_file}")
         print(f"Wrote: {qgis_threshold_sh}")
         print(f"Wrote: {qgis_threshold_bat}")
+    print_review_commands(experiment_dir=experiment_dir, output_dir=output_dir)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        raise SystemExit(1) from exc

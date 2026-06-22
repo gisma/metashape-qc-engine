@@ -304,6 +304,36 @@ def format_template(template: str, values: dict[str, Any]) -> str:
         fail(f"Preset template references unknown placeholder: {exc.args[0]}")
 
 
+def shell_join(command: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in command)
+
+
+def print_next_commands(
+    generated_config: Path,
+    generated_variants_csv: Path,
+    experiment_dir: Path,
+    reps: int,
+) -> None:
+    shared_args = [
+        str(generated_config),
+        "--variants",
+        str(generated_variants_csv),
+        "--reps",
+        str(reps),
+        "--run-dir",
+        str(experiment_dir),
+    ]
+    commands = [
+        ["metashape-qc", "run-analysis", *shared_args],
+        ["metashape-qc", "resume-analysis", *shared_args],
+        ["metashape-qc", "evaluate", str(experiment_dir)],
+    ]
+
+    print("Next commands:")
+    for command in commands:
+        print(f"  {shell_join(command)}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -431,26 +461,18 @@ def main(argv: list[str] | None = None) -> int:
             variant_id_template,
         )
 
-        command = [
-            "metashape-qc",
-            "run-analysis",
-            str(generated_config),
-            "--variants",
-            str(generated_variants_csv),
-            "--reps",
-            str(args.reps),
-            "--run-dir",
-            str(experiment_dir),
-        ]
-
         print(f"Generated config: {generated_config}")
         print(f"Generated variants CSV: {generated_variants_csv}")
         print(f"Run directory: {experiment_dir}")
         print(f"Variants: {variant_count}")
         print(f"Replicates: {args.reps}")
         print(f"Total runs: {variant_count * args.reps}")
-        print("Command:")
-        print(" ".join(shlex.quote(part) for part in command))
+        print_next_commands(
+            generated_config=generated_config,
+            generated_variants_csv=generated_variants_csv,
+            experiment_dir=experiment_dir,
+            reps=args.reps,
+        )
         return 0
     except RuntimeError as exc:
         print(f"prepare_product_experiment.py: error: {exc}", file=sys.stderr)
