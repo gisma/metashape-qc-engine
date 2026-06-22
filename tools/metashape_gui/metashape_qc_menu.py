@@ -55,6 +55,19 @@ WORKFLOW_ACTION_NAMES = {
     "rgb_mesh_ortho_resolution_sensitivity_v1.json",
 }
 
+SUPPORTED_IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+    ".png",
+    ".dng",
+    ".arw",
+    ".cr2",
+    ".cr3",
+    ".nef",
+}
+
 _FORBIDDEN_PARTS = (
     ("m", "of"),
     ("M", "OF"),
@@ -118,17 +131,21 @@ def get_open_file_name(label: str, default: str = "") -> str:
 
 def load_config() -> dict:
     if not CONFIG_PATH.exists():
-        return _empty_config()
+        return _default_config(infer_runtime=True)
     try:
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except Exception as exc:
         message("Could not read launcher config:\n%s\n\nUsing empty values." % exc)
-        return _empty_config()
-    config = _empty_config()
+        return _default_config(infer_runtime=True)
+    config = _default_config(infer_runtime=False)
     if isinstance(data, dict):
         for key in CONFIG_KEYS:
             value = data.get(key, "")
             config[key] = "" if value is None else str(value)
+    if not config.get("default_project_crs"):
+        config["default_project_crs"] = DEFAULT_PROJECT_CRS_SENTINEL
+    if not config.get("default_camera_crs"):
+        config["default_camera_crs"] = DEFAULT_CAMERA_CRS
     return config
 
 
@@ -138,10 +155,15 @@ def save_config(config: dict) -> None:
     CONFIG_PATH.write_text(json.dumps(clean, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _empty_config() -> dict:
+def _default_config(infer_runtime: bool = False) -> dict:
     config = {key: "" for key in CONFIG_KEYS}
     config["default_project_crs"] = DEFAULT_PROJECT_CRS_SENTINEL
     config["default_camera_crs"] = DEFAULT_CAMERA_CRS
+    if infer_runtime:
+        repo = Path(__file__).resolve().parents[2]
+        config["repository_root"] = str(repo)
+        local_cli = repo / ".venv" / "bin" / CLI_NAME
+        config["metashape_qc_executable"] = str(local_cli) if local_cli.exists() else CLI_NAME
     return config
 
 
@@ -230,6 +252,31 @@ def _valid_project_crs(value: str) -> bool:
     return stripped != DEFAULT_PROJECT_CRS_SENTINEL
 
 
+def normalize_crs(value: str, allow_empty: bool = False) -> str:
+    stripped = str(value).strip()
+    if not stripped:
+        return "" if allow_empty else ""
+    if stripped == DEFAULT_PROJECT_CRS_SENTINEL:
+        return stripped
+    if stripped.isdigit():
+        return "EPSG::%s" % stripped
+    upper = stripped.upper()
+    if upper.startswith("EPSG::"):
+        return "EPSG::%s" % stripped[6:].strip()
+    if upper.startswith("EPSG:"):
+        return "EPSG::%s" % stripped[5:].strip()
+    return stripped
+
+
+def _has_supported_image(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    for child in path.rglob("*"):
+        if child.is_file() and child.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
+            return True
+    return False
+
+
 def _quote_command(args: Sequence[str]) -> str:
     return " ".join(shlex.quote(str(part)) for part in args)
 
@@ -243,7 +290,17 @@ def _log_path(prefix: str) -> Path:
 def launch_command(args: Sequence[str], log_prefix: str) -> None:
     log_path = _log_path(log_prefix)
     display = _quote_command(args)
-    message("Launching command:\n%s\n\nLog:\n%s" % (display, log_path))
+    try:
+        confirmation = get_string(
+            "Type START to launch this command:\n%s\nLog:\n%s" % (display, log_path),
+            "",
+        )
+    except RuntimeError as exc:
+        message(str(exc))
+        return
+    if confirmation != "START":
+        message("Launch cancelled.")
+        return
     try:
         log_handle = log_path.open("ab")
         log_handle.write(("Command: %s\n\n" % display).encode("utf-8"))
@@ -276,10 +333,37 @@ def configure_launcher() -> None:
         config[key] = get_string(label, current).strip()
     if not config.get("default_project_crs"):
         config["default_project_crs"] = DEFAULT_PROJECT_CRS_SENTINEL
+    else:
+        config["default_project_crs"] = normalize_crs(config["default_project_crs"])
     if not config.get("default_camera_crs"):
         config["default_camera_crs"] = DEFAULT_CAMERA_CRS
+    else:
+        config["default_camera_crs"] = normalize_crs(config["default_camera_crs"], allow_empty=True)
     save_config(config)
     message("Launcher config saved:\n%s" % CONFIG_PATH)
+
+
+def show_current_config() -> None:
+    config = load_config()
+    lines = ["Config path: %s" % CONFIG_PATH, ""]
+    for key in CONFIG_KEYS:
+        lines.append("%s: %s" % (key, config.get(key, "")))
+    message("\n".join(lines))
+
+
+def show_loaded_presets() -> None:
+    config = load_config()
+    repo = _repo_root(config)
+    presets = neutral_presets(config)
+    lines = ["Repository root: %s" % (repo if repo is not None else "")]
+    if presets:
+        lines.append("")
+        lines.append("Eligible neutral presets:")
+        lines.extend(path.name for path in presets)
+    else:
+        lines.append("")
+        lines.append("No eligible neutral presets found. repository_root likely needs configuration.")
+    message("\n".join(lines))
 
 
 def prepare_product_analysis() -> None:
@@ -298,6 +382,15 @@ def prepare_product_analysis() -> None:
     if not image_dir or not product_id or not output_root or preset is None or reps is None:
         message("Prepare cancelled or missing required input.")
         return
+    image_path = Path(image_dir).expanduser()
+    if not image_path.is_dir():
+        message("Image directory does not exist or is not a directory:\n%s" % image_path)
+        return
+    if not _has_supported_image(image_path):
+        message("Image directory contains no supported image files:\n%s" % image_path)
+        return
+    project_crs = normalize_crs(project_crs)
+    camera_crs = normalize_crs(camera_crs, allow_empty=True)
     if not _valid_project_crs(project_crs):
         message("Project CRS is required. Configure or enter a real project CRS before preparing.")
         return
@@ -333,7 +426,7 @@ def prepare_product_analysis() -> None:
 def probe_orthomosaic_sampling() -> None:
     config = load_config()
     try:
-        config_yml = get_open_file_name("config.yml", "").strip()
+        config_yml = get_open_file_name("Existing config.yml required for generic sampling probe", "").strip()
         run_dir = get_existing_directory("Run directory", config.get("recent_run_dir", "")).strip()
         metashape_dir = get_existing_directory("Metashape directory (optional)", config.get("metashape_dir", "")).strip()
     except RuntimeError as exc:
@@ -426,10 +519,11 @@ def evaluate_product_analysis() -> None:
 def run_resolution_sensitivity() -> None:
     config = load_config()
     text = (
-        "Resolution sensitivity is not orchestrated by this first launcher.\n\n"
-        "1. Run Probe Orthomosaic Sampling first.\n"
-        "2. Use the reported generic value as the first stratum.\n"
-        "3. Prepare separate reference runs with one fixed buildOrthomosaic.orthoRes per run."
+        "Resolution sensitivity is notes-only in this launcher.\n\n"
+        "1. First run generic sampling probe.\n"
+        "2. Then prepare separate reference runs with one fixed buildOrthomosaic.orthoRes each.\n"
+        "3. No mixed-resolution evaluation.\n\n"
+        "No orchestration yet."
     )
     repo = _repo_root(config)
     if repo is not None:
@@ -525,16 +619,18 @@ def _register_menu_item(label: str, callback: Callable[[], None]) -> None:
 
 def register_menu() -> None:
     entries = (
-        ("Configure Launcher", configure_launcher),
-        ("Probe Orthomosaic Sampling", probe_orthomosaic_sampling),
-        ("Prepare Product Analysis", prepare_product_analysis),
-        ("Run Product Analysis", run_product_analysis),
-        ("Resume Product Analysis", resume_product_analysis),
-        ("Evaluate Product Analysis", evaluate_product_analysis),
-        ("Run Resolution Sensitivity", run_resolution_sensitivity),
-        ("Open Run Folder", open_run_folder),
-        ("Open Evaluation Report", open_evaluation_report),
-        ("Open Selected Product Trace", open_selected_product_trace),
+        ("Settings/Configure Launcher", configure_launcher),
+        ("Settings/Show Current Config", show_current_config),
+        ("Settings/Show Loaded Presets", show_loaded_presets),
+        ("1 Probe Generic Sampling", probe_orthomosaic_sampling),
+        ("2 Prepare Product Analysis", prepare_product_analysis),
+        ("3 Run Product Analysis", run_product_analysis),
+        ("4 Resume Product Analysis", resume_product_analysis),
+        ("5 Evaluate Product Analysis", evaluate_product_analysis),
+        ("6 Resolution Sensitivity Notes", run_resolution_sensitivity),
+        ("Open/Run Folder", open_run_folder),
+        ("Open/Evaluation Report", open_evaluation_report),
+        ("Open/Selected Product Trace", open_selected_product_trace),
     )
     for label, callback in entries:
         _register_menu_item(label, callback)
