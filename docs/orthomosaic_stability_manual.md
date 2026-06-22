@@ -90,6 +90,14 @@ metashape-qc evaluate "<run_dir>" --skip-analyzer
 
 Historical/contextual note: older direct script calls and the legacy `metashape-qc experiment` wrapper may still exist, but active operational documentation uses the command sequence above and run directory terminology.
 
+
+### Generic technical orthomosaic resolution probe
+
+Before defining fixed product-resolution factors, a single generic resolution probe can be run with `--generic-ortho-resolution`. This probe performs one normal workflow run without a variants table and forces `buildOrthomosaic.orthoRes = 0` for that run only.
+
+The resulting recommended numeric value is derived from the exported GeoTIFF geotransform. It is therefore an observed product property, not a value inferred from the requested configuration. The value can be used as a numeric `buildOrthomosaic.orthoRes` factor in later product-analysis preparation.
+
+
 ## Run directory structure
 
 A prepared and executed run directory contains:
