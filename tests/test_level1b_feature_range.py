@@ -69,8 +69,20 @@ def validate(config: Level1BFeatureRangeConfig, apps: dict[str, str | None] | No
 
 
 def write_stats_xml(path: Path, values: list[float]) -> None:
-    body = "".join(f"<Statistic name=\"stddev\"><StatisticVector>{value}</StatisticVector></Statistic>" for value in values)
-    path.write_text(f"<OTB>{body}</OTB>", encoding="utf-8")
+    body = "\n".join(f'        <StatisticVector value="{value}" />' for value in values)
+    path.write_text(
+        f"""<?xml version="1.0" ?>
+<FeatureStatistics>
+    <Statistic name="mean">
+        <StatisticVector value="0" />
+    </Statistic>
+    <Statistic name="stddev">
+{body}
+    </Statistic>
+</FeatureStatistics>
+""",
+        encoding="utf-8",
+    )
 
 
 def test_01_layout_creates_only_ranger_dir_and_tmp_ranger_dir(tmp_path: Path) -> None:
@@ -153,26 +165,63 @@ def test_09_statistics_command_uses_compute_images_statistics_with_required_flag
     ]
 
 
-def test_10_xml_parser_extracts_standard_deviations_for_band_count(tmp_path: Path) -> None:
+def test_10_xml_parser_extracts_standard_deviations_from_real_otb_shape(tmp_path: Path) -> None:
     xml_path = tmp_path / "feature_statistics.xml"
-    write_stats_xml(xml_path, [1.25, 2.5, 9.0])
+    write_stats_xml(xml_path, [1.0, 1.0, 1.0, 0.999999, 0.999999])
 
-    assert parse_feature_statistics_xml(xml_path, 2) == {"standard_deviations": [1.25, 2.5]}
+    assert parse_feature_statistics_xml(xml_path, 5) == {
+        "standard_deviations": [1.0, 1.0, 1.0, 0.999999, 0.999999]
+    }
 
 
-def test_11_xml_parser_fails_on_missing_or_nonpositive_standard_deviations(tmp_path: Path) -> None:
-    missing = tmp_path / "missing.xml"
-    missing.write_text("<OTB><Mean>1</Mean></OTB>", encoding="utf-8")
-    nonpositive = tmp_path / "nonpositive.xml"
-    write_stats_xml(nonpositive, [1.0, 0.0])
+def test_11_xml_parser_supports_standard_deviation_descriptor_variants(tmp_path: Path) -> None:
+    xml_path = tmp_path / "feature_statistics.xml"
+    xml_path.write_text(
+        """<FeatureStatistics>
+  <Parameter name="out.std">1.25 2.5</Parameter>
+  <Parameter key="standard deviation" values="3.75 5.0" />
+</FeatureStatistics>
+""",
+        encoding="utf-8",
+    )
 
-    for xml_path in (missing, nonpositive):
-        try:
-            parse_feature_statistics_xml(xml_path, 2)
-        except ValueError as exc:
-            assert "invalid feature statistics" in str(exc)
-        else:
-            raise AssertionError("expected invalid feature statistics failure")
+    assert parse_feature_statistics_xml(xml_path, 4) == {"standard_deviations": [1.25, 2.5, 3.75, 5.0]}
+
+
+def test_11b_xml_parser_fails_when_no_standard_deviation_values_are_present(tmp_path: Path) -> None:
+    xml_path = tmp_path / "missing.xml"
+    xml_path.write_text("<OTB><Mean>1</Mean></OTB>", encoding="utf-8")
+
+    try:
+        parse_feature_statistics_xml(xml_path, 2)
+    except ValueError as exc:
+        assert "invalid feature statistics" in str(exc)
+    else:
+        raise AssertionError("expected invalid feature statistics failure")
+
+
+def test_11c_xml_parser_fails_when_fewer_than_band_count_standard_deviations_are_present(tmp_path: Path) -> None:
+    xml_path = tmp_path / "too_few.xml"
+    write_stats_xml(xml_path, [1.0])
+
+    try:
+        parse_feature_statistics_xml(xml_path, 2)
+    except ValueError as exc:
+        assert "invalid feature statistics" in str(exc)
+    else:
+        raise AssertionError("expected invalid feature statistics failure")
+
+
+def test_11d_xml_parser_fails_when_selected_standard_deviation_is_nonpositive(tmp_path: Path) -> None:
+    xml_path = tmp_path / "nonpositive.xml"
+    write_stats_xml(xml_path, [1.0, 0.0])
+
+    try:
+        parse_feature_statistics_xml(xml_path, 2)
+    except ValueError as exc:
+        assert "invalid feature statistics" in str(exc)
+    else:
+        raise AssertionError("expected invalid feature statistics failure")
 
 
 def test_12_single_ranger_candidate_derives_feature_std_l2(tmp_path: Path) -> None:
@@ -257,16 +306,17 @@ def test_20_assignment_rule_is_single_feature_range_assigned_to_each_scale_candi
 
 def test_21_normal_run_writes_all_four_output_files(tmp_path: Path, monkeypatch) -> None:
     def fake_run(command: list[str], capture_output: bool, text: bool):
-        write_stats_xml(Path(command[command.index("-out.xml") + 1]), [3.0, 4.0])
+        write_stats_xml(Path(command[command.index("-out.xml") + 1]), [1.0, 1.0, 1.0, 0.999999, 0.999999])
         return feature_range.subprocess.CompletedProcess(command, 0, "ok", "")
 
     monkeypatch.setattr("shutil.which", lambda _name: "/fake/bin/otbcli_ComputeImagesStatistics")
     monkeypatch.setattr("metashape_qc_engine.level1b_feature_range.subprocess.run", fake_run)
-    report = run_feature_range_assignment_step(make_config(tmp_path))
+    report = run_feature_range_assignment_step(make_config(tmp_path, band_count=5, ranger_multiplier=1.0))
+    expected_feature_std_l2 = sqrt(1.0**2 + 1.0**2 + 1.0**2 + 0.999999**2 + 0.999999**2)
 
     assert report["status"] == "ok"
-    assert report["feature_std_l2"] == sqrt(3.0**2 + 4.0**2)
-    assert report["ranger"] == 7.5
+    assert report["feature_std_l2"] == expected_feature_std_l2
+    assert report["ranger"] == expected_feature_std_l2
     assert len(report["files_written"]) == 4
     assert all(Path(path).is_file() for path in report["files_written"])
 

@@ -174,6 +174,25 @@ def build_feature_statistics_command(config, apps, layout) -> list[str]:
 
 
 def parse_feature_statistics_xml(xml_path, band_count) -> dict[str, list[float]]:
+    def local_name(tag) -> str:
+        return str(tag).rsplit("}", 1)[-1].lower()
+
+    def is_standard_deviation_descriptor(value: str) -> bool:
+        normalized = value.lower().replace("_", " ").replace("-", " ")
+        return (
+            "out.std" in normalized
+            or re.search(r"(^|[^a-z0-9])std([^a-z0-9]|$)", normalized) is not None
+            or "stddev" in normalized
+            or "std dev" in normalized
+            or "standard deviation" in normalized
+            or "standarddeviation" in normalized
+        )
+
+    def numbers_from_text(value: str | None) -> list[float]:
+        if value is None:
+            return []
+        return [float(match) for match in number_pattern.findall(value)]
+
     try:
         root = ET.parse(xml_path).getroot()
     except Exception as exc:
@@ -182,14 +201,27 @@ def parse_feature_statistics_xml(xml_path, band_count) -> dict[str, list[float]]
     standard_deviations: list[float] = []
     number_pattern = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
 
-    for element in root.iter():
-        tag = element.tag.rsplit("}", 1)[-1].lower()
-        attrib_text = " ".join(f"{key} {value}" for key, value in element.attrib.items()).lower()
-        if "std" not in tag and "standard_deviation" not in tag and "std" not in attrib_text:
-            continue
-        text = " ".join(part for part in element.itertext() if part)
-        for match in number_pattern.findall(text):
-            standard_deviations.append(float(match))
+    def collect(element, inherited_descriptor: bool = False) -> None:
+        element_descriptor = " ".join(
+            [local_name(element.tag)]
+            + [str(key).lower() for key in element.attrib]
+            + [str(value).lower() for value in element.attrib.values()]
+            + [element.text.lower() if element.text else ""]
+        )
+        descriptor_active = inherited_descriptor or is_standard_deviation_descriptor(element_descriptor)
+
+        if descriptor_active:
+            standard_deviations.extend(numbers_from_text(element.text))
+            for key, value in element.attrib.items():
+                key_text = str(key).lower()
+                value_text = str(value)
+                if key_text in {"value", "values"} or is_standard_deviation_descriptor(key_text) or is_standard_deviation_descriptor(value_text):
+                    standard_deviations.extend(numbers_from_text(value_text))
+
+        for child in list(element):
+            collect(child, descriptor_active)
+
+    collect(root)
 
     if len(standard_deviations) < band_count:
         raise ValueError("invalid feature statistics: standard deviations are missing")
