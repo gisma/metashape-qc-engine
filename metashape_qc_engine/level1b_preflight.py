@@ -43,6 +43,9 @@ class Level1BPreflightConfig:
     tmp_dir: str | Path | None = None
     input_type: str = "rgb"
     valid_mask_path: str | Path | None = None
+    band_roles: Iterable[str] | None = None
+    declared_channels: Iterable[str] | None = None
+    mask_contract: str = "optional"
     candidate_state: Any = None
     required_otb_apps: Iterable[str] | None = None
 
@@ -136,6 +139,170 @@ def input_suffix_raster_like(input_path: str | Path) -> bool:
     return Path(input_path).suffix.lower() in VALID_RASTER_LIKE_SUFFIXES
 
 
+CONTRACT_CHECK_KEYS = (
+    "input_contract_valid",
+    "rgb_band_roles_valid",
+    "rgb_declared_channels_absent",
+    "multichannel_declared_channels_present",
+    "multichannel_declared_channels_non_empty",
+    "multichannel_declared_channels_unique",
+    "multichannel_band_roles_valid",
+    "mask_contract_valid",
+    "mask_path_requirement_valid",
+)
+
+VALID_MASK_CONTRACTS = {"required", "optional", "absent"}
+RGB_BAND_ROLES = ["red", "green", "blue"]
+
+
+def normalize_declaration(values: Iterable[str] | None) -> list[str] | None:
+    """Normalize a declaration iterable without inferring values from data."""
+
+    if values is None:
+        return None
+    return [str(value).strip() for value in values]
+
+
+def validate_input_contract(
+    input_type: str,
+    band_roles: Iterable[str] | None,
+    declared_channels: Iterable[str] | None,
+) -> tuple[str, list[str] | None, list[str] | None, dict[str, bool], list[str]]:
+    """Validate declaration-only input contracts."""
+
+    normalized_band_roles = normalize_declaration(band_roles)
+    normalized_declared_channels = normalize_declaration(declared_channels)
+    contract_checks = {key: True for key in CONTRACT_CHECK_KEYS}
+    failure_reasons: list[str] = []
+    input_contract = "invalid"
+
+    if input_type not in VALID_INPUT_TYPES:
+        contract_checks["input_contract_valid"] = False
+        return (
+            input_contract,
+            normalized_band_roles,
+            normalized_declared_channels,
+            contract_checks,
+            failure_reasons,
+        )
+
+    if input_type == "rgb":
+        if normalized_band_roles is None:
+            normalized_band_roles = list(RGB_BAND_ROLES)
+        if normalized_band_roles != RGB_BAND_ROLES:
+            contract_checks["rgb_band_roles_valid"] = False
+            failure_reasons.append("rgb band_roles must be exactly red, green, blue")
+        if normalized_declared_channels is not None:
+            contract_checks["rgb_declared_channels_absent"] = False
+            failure_reasons.append("rgb input must not declare generic channels")
+        if contract_checks["rgb_band_roles_valid"] and contract_checks["rgb_declared_channels_absent"]:
+            input_contract = "rgb"
+        else:
+            contract_checks["input_contract_valid"] = False
+        return (
+            input_contract,
+            normalized_band_roles,
+            normalized_declared_channels,
+            contract_checks,
+            failure_reasons,
+        )
+
+    if normalized_declared_channels is None:
+        contract_checks["multichannel_declared_channels_present"] = False
+        failure_reasons.append("multichannel input requires declared_channels")
+    elif not normalized_declared_channels:
+        contract_checks["multichannel_declared_channels_non_empty"] = False
+        failure_reasons.append("multichannel input requires declared_channels")
+    elif any(channel == "" for channel in normalized_declared_channels):
+        contract_checks["multichannel_declared_channels_non_empty"] = False
+        failure_reasons.append("declared_channels must not contain empty values")
+
+    if normalized_declared_channels is not None and len(set(normalized_declared_channels)) != len(
+        normalized_declared_channels
+    ):
+        contract_checks["multichannel_declared_channels_unique"] = False
+        failure_reasons.append("declared_channels must be unique")
+
+    if normalized_band_roles is not None:
+        if not normalized_band_roles:
+            contract_checks["multichannel_band_roles_valid"] = False
+            failure_reasons.append("multichannel band_roles must not contain empty values")
+        elif any(role == "" for role in normalized_band_roles):
+            contract_checks["multichannel_band_roles_valid"] = False
+            failure_reasons.append("multichannel band_roles must not contain empty values")
+        elif normalized_declared_channels is not None and len(normalized_band_roles) != len(
+            normalized_declared_channels
+        ):
+            contract_checks["multichannel_band_roles_valid"] = False
+            failure_reasons.append("multichannel band_roles length must match declared_channels")
+
+    input_check_keys = (
+        "multichannel_declared_channels_present",
+        "multichannel_declared_channels_non_empty",
+        "multichannel_declared_channels_unique",
+        "multichannel_band_roles_valid",
+    )
+    if all(contract_checks[key] for key in input_check_keys):
+        input_contract = "multichannel"
+    else:
+        contract_checks["input_contract_valid"] = False
+
+    return (
+        input_contract,
+        normalized_band_roles,
+        normalized_declared_channels,
+        contract_checks,
+        failure_reasons,
+    )
+
+
+def validate_mask_contract(
+    mask_contract: str,
+    valid_mask_path: Path | None,
+) -> tuple[str, str, dict[str, bool], list[str]]:
+    """Validate declaration-only mask contract requirements."""
+
+    normalized_mask_contract = str(mask_contract).strip().lower()
+    contract_checks = {key: True for key in CONTRACT_CHECK_KEYS}
+    failure_reasons: list[str] = []
+
+    if normalized_mask_contract not in VALID_MASK_CONTRACTS:
+        contract_checks["mask_contract_valid"] = False
+        failure_reasons.append("mask_contract must be one of required, optional, absent")
+        return normalized_mask_contract, "invalid_contract", contract_checks, failure_reasons
+
+    if normalized_mask_contract == "required":
+        if valid_mask_path is None:
+            contract_checks["mask_path_requirement_valid"] = False
+            failure_reasons.append("valid_mask_path is required by mask_contract")
+            return normalized_mask_contract, "missing_required", contract_checks, failure_reasons
+        if not valid_mask_path.exists():
+            contract_checks["mask_path_requirement_valid"] = False
+            failure_reasons.append("valid_mask_path does not exist")
+            return normalized_mask_contract, "missing_path", contract_checks, failure_reasons
+        return normalized_mask_contract, "provided", contract_checks, failure_reasons
+
+    if normalized_mask_contract == "optional":
+        if valid_mask_path is None:
+            return (
+                normalized_mask_contract,
+                "not_provided_optional",
+                contract_checks,
+                failure_reasons,
+            )
+        if not valid_mask_path.exists():
+            contract_checks["mask_path_requirement_valid"] = False
+            failure_reasons.append("valid_mask_path does not exist")
+            return normalized_mask_contract, "missing_path", contract_checks, failure_reasons
+        return normalized_mask_contract, "provided", contract_checks, failure_reasons
+
+    if valid_mask_path is not None:
+        contract_checks["mask_path_requirement_valid"] = False
+        failure_reasons.append("valid_mask_path must be omitted when mask_contract is absent")
+        return normalized_mask_contract, "forbidden_when_absent", contract_checks, failure_reasons
+    return normalized_mask_contract, "declared_absent", contract_checks, failure_reasons
+
+
 def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
     """Run Level-1b Step 0 preflight and write the JSON report."""
 
@@ -165,8 +332,6 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
 
     valid_mask_path = Path(config.valid_mask_path) if config.valid_mask_path is not None else None
     checks["valid_mask_path_exists"] = valid_mask_path is None or valid_mask_path.exists()
-    if not checks["valid_mask_path_exists"]:
-        failure_reasons.append(f"valid_mask_path does not exist: {valid_mask_path}")
 
     checks["candidate_state_not_failed"] = not candidate_state_failed(config.candidate_state)
     if not checks["candidate_state_not_failed"]:
@@ -201,6 +366,26 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
     if missing_apps:
         failure_reasons.append("missing required OTB app(s): " + ", ".join(missing_apps))
 
+    (
+        input_contract,
+        normalized_band_roles,
+        normalized_declared_channels,
+        input_contract_checks,
+        input_contract_failures,
+    ) = validate_input_contract(
+        config.input_type,
+        config.band_roles,
+        config.declared_channels,
+    )
+    normalized_mask_contract, mask_status, mask_contract_checks, mask_contract_failures = (
+        validate_mask_contract(config.mask_contract, valid_mask_path)
+    )
+    contract_checks = {key: True for key in CONTRACT_CHECK_KEYS}
+    for key in CONTRACT_CHECK_KEYS:
+        contract_checks[key] = input_contract_checks[key] and mask_contract_checks[key]
+    failure_reasons.extend(input_contract_failures)
+    failure_reasons.extend(mask_contract_failures)
+
     status = "failed" if failure_reasons else "ok"
     default_tmp_dir = layout.get("default_tmp_dir", Path(config.output_dir) / "level1b" / "tmp")
     runtime_tmp_dir = layout.get(
@@ -219,6 +404,12 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
         "app_availability": app_availability,
         "small_regions_merging_app": small_regions_merging_app,
         "checks": checks,
+        "input_contract": input_contract,
+        "mask_contract": normalized_mask_contract,
+        "band_roles": normalized_band_roles,
+        "declared_channels": normalized_declared_channels,
+        "mask_status": mask_status,
+        "contract_checks": contract_checks,
         "status": status,
         "failure_reasons": failure_reasons,
         "timestamp": datetime.now(timezone.utc).isoformat(),

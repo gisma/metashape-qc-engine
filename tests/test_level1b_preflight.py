@@ -253,6 +253,12 @@ def test_preflight_json_contains_required_schema_values(tmp_path: Path, monkeypa
         "failure_reasons",
         "timestamp",
         "no_processing_performed",
+        "input_contract",
+        "mask_contract",
+        "band_roles",
+        "declared_channels",
+        "mask_status",
+        "contract_checks",
     } <= set(report)
     assert report["candidate_id"] == "candidate-1"
     assert report["input_path"] == str(input_path)
@@ -263,6 +269,560 @@ def test_preflight_json_contains_required_schema_values(tmp_path: Path, monkeypa
     assert report["tmp_dir"] == report["runtime_tmp_dir"]
     assert report["no_processing_performed"] is True
     assert "ram" + "_mb" not in report
+
+
+def test_rgb_omitted_band_roles_succeeds_and_reports_rgb_roles(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+        )
+    )
+
+    assert report["status"] == "ok"
+    assert report["input_contract"] == "rgb"
+    assert report["band_roles"] == ["red", "green", "blue"]
+    assert report["declared_channels"] is None
+
+
+def test_rgb_exact_band_roles_succeeds(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            band_roles=["red", "green", "blue"],
+        )
+    )
+
+    assert report["status"] == "ok"
+    assert report["input_contract"] == "rgb"
+    assert report["band_roles"] == ["red", "green", "blue"]
+
+
+def test_rgb_wrong_band_roles_fails_rgb_contract(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            band_roles=["red", "green", "nir"],
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["input_contract"] == "invalid"
+    assert report["contract_checks"]["rgb_band_roles_valid"] is False
+    assert "rgb band_roles must be exactly red, green, blue" in report["failure_reasons"]
+
+
+def test_rgb_declared_channels_fails_rgb_contract(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            declared_channels=["red", "green", "blue"],
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["input_contract"] == "invalid"
+    assert report["contract_checks"]["rgb_declared_channels_absent"] is False
+    assert "rgb input must not declare generic channels" in report["failure_reasons"]
+
+
+def test_multichannel_without_declared_channels_fails_contract(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="multichannel",
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["input_contract"] == "invalid"
+    assert report["contract_checks"]["multichannel_declared_channels_present"] is False
+    assert "multichannel input requires declared_channels" in report["failure_reasons"]
+
+
+def test_multichannel_with_declared_channels_succeeds(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="multichannel",
+            declared_channels=["red", "nir"],
+        )
+    )
+
+    assert report["status"] == "ok"
+    assert report["input_contract"] == "multichannel"
+    assert report["band_roles"] is None
+    assert report["declared_channels"] == ["red", "nir"]
+
+
+def test_multichannel_empty_declared_channel_fails_contract(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="multichannel",
+            declared_channels=["red", " "],
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["declared_channels"] == ["red", ""]
+    assert report["contract_checks"]["multichannel_declared_channels_non_empty"] is False
+    assert "declared_channels must not contain empty values" in report["failure_reasons"]
+
+
+def test_multichannel_duplicate_declared_channels_fails_contract(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="multichannel",
+            declared_channels=["red", "red"],
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["contract_checks"]["multichannel_declared_channels_unique"] is False
+    assert "declared_channels must be unique" in report["failure_reasons"]
+
+
+def test_multichannel_band_roles_length_mismatch_fails_contract(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="multichannel",
+            declared_channels=["red", "nir"],
+            band_roles=["reflectance"],
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["contract_checks"]["multichannel_band_roles_valid"] is False
+    assert (
+        "multichannel band_roles length must match declared_channels"
+        in report["failure_reasons"]
+    )
+
+
+def test_multichannel_empty_band_role_fails_contract(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="multichannel",
+            declared_channels=["red", "nir"],
+            band_roles=["reflectance", " "],
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["band_roles"] == ["reflectance", ""]
+    assert report["contract_checks"]["multichannel_band_roles_valid"] is False
+    assert "multichannel band_roles must not contain empty values" in report["failure_reasons"]
+
+
+def test_multichannel_declared_channels_and_matching_band_roles_succeeds(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="multichannel",
+            declared_channels=["red", "nir"],
+            band_roles=["reflectance", "reflectance"],
+        )
+    )
+
+    assert report["status"] == "ok"
+    assert report["input_contract"] == "multichannel"
+    assert report["declared_channels"] == ["red", "nir"]
+    assert report["band_roles"] == ["reflectance", "reflectance"]
+
+
+def test_mask_required_existing_valid_mask_path_succeeds_with_provided_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+    mask_path = tmp_path / "valid-mask.tif"
+    mask_path.touch()
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            valid_mask_path=mask_path,
+            mask_contract="required",
+        )
+    )
+
+    assert report["status"] == "ok"
+    assert report["mask_contract"] == "required"
+    assert report["mask_status"] == "provided"
+
+
+def test_mask_required_no_valid_mask_path_fails_with_missing_required_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            mask_contract="required",
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["mask_status"] == "missing_required"
+    assert "valid_mask_path is required by mask_contract" in report["failure_reasons"]
+
+
+def test_mask_required_missing_valid_mask_path_fails_with_missing_path_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            valid_mask_path=tmp_path / "missing-mask.tif",
+            mask_contract="required",
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["mask_status"] == "missing_path"
+    assert "valid_mask_path does not exist" in report["failure_reasons"]
+
+
+def test_mask_optional_no_valid_mask_path_succeeds_with_not_provided_optional_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            mask_contract="optional",
+        )
+    )
+
+    assert report["status"] == "ok"
+    assert report["mask_status"] == "not_provided_optional"
+
+
+def test_mask_optional_existing_valid_mask_path_succeeds_with_provided_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+    mask_path = tmp_path / "valid-mask.tif"
+    mask_path.touch()
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            valid_mask_path=mask_path,
+            mask_contract="optional",
+        )
+    )
+
+    assert report["status"] == "ok"
+    assert report["mask_status"] == "provided"
+
+
+def test_mask_optional_missing_valid_mask_path_fails_with_missing_path_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            valid_mask_path=tmp_path / "missing-mask.tif",
+            mask_contract="optional",
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["mask_status"] == "missing_path"
+    assert "valid_mask_path does not exist" in report["failure_reasons"]
+
+
+def test_mask_absent_no_valid_mask_path_succeeds_with_declared_absent_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            mask_contract="absent",
+        )
+    )
+
+    assert report["status"] == "ok"
+    assert report["mask_status"] == "declared_absent"
+
+
+def test_mask_absent_valid_mask_path_fails_with_forbidden_when_absent_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+    mask_path = tmp_path / "valid-mask.tif"
+    mask_path.touch()
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            valid_mask_path=mask_path,
+            mask_contract="absent",
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["mask_status"] == "forbidden_when_absent"
+    assert (
+        "valid_mask_path must be omitted when mask_contract is absent"
+        in report["failure_reasons"]
+    )
+
+
+def test_mask_invalid_contract_fails_with_invalid_contract_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+            mask_contract="sometimes",
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["mask_contract"] == "sometimes"
+    assert report["mask_status"] == "invalid_contract"
+    assert "mask_contract must be one of required, optional, absent" in report["failure_reasons"]
+
+
+def test_report_includes_input_and_mask_contract_keys(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+        )
+    )
+
+    assert {
+        "input_contract",
+        "mask_contract",
+        "band_roles",
+        "declared_channels",
+        "mask_status",
+        "contract_checks",
+    } <= set(report)
+
+
+def test_contract_checks_has_exactly_required_input_and_mask_contract_keys(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+        )
+    )
+
+    assert set(report["contract_checks"]) == {
+        "input_contract_valid",
+        "rgb_band_roles_valid",
+        "rgb_declared_channels_absent",
+        "multichannel_declared_channels_present",
+        "multichannel_declared_channels_non_empty",
+        "multichannel_declared_channels_unique",
+        "multichannel_band_roles_valid",
+        "mask_contract_valid",
+        "mask_path_requirement_valid",
+    }
+
+
+def test_no_processing_performed_remains_true_for_input_and_mask_contracts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+        )
+    )
+
+    assert report["no_processing_performed"] is True
+
+
+def test_default_runtime_and_alias_tmp_dir_semantics_remain_unchanged(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+    output_dir = tmp_path / "out"
+    custom_tmp = tmp_path / "custom-tmp"
+
+    default_report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-default",
+            input_path=make_input(tmp_path, "default.tif"),
+            output_dir=output_dir,
+            input_type="rgb",
+        )
+    )
+    custom_report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-custom",
+            input_path=make_input(tmp_path, "custom.tif"),
+            output_dir=tmp_path / "out-custom",
+            tmp_dir=custom_tmp,
+            input_type="rgb",
+        )
+    )
+
+    assert default_report["default_tmp_dir"] == str(output_dir / "level1b" / "tmp")
+    assert default_report["runtime_tmp_dir"] == default_report["default_tmp_dir"]
+    assert default_report["tmp_dir"] == default_report["runtime_tmp_dir"]
+    assert custom_report["default_tmp_dir"] == str(tmp_path / "out-custom" / "level1b" / "tmp")
+    assert custom_report["runtime_tmp_dir"] == str(custom_tmp)
+    assert custom_report["tmp_dir"] == custom_report["runtime_tmp_dir"]
+
+
+def test_memory_field_absent_from_report_and_source(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", fake_otb_path)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+        )
+    )
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_preflight.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ram" + "_mb" not in report
+    assert "ram" + "_mb" not in source
+
+
+def test_source_contains_no_forbidden_runner_or_import_symbols() -> None:
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_preflight.py").read_text(
+        encoding="utf-8"
+    )
+    forbidden = [
+        "run_" + "otb_app",
+        "OTB" + "Command" + "Result",
+        "OTB" + "Command" + "Error",
+        "sub" + "process",
+        "sub" + "process.run",
+        r"\b" + "ti" + r"me\b",
+        "ti" + "me.monotonic",
+        "link" + "2GI",
+        "raster" + "io",
+        "os" + "geo",
+        "g" + "dal",
+        "num" + "py",
+    ]
+
+    assert not re.search("|".join(forbidden), source)
 
 
 def test_accepted_raster_like_suffixes_return_ok(tmp_path: Path, monkeypatch) -> None:
