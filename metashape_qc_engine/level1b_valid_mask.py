@@ -171,20 +171,20 @@ def build_valid_mask_expression(config: Level1BValidMaskConfig) -> tuple[str | N
 
     if config.nodata_values is not None:
         for band_index in sorted(config.nodata_values):
-            conditions.append(f"im1b{band_index} != {config.nodata_values[band_index]}")
+            conditions.append(f"(im1b{band_index} != {config.nodata_values[band_index]})")
     if config.alpha_band_index is not None:
-        conditions.append(f"im1b{config.alpha_band_index} >= {config.alpha_valid_min}")
+        conditions.append(f"(im1b{config.alpha_band_index} >= {config.alpha_valid_min})")
     if config.black_border_enabled:
         border_checks = [
-            f"im1b{band_index} == {value}"
+            f"(im1b{band_index} != {value})"
             for band_index, value in zip(config.black_border_band_indices, config.black_border_invalid_values)
         ]
-        conditions.append(f"!({' && '.join(border_checks)})")
+        conditions.append(f"({' or '.join(border_checks)})")
 
     if not conditions:
         failure_reasons.append("no valid-mask construction rule is active")
         return None, failure_reasons
-    return f"{' && '.join(conditions)} ? 1 : 0", failure_reasons
+    return f"{' and '.join(conditions)} ? 1 : 0", failure_reasons
 
 
 def build_valid_mask_command(config: Level1BValidMaskConfig, otb_app_path: str, valid_mask_path: Path) -> list[str]:

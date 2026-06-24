@@ -224,6 +224,18 @@ def test_default_black_border_expression_contains_expected_bands_and_values() ->
     assert "0.0" in expression
 
 
+def test_default_black_border_expression_uses_bandmathx_boolean_syntax() -> None:
+    expression, reasons = build_valid_mask_expression(
+        Level1BValidMaskConfig(candidate_id="candidate-1", input_path="input.tif", output_dir="out")
+    )
+
+    assert reasons == []
+    assert "!(" not in expression
+    assert "&&" not in expression
+    assert "||" not in expression
+    assert expression == "((im1b1 != 0.0) or (im1b2 != 0.0) or (im1b3 != 0.0)) ? 1 : 0"
+
+
 def test_nodata_expression_contains_band_and_value() -> None:
     expression, reasons = build_valid_mask_expression(
         Level1BValidMaskConfig(
@@ -267,7 +279,27 @@ def test_combined_expression_uses_boolean_join_and_output_branch() -> None:
     )
 
     assert reasons == []
-    assert "&&" in expression
+    assert " and " in expression
+    assert expression.endswith("? 1 : 0")
+
+
+def test_combined_expression_uses_bandmathx_and_between_valid_conditions() -> None:
+    expression, reasons = build_valid_mask_expression(
+        Level1BValidMaskConfig(
+            candidate_id="candidate-1",
+            input_path="input.tif",
+            output_dir="out",
+            nodata_values={1: 255.0},
+            alpha_band_index=4,
+        )
+    )
+
+    assert reasons == []
+    assert expression == (
+        "(im1b1 != 255.0) and (im1b4 >= 1.0) and "
+        "((im1b1 != 0.0) or (im1b2 != 0.0) or (im1b3 != 0.0)) ? 1 : 0"
+    )
+    assert " and " in expression
     assert expression.endswith("? 1 : 0")
 
 
