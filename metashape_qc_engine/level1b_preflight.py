@@ -29,6 +29,8 @@ DEFAULT_REQUIRED_OTB_APPS = (
 )
 
 VALID_INPUT_TYPES = {"rgb", "multichannel"}
+VALID_RASTER_LIKE_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
+LEGACY_SMALL_REGIONS_MERGING_APP = "LSMSSmallRegionsMerging"
 
 
 @dataclass(frozen=True)
@@ -42,7 +44,6 @@ class Level1BPreflightConfig:
     input_type: str = "rgb"
     valid_mask_path: str | Path | None = None
     candidate_state: Any = None
-    ram_mb: int = 4096
     required_otb_apps: Iterable[str] | None = None
 
 
@@ -70,17 +71,17 @@ def discover_required_otb_apps(
     for app_name in apps:
         if app_name == "SmallRegionsMerging":
             primary_path = discover_otb_app("SmallRegionsMerging")
-            legacy_path = discover_otb_app("LSMSSmallRegionsMerging")
+            legacy_path = discover_otb_app(LEGACY_SMALL_REGIONS_MERGING_APP)
             if primary_path:
                 small_regions_merging_app = "SmallRegionsMerging"
             elif legacy_path:
-                small_regions_merging_app = "LSMSSmallRegionsMerging"
+                small_regions_merging_app = LEGACY_SMALL_REGIONS_MERGING_APP
 
             app_availability["SmallRegionsMerging"] = {
                 "available": bool(primary_path),
                 "path": primary_path,
             }
-            app_availability["LSMSSmallRegionsMerging"] = {
+            app_availability[LEGACY_SMALL_REGIONS_MERGING_APP] = {
                 "available": bool(legacy_path),
                 "path": legacy_path,
             }
@@ -99,9 +100,13 @@ def build_level1b_layout(output_dir: str | Path, tmp_dir: str | Path | None = No
     """Create and return Level-1b output, tmp, log, and report directories."""
 
     level1b_dir = Path(output_dir) / "level1b"
+    default_tmp_dir = level1b_dir / "tmp"
+    runtime_tmp_dir = Path(tmp_dir) if tmp_dir is not None else default_tmp_dir
     layout = {
         "level1b_dir": level1b_dir,
-        "tmp_dir": Path(tmp_dir) if tmp_dir is not None else level1b_dir / "tmp",
+        "default_tmp_dir": default_tmp_dir,
+        "runtime_tmp_dir": runtime_tmp_dir,
+        "tmp_dir": runtime_tmp_dir,
         "logs_dir": level1b_dir / "logs",
         "reports_dir": level1b_dir / "reports",
     }
@@ -125,6 +130,12 @@ def candidate_state_failed(candidate_state: Any) -> bool:
     return bool(getattr(candidate_state, "failed", False))
 
 
+def input_suffix_raster_like(input_path: str | Path) -> bool:
+    """Return whether the path suffix is accepted for Step 0 preflight."""
+
+    return Path(input_path).suffix.lower() in VALID_RASTER_LIKE_SUFFIXES
+
+
 def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
     """Run Level-1b Step 0 preflight and write the JSON report."""
 
@@ -140,6 +151,13 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
     checks["input_path_exists"] = input_path.exists()
     if not checks["input_path_exists"]:
         failure_reasons.append(f"input_path does not exist: {input_path}")
+
+    checks["input_suffix_raster_like"] = input_suffix_raster_like(input_path)
+    if not checks["input_suffix_raster_like"]:
+        failure_reasons.append(
+            "input_path suffix must be one of: "
+            + ", ".join(sorted(VALID_RASTER_LIKE_SUFFIXES))
+        )
 
     checks["input_type_valid"] = config.input_type in VALID_INPUT_TYPES
     if not checks["input_type_valid"]:
@@ -158,8 +176,12 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
     try:
         layout = build_level1b_layout(config.output_dir, config.tmp_dir)
         checks["output_layout_created"] = True
+        checks["default_tmp_dir_created"] = layout["default_tmp_dir"].is_dir()
+        checks["runtime_tmp_dir_created"] = layout["runtime_tmp_dir"].is_dir()
     except OSError as exc:
         checks["output_layout_created"] = False
+        checks["default_tmp_dir_created"] = False
+        checks["runtime_tmp_dir_created"] = False
         failure_reasons.append(f"could not create output layout: {exc}")
 
     required_apps = tuple(config.required_otb_apps or DEFAULT_REQUIRED_OTB_APPS)
@@ -168,7 +190,9 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
     for app_name in required_apps:
         if app_name == "SmallRegionsMerging":
             if small_regions_merging_app is None:
-                missing_apps.append("SmallRegionsMerging or LSMSSmallRegionsMerging")
+                missing_apps.append(
+                    "SmallRegionsMerging or " + LEGACY_SMALL_REGIONS_MERGING_APP
+                )
             continue
         if not app_availability.get(app_name, {}).get("available"):
             missing_apps.append(app_name)
@@ -178,13 +202,19 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
         failure_reasons.append("missing required OTB app(s): " + ", ".join(missing_apps))
 
     status = "failed" if failure_reasons else "ok"
-    tmp_dir = layout.get("tmp_dir", Path(config.tmp_dir) if config.tmp_dir is not None else None)
+    default_tmp_dir = layout.get("default_tmp_dir", Path(config.output_dir) / "level1b" / "tmp")
+    runtime_tmp_dir = layout.get(
+        "runtime_tmp_dir",
+        Path(config.tmp_dir) if config.tmp_dir is not None else default_tmp_dir,
+    )
     report = {
         "candidate_id": candidate_id,
         "input_path": str(input_path),
         "input_type": config.input_type,
         "output_dir": str(Path(config.output_dir)),
-        "tmp_dir": str(tmp_dir) if tmp_dir is not None else None,
+        "default_tmp_dir": str(default_tmp_dir),
+        "runtime_tmp_dir": str(runtime_tmp_dir),
+        "tmp_dir": str(runtime_tmp_dir),
         "required_otb_apps": list(required_apps),
         "app_availability": app_availability,
         "small_regions_merging_app": small_regions_merging_app,
