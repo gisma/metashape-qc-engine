@@ -19,4 +19,4 @@ dependencies = [
 metashape-qc = "metashape_qc_engine.cli:main"
 
 [tool.setuptools]
-packages = ["metashape_qc_engine"]
+packages = ["metashape_qc_engine", "metashape_qc_engine.legacy"]
