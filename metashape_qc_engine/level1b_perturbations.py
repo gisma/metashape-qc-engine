@@ -1,37 +1,55 @@
 from dataclasses import dataclass
 import csv
 import json
+import math
 from pathlib import Path
+import random
 
 
-PERTURBATION_RULE = "baseline_plus_local_one_at_a_time_axis_perturbations"
+PERTURBATION_RULE = "r_make_param_perturbations_local_grid"
+REQUIRED_CANDIDATE_FIELDS = ("candidate_id", "scale_id", "spatialr_px", "minsize_px", "ranger")
+OPTIONAL_PASSTHROUGH_FIELDS = ("radius_m", "area_m2", "ranger_id", "ranger_source", "assignment_rule")
 ROW_FIELDS = (
     "perturbation_id",
+    "source_candidate_id",
     "scale_id",
     "spatialr_px",
     "minsize_px",
     "ranger",
     "deltas",
     "is_baseline",
+    "perturbation_rule",
+    *OPTIONAL_PASSTHROUGH_FIELDS,
 )
 JSON_FIELDS = (
     "candidate_id",
     "scale_candidates_with_ranger_json_path",
     "perturbation_rule",
-    "spatialr_delta_px",
-    "minsize_delta_fraction",
-    "ranger_delta_fraction",
-    "source_candidate_count",
-    "perturbation_count",
+    "K",
+    "seed",
+    "minsize_floor_frac",
+    "input_candidate_count",
+    "output_row_count",
+    "baseline_row_count",
+    "perturbation_row_count",
     "candidates",
+    "no_global_parameter_matrix_created",
+    "no_cross_parameter_combinations_created",
+    "no_segmentation_performed",
+    "no_otb_used",
+    "no_raster_read",
 )
 CHECK_KEYS = (
     "candidate_id_non_empty",
+    "output_dir_valid",
+    "scale_candidates_with_ranger_json_path_present",
     "scale_candidates_with_ranger_json_path_exists",
     "scale_candidates_with_ranger_json_path_suffix_json",
-    "spatialr_delta_px_positive_integer",
-    "minsize_delta_fraction_valid",
-    "ranger_delta_fraction_valid",
+    "K_positive_integer",
+    "ds_non_negative_integer",
+    "minsize_floor_frac_valid",
+    "dr_positive_when_explicit",
+    "dm_positive_when_explicit",
     "output_csv_path_available",
     "output_json_path_available",
 )
@@ -41,10 +59,13 @@ CHECK_KEYS = (
 class Level1BPerturbationConfig:
     candidate_id: str
     output_dir: str | Path
-    scale_candidates_with_ranger_json_path: str | Path
-    spatialr_delta_px: int = 1
-    minsize_delta_fraction: float = 0.10
-    ranger_delta_fraction: float = 0.10
+    scale_candidates_with_ranger_json_path: str | Path | None
+    dr: float | None = None
+    ds: int = 1
+    dm: int | None = None
+    K: int = 8
+    minsize_floor_frac: float = 0.8
+    seed: int = 1
     output_csv_filename: str = "perturbation_candidates.csv"
     output_json_filename: str = "perturbation_candidates.json"
     overwrite: bool = False
@@ -59,40 +80,47 @@ def build_level1b_perturbation_layout(output_dir) -> dict[str, Path]:
 def validate_perturbation_config(config, layout) -> tuple[dict[str, bool], list[str]]:
     checks = {key: True for key in CHECK_KEYS}
     failure_reasons: list[str] = []
-    json_path = Path(config.scale_candidates_with_ranger_json_path)
+    json_path = Path(config.scale_candidates_with_ranger_json_path) if config.scale_candidates_with_ranger_json_path else None
     csv_path = layout["perturbation_dir"] / config.output_csv_filename
     output_json_path = layout["perturbation_dir"] / config.output_json_filename
 
     if not str(config.candidate_id).strip():
         checks["candidate_id_non_empty"] = False
         failure_reasons.append("candidate_id is empty")
-    if not json_path.exists():
+    if not Path(config.output_dir).is_dir():
+        checks["output_dir_valid"] = False
+        failure_reasons.append("output_dir is invalid")
+    if json_path is None:
+        checks["scale_candidates_with_ranger_json_path_present"] = False
         checks["scale_candidates_with_ranger_json_path_exists"] = False
-        failure_reasons.append("scale_candidates_with_ranger_json_path does not exist")
-    if json_path.suffix.lower() != ".json":
         checks["scale_candidates_with_ranger_json_path_suffix_json"] = False
-        failure_reasons.append("scale_candidates_with_ranger_json_path suffix must be .json")
+        failure_reasons.append("scale_candidates_with_ranger_json_path is missing")
+    else:
+        if not json_path.exists():
+            checks["scale_candidates_with_ranger_json_path_exists"] = False
+            failure_reasons.append("scale_candidates_with_ranger_json_path does not exist")
+        if json_path.suffix.lower() != ".json":
+            checks["scale_candidates_with_ranger_json_path_suffix_json"] = False
+            failure_reasons.append("scale_candidates_with_ranger_json_path suffix must be .json")
+    if not _is_positive_int(config.K):
+        checks["K_positive_integer"] = False
+        failure_reasons.append("K must be a positive integer")
+    if not _is_non_negative_int(config.ds):
+        checks["ds_non_negative_integer"] = False
+        failure_reasons.append("ds must be a non-negative integer")
     if (
-        not isinstance(config.spatialr_delta_px, int)
-        or isinstance(config.spatialr_delta_px, bool)
-        or config.spatialr_delta_px <= 0
+        not _is_finite_number(config.minsize_floor_frac)
+        or float(config.minsize_floor_frac) <= 0
+        or float(config.minsize_floor_frac) > 1
     ):
-        checks["spatialr_delta_px_positive_integer"] = False
-        failure_reasons.append("spatialr_delta_px must be a positive integer")
-    if (
-        not isinstance(config.minsize_delta_fraction, (int, float))
-        or isinstance(config.minsize_delta_fraction, bool)
-        or not 0 < config.minsize_delta_fraction < 1
-    ):
-        checks["minsize_delta_fraction_valid"] = False
-        failure_reasons.append("minsize_delta_fraction must be numeric and > 0 and < 1")
-    if (
-        not isinstance(config.ranger_delta_fraction, (int, float))
-        or isinstance(config.ranger_delta_fraction, bool)
-        or not 0 < config.ranger_delta_fraction < 1
-    ):
-        checks["ranger_delta_fraction_valid"] = False
-        failure_reasons.append("ranger_delta_fraction must be numeric and > 0 and < 1")
+        checks["minsize_floor_frac_valid"] = False
+        failure_reasons.append("minsize_floor_frac must be numeric and > 0 and <= 1")
+    if config.dr is not None and (not _is_finite_number(config.dr) or float(config.dr) <= 0):
+        checks["dr_positive_when_explicit"] = False
+        failure_reasons.append("dr must be positive when explicit")
+    if config.dm is not None and (not _is_finite_number(config.dm) or float(config.dm) <= 0):
+        checks["dm_positive_when_explicit"] = False
+        failure_reasons.append("dm must be positive when explicit")
     if csv_path.exists() and not config.overwrite:
         checks["output_csv_path_available"] = False
         failure_reasons.append("perturbation_candidates.csv already exists and overwrite is false")
@@ -114,159 +142,97 @@ def read_scale_candidates_with_ranger(json_path) -> list[dict[str, object]]:
 
     complete_candidates: list[dict[str, object]] = []
     for candidate in payload["candidates"]:
-        for field in ("candidate_id", "scale_id", "spatialr_px", "minsize_px", "ranger"):
+        for field in REQUIRED_CANDIDATE_FIELDS:
             if field not in candidate:
                 raise ValueError(f"candidate field {field} is missing")
 
-        try:
-            spatialr_px = int(candidate["spatialr_px"])
-        except (TypeError, ValueError) as exc:
-            raise ValueError("spatialr_px must be convertible to int and >= 1") from exc
-        if spatialr_px < 1:
-            raise ValueError("spatialr_px must be convertible to int and >= 1")
+        spatialr_px = _positive_int_field(candidate["spatialr_px"], "spatialr_px")
+        minsize_px = _positive_int_field(candidate["minsize_px"], "minsize_px")
+        ranger = _positive_float_field(candidate["ranger"], "ranger")
 
-        try:
-            minsize_px = int(candidate["minsize_px"])
-        except (TypeError, ValueError) as exc:
-            raise ValueError("minsize_px must be convertible to int and >= 1") from exc
-        if minsize_px < 1:
-            raise ValueError("minsize_px must be convertible to int and >= 1")
-
-        try:
-            ranger = float(candidate["ranger"])
-        except (TypeError, ValueError) as exc:
-            raise ValueError("ranger must be convertible to float and > 0") from exc
-        if ranger <= 0:
-            raise ValueError("ranger must be convertible to float and > 0")
-
-        complete_candidates.append(
-            {
-                "candidate_id": candidate["candidate_id"],
-                "scale_id": candidate["scale_id"],
-                "spatialr_px": spatialr_px,
-                "minsize_px": minsize_px,
-                "ranger": ranger,
-            }
-        )
+        complete_candidate = {
+            "candidate_id": candidate["candidate_id"],
+            "scale_id": candidate["scale_id"],
+            "spatialr_px": spatialr_px,
+            "minsize_px": minsize_px,
+            "ranger": ranger,
+        }
+        for field in OPTIONAL_PASSTHROUGH_FIELDS:
+            if field in candidate:
+                complete_candidate[field] = candidate[field]
+        complete_candidates.append(complete_candidate)
 
     return complete_candidates
-
-
-def _deltas(axis, direction, spatialr_px, minsize_px, ranger, baseline) -> dict[str, object]:
-    return {
-        "axis": axis,
-        "direction": direction,
-        "spatialr_px_delta": spatialr_px - baseline["spatialr_px"],
-        "minsize_px_delta": minsize_px - baseline["minsize_px"],
-        "ranger_delta": ranger - baseline["ranger"],
-    }
-
-
-def _candidate_row(source_candidate_id, index, scale_id, spatialr_px, minsize_px, ranger, deltas, is_baseline):
-    return {
-        "perturbation_id": f"{source_candidate_id}__perturb_{index:03d}",
-        "scale_id": scale_id,
-        "spatialr_px": spatialr_px,
-        "minsize_px": minsize_px,
-        "ranger": ranger,
-        "deltas": deltas,
-        "is_baseline": is_baseline,
-    }
 
 
 def build_perturbation_candidates(config, complete_candidates) -> list[dict[str, object]]:
     candidates: list[dict[str, object]] = []
 
     for complete_candidate in complete_candidates:
-        source_candidate_id = complete_candidate["candidate_id"]
-        scale_id = complete_candidate["scale_id"]
+        source_candidate_id = str(complete_candidate["candidate_id"])
         baseline = {
             "spatialr_px": int(complete_candidate["spatialr_px"]),
             "minsize_px": int(complete_candidate["minsize_px"]),
             "ranger": float(complete_candidate["ranger"]),
         }
-        retained_index = 0
-        baseline_deltas = {
-            "axis": "baseline",
-            "direction": "baseline",
-            "spatialr_px_delta": 0,
-            "minsize_px_delta": 0,
-            "ranger_delta": 0.0,
-        }
+        passthrough = {field: complete_candidate[field] for field in OPTIONAL_PASSTHROUGH_FIELDS if field in complete_candidate}
         candidates.append(
             _candidate_row(
-                source_candidate_id,
-                retained_index,
-                scale_id,
-                baseline["spatialr_px"],
-                baseline["minsize_px"],
-                baseline["ranger"],
-                baseline_deltas,
-                True,
+                perturbation_id=f"{source_candidate_id}__baseline",
+                source_candidate_id=source_candidate_id,
+                scale_id=complete_candidate["scale_id"],
+                spatialr_px=baseline["spatialr_px"],
+                minsize_px=baseline["minsize_px"],
+                ranger=baseline["ranger"],
+                deltas=_deltas(baseline["spatialr_px"], baseline["minsize_px"], baseline["ranger"], baseline),
+                is_baseline=True,
+                passthrough=passthrough,
             )
         )
 
-        attempts = (
-            (
-                "spatialr_px",
-                "minus",
-                max(1, baseline["spatialr_px"] - config.spatialr_delta_px),
-                baseline["minsize_px"],
-                baseline["ranger"],
-            ),
-            (
-                "spatialr_px",
-                "plus",
-                baseline["spatialr_px"] + config.spatialr_delta_px,
-                baseline["minsize_px"],
-                baseline["ranger"],
-            ),
-            (
-                "minsize_px",
-                "minus",
-                baseline["spatialr_px"],
-                max(1, round(baseline["minsize_px"] * (1 - float(config.minsize_delta_fraction)))),
-                baseline["ranger"],
-            ),
-            (
-                "minsize_px",
-                "plus",
-                baseline["spatialr_px"],
-                max(1, round(baseline["minsize_px"] * (1 + float(config.minsize_delta_fraction)))),
-                baseline["ranger"],
-            ),
-            (
-                "ranger",
-                "minus",
-                baseline["spatialr_px"],
-                baseline["minsize_px"],
-                baseline["ranger"] * (1 - float(config.ranger_delta_fraction)),
-            ),
-            (
-                "ranger",
-                "plus",
-                baseline["spatialr_px"],
-                baseline["minsize_px"],
-                baseline["ranger"] * (1 + float(config.ranger_delta_fraction)),
-            ),
-        )
+        dr = float(config.dr) if config.dr is not None else max(0.005, 0.10 * baseline["ranger"])
+        ds = int(config.ds)
+        dm = int(round(float(config.dm))) if config.dm is not None else max(5, round(0.20 * baseline["minsize_px"]))
+        if baseline["spatialr_px"] <= 3:
+            ds = 0
 
-        for axis, direction, spatialr_px, minsize_px, ranger in attempts:
-            if (
-                spatialr_px == baseline["spatialr_px"]
-                and minsize_px == baseline["minsize_px"]
-                and ranger == baseline["ranger"]
-            ):
-                continue
-            deltas = _deltas(axis, direction, spatialr_px, minsize_px, ranger, baseline)
-            non_zero_delta_count = sum(
-                value != 0 for value in (deltas["spatialr_px_delta"], deltas["minsize_px_delta"], deltas["ranger_delta"])
-            )
-            if non_zero_delta_count != 1:
-                raise ValueError("non-baseline perturbation must change exactly one axis")
-            retained_index += 1
+        cand_spatialr = _unique(max(1, baseline["spatialr_px"] + delta) for delta in (-ds, 0, ds))
+        cand_ranger = _unique(max(1e-6, baseline["ranger"] + delta) for delta in (-dr, 0.0, dr))
+        cand_minsize = _unique(max(1, baseline["minsize_px"] + delta) for delta in (-dm, 0, dm))
+        floor_m = round(baseline["minsize_px"] * float(config.minsize_floor_frac))
+        local_rows: list[tuple[int, int, float]] = []
+        seen: set[tuple[int, int, float]] = set()
+
+        for spatialr_px in cand_spatialr:
+            for ranger in cand_ranger:
+                for minsize_px in cand_minsize:
+                    if _same_parameters(spatialr_px, minsize_px, ranger, baseline):
+                        continue
+                    clamped_minsize_px = max(floor_m, minsize_px)
+                    if _same_parameters(spatialr_px, clamped_minsize_px, ranger, baseline):
+                        continue
+                    key = (spatialr_px, clamped_minsize_px, ranger)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    local_rows.append(key)
+
+        if len(local_rows) > int(config.K):
+            local_rows = random.Random(config.seed).sample(local_rows, int(config.K))
+
+        for index, (spatialr_px, minsize_px, ranger) in enumerate(local_rows, start=1):
             candidates.append(
-                _candidate_row(source_candidate_id, retained_index, scale_id, spatialr_px, minsize_px, ranger, deltas, False)
+                _candidate_row(
+                    perturbation_id=f"{source_candidate_id}__perturb_{index:03d}",
+                    source_candidate_id=source_candidate_id,
+                    scale_id=complete_candidate["scale_id"],
+                    spatialr_px=spatialr_px,
+                    minsize_px=minsize_px,
+                    ranger=ranger,
+                    deltas=_deltas(spatialr_px, minsize_px, ranger, baseline),
+                    is_baseline=False,
+                    passthrough=passthrough,
+                )
             )
 
     return candidates
@@ -274,32 +240,30 @@ def build_perturbation_candidates(config, complete_candidates) -> list[dict[str,
 
 def write_perturbation_candidates_csv(candidates, csv_path) -> None:
     with Path(csv_path).open("w", newline="", encoding="utf-8") as file_obj:
-        writer = csv.DictWriter(file_obj, fieldnames=ROW_FIELDS)
+        writer = csv.DictWriter(file_obj, fieldnames=ROW_FIELDS, extrasaction="ignore")
         writer.writeheader()
         for candidate in candidates:
-            row = {field: candidate[field] for field in ROW_FIELDS}
+            row = {field: candidate.get(field, "") for field in ROW_FIELDS}
             row["deltas"] = json.dumps(row["deltas"], sort_keys=True, separators=(",", ":"))
             writer.writerow(row)
 
 
 def write_perturbation_candidates_json(config, candidates, json_path) -> None:
-    payload = {
-        "candidate_id": str(config.candidate_id).strip(),
-        "scale_candidates_with_ranger_json_path": str(Path(config.scale_candidates_with_ranger_json_path)),
-        "perturbation_rule": PERTURBATION_RULE,
-        "spatialr_delta_px": config.spatialr_delta_px,
-        "minsize_delta_fraction": float(config.minsize_delta_fraction),
-        "ranger_delta_fraction": float(config.ranger_delta_fraction),
-        "source_candidate_count": sum(1 for candidate in candidates if candidate["is_baseline"]),
-        "perturbation_count": len(candidates),
-        "candidates": candidates,
-    }
+    payload = _json_payload(config, candidates)
     with Path(json_path).open("w", encoding="utf-8") as file_obj:
         json.dump({key: payload[key] for key in JSON_FIELDS}, file_obj, indent=2)
 
 
 def run_local_perturbation_step(config) -> dict[str, object]:
-    layout = build_level1b_perturbation_layout(config.output_dir)
+    try:
+        layout = build_level1b_perturbation_layout(config.output_dir)
+    except OSError as exc:
+        layout = {"perturbation_dir": Path(config.output_dir) / "level1b" / "perturbations"}
+        checks = {key: True for key in CHECK_KEYS}
+        checks["output_dir_valid"] = False
+        failure_reasons = [f"output_dir is invalid: {exc}"]
+        return _run_report(config, layout, checks, failure_reasons, [], [], [])
+
     csv_path = layout["perturbation_dir"] / config.output_csv_filename
     json_path = layout["perturbation_dir"] / config.output_json_filename
     checks, failure_reasons = validate_perturbation_config(config, layout)
@@ -314,28 +278,39 @@ def run_local_perturbation_step(config) -> dict[str, object]:
             write_perturbation_candidates_csv(candidates, csv_path)
             write_perturbation_candidates_json(config, candidates, json_path)
             files_written = [str(csv_path), str(json_path)]
-            status = "ok"
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             failure_reasons.append(str(exc))
-            status = "failed"
-    else:
-        status = "failed"
 
+    return _run_report(config, layout, checks, failure_reasons, complete_candidates, candidates, files_written)
+
+
+def _run_report(config, layout, checks, failure_reasons, complete_candidates, candidates, files_written) -> dict[str, object]:
+    csv_path = layout["perturbation_dir"] / config.output_csv_filename
+    json_path = layout["perturbation_dir"] / config.output_json_filename
+    baseline_count = sum(1 for candidate in candidates if candidate["is_baseline"])
+    perturbation_count = len(candidates) - baseline_count
     return {
         "candidate_id": str(config.candidate_id).strip(),
         "output_dir": str(Path(config.output_dir)),
         "perturbation_dir": str(layout["perturbation_dir"]),
-        "scale_candidates_with_ranger_json_path": str(Path(config.scale_candidates_with_ranger_json_path)),
+        "scale_candidates_with_ranger_json_path": (
+            str(Path(config.scale_candidates_with_ranger_json_path)) if config.scale_candidates_with_ranger_json_path else ""
+        ),
         "output_csv_path": str(csv_path),
         "output_json_path": str(json_path),
-        "spatialr_delta_px": config.spatialr_delta_px,
-        "minsize_delta_fraction": config.minsize_delta_fraction,
-        "ranger_delta_fraction": config.ranger_delta_fraction,
+        "perturbation_rule": PERTURBATION_RULE,
+        "K": config.K,
+        "seed": config.seed,
+        "minsize_floor_frac": config.minsize_floor_frac,
         "checks": checks,
-        "status": status,
+        "status": "failed" if failure_reasons else "ok",
         "failure_reasons": failure_reasons,
+        "input_candidate_count": len(complete_candidates),
         "source_candidate_count": len(complete_candidates),
-        "perturbation_count": len(candidates),
+        "output_row_count": len(candidates),
+        "baseline_row_count": baseline_count,
+        "perturbation_row_count": perturbation_count,
+        "perturbation_count": perturbation_count,
         "candidates": candidates,
         "files_written": files_written,
         "no_global_parameter_matrix_created": True,
@@ -344,3 +319,118 @@ def run_local_perturbation_step(config) -> dict[str, object]:
         "no_otb_used": True,
         "no_raster_read": True,
     }
+
+
+def _json_payload(config, candidates) -> dict[str, object]:
+    baseline_count = sum(1 for candidate in candidates if candidate["is_baseline"])
+    return {
+        "candidate_id": str(config.candidate_id).strip(),
+        "scale_candidates_with_ranger_json_path": str(Path(config.scale_candidates_with_ranger_json_path)),
+        "perturbation_rule": PERTURBATION_RULE,
+        "K": config.K,
+        "seed": config.seed,
+        "minsize_floor_frac": float(config.minsize_floor_frac),
+        "input_candidate_count": baseline_count,
+        "output_row_count": len(candidates),
+        "baseline_row_count": baseline_count,
+        "perturbation_row_count": len(candidates) - baseline_count,
+        "candidates": candidates,
+        "no_global_parameter_matrix_created": True,
+        "no_cross_parameter_combinations_created": True,
+        "no_segmentation_performed": True,
+        "no_otb_used": True,
+        "no_raster_read": True,
+    }
+
+
+def _candidate_row(
+    perturbation_id,
+    source_candidate_id,
+    scale_id,
+    spatialr_px,
+    minsize_px,
+    ranger,
+    deltas,
+    is_baseline,
+    passthrough,
+):
+    row = {
+        "perturbation_id": perturbation_id,
+        "source_candidate_id": source_candidate_id,
+        "scale_id": scale_id,
+        "spatialr_px": int(spatialr_px),
+        "minsize_px": int(minsize_px),
+        "ranger": float(ranger),
+        "deltas": deltas,
+        "is_baseline": is_baseline,
+        "perturbation_rule": PERTURBATION_RULE,
+    }
+    row.update(passthrough)
+    return row
+
+
+def _deltas(spatialr_px, minsize_px, ranger, baseline) -> dict[str, float | int]:
+    minsize_px_delta = int(minsize_px) - baseline["minsize_px"]
+    ranger_delta = float(ranger) - baseline["ranger"]
+    return {
+        "spatialr_px_delta": int(spatialr_px) - baseline["spatialr_px"],
+        "minsize_px_delta": minsize_px_delta,
+        "ranger_delta": ranger_delta,
+        "minsize_delta_fraction": minsize_px_delta / baseline["minsize_px"],
+        "ranger_delta_fraction": ranger_delta / baseline["ranger"],
+    }
+
+
+def _same_parameters(spatialr_px, minsize_px, ranger, baseline) -> bool:
+    return (
+        int(spatialr_px) == baseline["spatialr_px"]
+        and int(minsize_px) == baseline["minsize_px"]
+        and float(ranger) == baseline["ranger"]
+    )
+
+
+def _unique(values) -> list:
+    unique_values = []
+    seen = set()
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            unique_values.append(value)
+    return unique_values
+
+
+def _is_positive_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _is_non_negative_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _is_finite_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+
+def _positive_int_field(value, field_name) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be finite and > 0")
+    try:
+        converted = int(value)
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{field_name} must be finite and > 0") from exc
+    if not math.isfinite(numeric) or converted <= 0:
+        raise ValueError(f"{field_name} must be finite and > 0")
+    return converted
+
+
+def _positive_float_field(value, field_name) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be finite and > 0")
+    try:
+        converted = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{field_name} must be finite and > 0") from exc
+    if not math.isfinite(converted) or converted <= 0:
+        raise ValueError(f"{field_name} must be finite and > 0")
+    return converted
