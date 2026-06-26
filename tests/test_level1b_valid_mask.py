@@ -119,12 +119,12 @@ def test_alpha_valid_min_non_numeric_fails(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_black_border_tuple_length_mismatch_fails(tmp_path: Path, monkeypatch) -> None:
-    report = run_dry(tmp_path, monkeypatch, black_border_band_indices=(1, 2), black_border_invalid_values=(0.0,))
+    report = run_dry(tmp_path, monkeypatch, black_border_band_indices=(1, 2))
 
     assert report["status"] == "failed"
     assert report["checks"]["black_border_tuple_lengths_match"] is False
     assert any(
-        "black_border_band_indices and black_border_invalid_values must have the same length" in reason
+        "black_border_band_indices must contain exactly three bands" in reason
         for reason in report["failure_reasons"]
     )
 
@@ -138,11 +138,11 @@ def test_black_border_non_positive_band_index_fails(tmp_path: Path, monkeypatch)
 
 
 def test_black_border_invalid_value_non_numeric_fails(tmp_path: Path, monkeypatch) -> None:
-    report = run_dry(tmp_path, monkeypatch, black_border_invalid_values=(0.0, "zero", 0.0))
+    report = run_dry(tmp_path, monkeypatch, invalid_rgb_tuples=((0.0, "zero", 0.0),))
 
     assert report["status"] == "failed"
     assert report["checks"]["black_border_invalid_values_numeric"] is False
-    assert "black_border_invalid_values must be numeric" in report["failure_reasons"]
+    assert "invalid_rgb_tuples must contain only numeric three-value RGB tuples" in report["failure_reasons"]
 
 
 def test_ram_mb_invalid_fails(tmp_path: Path, monkeypatch) -> None:
@@ -222,6 +222,23 @@ def test_default_black_border_expression_contains_expected_bands_and_values() ->
     assert "im1b2" in expression
     assert "im1b3" in expression
     assert "0.0" in expression
+    assert "255.0" in expression
+
+
+def test_default_invalid_rgb_tuples_include_black_and_white() -> None:
+    config = Level1BValidMaskConfig(candidate_id="candidate-1", input_path="input.tif", output_dir="out")
+
+    assert (0.0, 0.0, 0.0) in config.invalid_rgb_tuples
+    assert (255.0, 255.0, 255.0) in config.invalid_rgb_tuples
+
+
+def test_multiple_invalid_rgb_tuples_are_accepted_and_reported(tmp_path: Path, monkeypatch) -> None:
+    invalid_rgb_tuples = ((0.0, 0.0, 0.0), (255.0, 255.0, 255.0), (7.0, 8.0, 9.0))
+
+    report = run_dry(tmp_path, monkeypatch, invalid_rgb_tuples=invalid_rgb_tuples)
+
+    assert report["status"] == "dry_run"
+    assert report["invalid_rgb_tuples"] == [list(values) for values in invalid_rgb_tuples]
 
 
 def test_default_black_border_expression_uses_bandmathx_boolean_syntax() -> None:
@@ -233,7 +250,21 @@ def test_default_black_border_expression_uses_bandmathx_boolean_syntax() -> None
     assert "!(" not in expression
     assert "&&" not in expression
     assert "||" not in expression
-    assert expression == "((im1b1 != 0.0) or (im1b2 != 0.0) or (im1b3 != 0.0)) ? 1 : 0"
+    assert expression == (
+        "(((im1b1 != 0.0) or (im1b2 != 0.0) or (im1b3 != 0.0)) and "
+        "((im1b1 != 255.0) or (im1b2 != 255.0) or (im1b3 != 255.0))) ? 1 : 0"
+    )
+
+
+def test_default_expression_rejects_black_and_white_rgb_tuples() -> None:
+    expression, reasons = build_valid_mask_expression(
+        Level1BValidMaskConfig(candidate_id="candidate-1", input_path="input.tif", output_dir="out")
+    )
+
+    assert reasons == []
+    assert "((im1b1 != 0.0) or (im1b2 != 0.0) or (im1b3 != 0.0))" in expression
+    assert "((im1b1 != 255.0) or (im1b2 != 255.0) or (im1b3 != 255.0))" in expression
+    assert " and " in expression
 
 
 def test_nodata_expression_contains_band_and_value() -> None:
@@ -297,7 +328,8 @@ def test_combined_expression_uses_bandmathx_and_between_valid_conditions() -> No
     assert reasons == []
     assert expression == (
         "(im1b1 != 255.0) and (im1b4 >= 1.0) and "
-        "((im1b1 != 0.0) or (im1b2 != 0.0) or (im1b3 != 0.0)) ? 1 : 0"
+        "(((im1b1 != 0.0) or (im1b2 != 0.0) or (im1b3 != 0.0)) and "
+        "((im1b1 != 255.0) or (im1b2 != 255.0) or (im1b3 != 255.0))) ? 1 : 0"
     )
     assert " and " in expression
     assert expression.endswith("? 1 : 0")

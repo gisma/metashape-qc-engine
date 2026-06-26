@@ -89,6 +89,7 @@ def test_rgb_dry_run_builds_five_channel_names(tmp_path: Path, monkeypatch) -> N
     assert report["status"] == "dry_run"
     assert report["channel_names"] == ["VIG", "DRY", "BRI", "TEX_100M", "TEX_200M"]
     assert report["output_path"].endswith("proxy_stack.tif")
+    assert report["output_filename"] == "proxy_stack.tif"
 
 
 def test_rgb_dry_run_builds_expressions_from_original_rgb_bands(tmp_path: Path, monkeypatch) -> None:
@@ -100,6 +101,18 @@ def test_rgb_dry_run_builds_expressions_from_original_rgb_bands(tmp_path: Path, 
     assert "(im1b3 + im1b2 + im1b1) / 3" in joined
     assert "im2b2" in joined
     assert "im3b2" in joined
+
+
+def test_rgb_proxy_commands_apply_valid_mask(tmp_path: Path, monkeypatch) -> None:
+    mask_path = make_mask(tmp_path)
+    report = run_rgb_dry(tmp_path, monkeypatch, valid_mask_path=mask_path)
+    joined = "\n".join(" ".join(command) for command in report["otb_commands"])
+
+    assert str(mask_path) in report["otb_commands"][0]
+    assert str(mask_path) in report["otb_commands"][-1]
+    assert "im2b1 > 0" in report["otb_commands"][0][-1]
+    assert "im4b1 > 0" in report["otb_commands"][-1][-1]
+    assert str(mask_path) in joined
 
 
 def test_rgb_dry_run_builds_local_statistic_commands_for_texture(tmp_path: Path, monkeypatch) -> None:
@@ -175,7 +188,17 @@ def test_multichannel_uses_declared_names_and_band_indices_in_order(tmp_path: Pa
 
     assert report["channel_names"] == ["blue", "green", "red"]
     assert report["declared_band_indices"] == [1, 2, 3]
-    assert report["otb_commands"][0][-1] == "{im1b1;im1b2;im1b3}"
+    assert report["otb_commands"][0][-1] == "{(im2b1 > 0 ? im1b1 : 0);(im2b1 > 0 ? im1b2 : 0);(im2b1 > 0 ? im1b3 : 0)}"
+
+
+def test_multichannel_stack_command_applies_valid_mask(tmp_path: Path, monkeypatch) -> None:
+    mask_path = make_mask(tmp_path)
+    report = run_multi_dry(tmp_path, monkeypatch, valid_mask_path=mask_path)
+    command = report["otb_commands"][0]
+
+    assert str(mask_path) in command
+    assert command[command.index("-il") + 1 : command.index("-out")] == [str(report["input_path"]), str(mask_path)]
+    assert "im2b1 > 0" in command[-1]
 
 
 def test_multichannel_does_not_call_local_statistic_extraction(tmp_path: Path, monkeypatch) -> None:
@@ -334,7 +357,6 @@ def test_report_contains_exactly_required_report_keys(tmp_path: Path, monkeypatc
 def test_protected_file_diffs_are_empty() -> None:
     protected_paths = [
         "metashape_qc_engine/level1b_preflight.py",
-        "metashape_qc_engine/level1b_valid_mask.py",
         "metashape_qc_engine/cli.py",
     ]
 

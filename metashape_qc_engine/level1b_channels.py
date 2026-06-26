@@ -32,6 +32,7 @@ REPORT_KEYS = (
     "tex_200m_radius_m",
     "derived_radius_px",
     "intermediate_paths",
+    "mask_application",
     "otb_apps",
     "otb_commands",
     "dry_run",
@@ -230,18 +231,21 @@ def build_rgb_proxy_commands(config, apps, layout, output_path) -> tuple[list[li
     red = f"im1b{red_index}"
     green = f"im1b{green_index}"
     blue = f"im1b{blue_index}"
+    mask_from_second_input = "im2b1"
+    mask_from_fourth_input = "im4b1"
     exg = f"(2*{green} - {red} - {blue})"
     exr = f"(1.4*{red} - {blue})"
     exgr = f"({exg} - {exr})"
     bri = f"(({red} + {green} + {blue}) / 3)"
     expressions = {"ExG": exg, "ExR": exr, "ExGR": exgr, "VIG": exgr, "DRY": exr, "BRI": bri}
+    masked_exgr = f"({mask_from_second_input} > 0 ? {expressions['ExGR']} : 0)"
     final_expression = (
         "{"
-        f"{expressions['VIG']};"
-        f"{expressions['DRY']};"
-        f"{expressions['BRI']};"
-        "im2b2;"
-        "im3b2"
+        f"({mask_from_fourth_input} > 0 ? {expressions['VIG']} : 0);"
+        f"({mask_from_fourth_input} > 0 ? {expressions['DRY']} : 0);"
+        f"({mask_from_fourth_input} > 0 ? {expressions['BRI']} : 0);"
+        f"({mask_from_fourth_input} > 0 ? im2b2 : 0);"
+        f"({mask_from_fourth_input} > 0 ? im3b2 : 0)"
         "}"
     )
     commands = [
@@ -249,11 +253,12 @@ def build_rgb_proxy_commands(config, apps, layout, output_path) -> tuple[list[li
             str(apps["BandMathX"]),
             "-il",
             str(config.input_path),
+            str(config.valid_mask_path),
             "-out",
             str(exgr_tmp),
             "float",
             "-exp",
-            expressions["ExGR"],
+            masked_exgr,
         ],
         [
             str(apps["LocalStatisticExtraction"]),
@@ -279,6 +284,7 @@ def build_rgb_proxy_commands(config, apps, layout, output_path) -> tuple[list[li
             str(config.input_path),
             str(tex_100m_stats_tmp),
             str(tex_200m_stats_tmp),
+            str(config.valid_mask_path),
             "-out",
             str(output_path),
             "float",
@@ -295,6 +301,14 @@ def build_rgb_proxy_commands(config, apps, layout, output_path) -> tuple[list[li
             "tex_200m_stats_tmp": str(tex_200m_stats_tmp),
         },
         "expressions": expressions,
+        "mask_application": {
+            "valid_mask_applied_to_exgr_intermediate": True,
+            "valid_mask_applied_to_final_stack": True,
+            "texture_neighborhood_note": (
+                "LocalStatisticExtraction runs on the masked ExGR intermediate; outside-support pixels are zeroed "
+                "before texture computation and final texture bands are masked again."
+            ),
+        },
     }
     return commands, metadata
 
@@ -306,11 +320,12 @@ def build_multichannel_stack_command(
     normalized_declared_channels,
     normalized_declared_band_indices,
 ) -> tuple[list[str], dict[str, object]]:
-    expression = "{" + ";".join(f"im1b{index}" for index in normalized_declared_band_indices) + "}"
+    expression = "{" + ";".join(f"(im2b1 > 0 ? im1b{index} : 0)" for index in normalized_declared_band_indices) + "}"
     command = [
         str(apps["BandMathX"]),
         "-il",
         str(config.input_path),
+        str(config.valid_mask_path),
         "-out",
         str(output_path),
         "float",
@@ -321,6 +336,9 @@ def build_multichannel_stack_command(
         "channel_names": list(normalized_declared_channels),
         "declared_band_indices": list(normalized_declared_band_indices),
         "expression": expression,
+        "mask_application": {
+            "valid_mask_applied_to_final_stack": True,
+        },
     }
     return command, metadata
 
@@ -336,6 +354,7 @@ def run_channel_construction_step(config) -> dict[str, object]:
     commands: list[list[str]] = []
     channel_names: list[str] = []
     intermediate_paths: dict[str, str] = {}
+    mask_application: dict[str, object] = {}
     output_created = False
 
     if apps.get("BandMathX") is None:
@@ -351,6 +370,7 @@ def run_channel_construction_step(config) -> dict[str, object]:
             channel_names = list(metadata["channel_names"])
             intermediate_paths = dict(metadata["intermediate_paths"])
             derived["derived_radius_px"] = metadata["derived_radius_px"]
+            mask_application = dict(metadata["mask_application"])
         else:
             command, metadata = build_multichannel_stack_command(
                 config,
@@ -361,6 +381,7 @@ def run_channel_construction_step(config) -> dict[str, object]:
             )
             commands = [command]
             channel_names = list(metadata["channel_names"])
+            mask_application = dict(metadata["mask_application"])
 
         if config.dry_run:
             status = "dry_run"
@@ -410,6 +431,7 @@ def run_channel_construction_step(config) -> dict[str, object]:
         "tex_200m_radius_m": config.tex_200m_radius_m,
         "derived_radius_px": derived["derived_radius_px"],
         "intermediate_paths": intermediate_paths,
+        "mask_application": mask_application,
         "otb_apps": apps,
         "otb_commands": commands,
         "dry_run": config.dry_run,

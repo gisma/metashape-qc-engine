@@ -38,6 +38,7 @@ REPORT_KEYS = (
     "alpha_valid_min",
     "black_border_enabled",
     "black_border_band_indices",
+    "invalid_rgb_tuples",
     "black_border_invalid_values",
     "otb_app_name",
     "otb_app_path",
@@ -71,7 +72,11 @@ class Level1BValidMaskConfig:
     alpha_valid_min: float = 1.0
     black_border_enabled: bool = True
     black_border_band_indices: tuple[int, ...] = (1, 2, 3)
-    black_border_invalid_values: tuple[float, ...] = (0.0, 0.0, 0.0)
+    invalid_rgb_tuples: tuple[tuple[float, float, float], ...] = (
+        (0.0, 0.0, 0.0),
+        (255.0, 255.0, 255.0),
+    )
+    black_border_invalid_values: tuple[float, ...] | None = None
     otb_bin_dir: str | Path | None = None
     output_filename: str = "valid_mask.tif"
     report_filename: str = "valid_mask_report.json"
@@ -108,6 +113,12 @@ def discover_bandmathx(otb_bin_dir: str | Path | None = None) -> tuple[str | Non
     return None, None
 
 
+def normalize_invalid_rgb_tuples(config: Level1BValidMaskConfig) -> tuple[tuple[object, ...], ...]:
+    if config.black_border_invalid_values is not None:
+        return (tuple(config.black_border_invalid_values),)
+    return tuple(tuple(values) for values in config.invalid_rgb_tuples)
+
+
 def validate_valid_mask_config(config: Level1BValidMaskConfig, layout: dict[str, Path]) -> tuple[dict[str, bool], list[str]]:
     checks = {key: True for key in CHECK_KEYS}
     failure_reasons: list[str] = []
@@ -142,15 +153,19 @@ def validate_valid_mask_config(config: Level1BValidMaskConfig, layout: dict[str,
         failure_reasons.append("alpha_valid_min must be numeric")
 
     if config.black_border_enabled:
-        if len(config.black_border_band_indices) != len(config.black_border_invalid_values) or not config.black_border_band_indices:
+        invalid_rgb_tuples = normalize_invalid_rgb_tuples(config)
+        if len(config.black_border_band_indices) != 3 or not invalid_rgb_tuples:
             checks["black_border_tuple_lengths_match"] = False
-            failure_reasons.append("black_border_band_indices and black_border_invalid_values must have the same length")
+            failure_reasons.append("black_border_band_indices must contain exactly three bands and invalid_rgb_tuples cannot be empty")
         if any(not isinstance(band_index, int) or band_index <= 0 for band_index in config.black_border_band_indices):
             checks["black_border_band_indices_valid"] = False
             failure_reasons.append("black_border_band_indices must be positive integers")
-        if any(not isinstance(value, (int, float)) for value in config.black_border_invalid_values):
+        if any(
+            len(invalid_tuple) != 3 or any(not isinstance(value, (int, float)) for value in invalid_tuple)
+            for invalid_tuple in invalid_rgb_tuples
+        ):
             checks["black_border_invalid_values_numeric"] = False
-            failure_reasons.append("black_border_invalid_values must be numeric")
+            failure_reasons.append("invalid_rgb_tuples must contain only numeric three-value RGB tuples")
 
     if config.nodata_values is None and config.alpha_band_index is None and not config.black_border_enabled:
         checks["at_least_one_rule_active"] = False
@@ -175,11 +190,14 @@ def build_valid_mask_expression(config: Level1BValidMaskConfig) -> tuple[str | N
     if config.alpha_band_index is not None:
         conditions.append(f"(im1b{config.alpha_band_index} >= {config.alpha_valid_min})")
     if config.black_border_enabled:
-        border_checks = [
-            f"(im1b{band_index} != {value})"
-            for band_index, value in zip(config.black_border_band_indices, config.black_border_invalid_values)
-        ]
-        conditions.append(f"({' or '.join(border_checks)})")
+        invalid_tuple_checks = []
+        for invalid_tuple in normalize_invalid_rgb_tuples(config):
+            border_checks = [
+                f"(im1b{band_index} != {value})"
+                for band_index, value in zip(config.black_border_band_indices, invalid_tuple)
+            ]
+            invalid_tuple_checks.append(f"({' or '.join(border_checks)})")
+        conditions.append(f"({' and '.join(invalid_tuple_checks)})")
 
     if not conditions:
         failure_reasons.append("no valid-mask construction rule is active")
@@ -264,7 +282,10 @@ def run_valid_mask_step(config: Level1BValidMaskConfig) -> dict[str, object]:
         "alpha_valid_min": config.alpha_valid_min,
         "black_border_enabled": config.black_border_enabled,
         "black_border_band_indices": list(config.black_border_band_indices),
-        "black_border_invalid_values": list(config.black_border_invalid_values),
+        "invalid_rgb_tuples": [list(values) for values in normalize_invalid_rgb_tuples(config)],
+        "black_border_invalid_values": list(config.black_border_invalid_values)
+        if config.black_border_invalid_values is not None
+        else None,
         "otb_app_name": otb_app_name,
         "otb_app_path": otb_app_path,
         "expression": expression,
