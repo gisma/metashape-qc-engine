@@ -205,15 +205,6 @@ unknown_group_groups <- setdiff(unique(candidate_group$candidate_scale_group_id)
 if (length(unknown_run_groups) > 0) fail("run_population_summary.csv contains group IDs not present in ranked_candidate_scales.csv: ", paste(unknown_run_groups, collapse = ", "))
 if (length(unknown_group_groups) > 0) fail("candidate_group_response_summary.csv contains group IDs not present in ranked_candidate_scales.csv: ", paste(unknown_group_groups, collapse = ", "))
 
-run_population <- run_population |>
-  mutate(candidate_scale_group_id = factor(candidate_scale_group_id, levels = plot_rank_levels))
-
-candidate_group <- candidate_group |>
-  mutate(candidate_scale_group_id = factor(candidate_scale_group_id, levels = plot_rank_levels))
-
-ranked_candidates <- ranked_candidates |>
-  mutate(candidate_scale_group_id = factor(candidate_scale_group_id, levels = plot_rank_levels))
-
 input_manifest <- input_files |>
   mutate(
     exists = file.exists(path),
@@ -224,18 +215,116 @@ input_manifest <- input_files |>
 
 readr::write_csv(input_manifest, file.path(eval_dir, "00_existing_stats_input_manifest.csv"))
 
-run_used <- run_population |>
+ranked_candidates <- ranked_candidates |>
+  mutate(stored_rank = dplyr::row_number())
+
+stored_rank_lookup <- setNames(ranked_candidates$stored_rank, as.character(ranked_candidates$candidate_scale_group_id))
+
+candidate_group_eval <- candidate_group |>
+  mutate(stored_rank = unname(stored_rank_lookup[as.character(candidate_scale_group_id)]))
+
+raw_required <- c(
+  "edge_loaded_flag",
+  "scale_jump_flag",
+  "distribution_flutter_flag",
+  "spatial_scale_jump_flag",
+  "central_area_share_mean",
+  "response_spread_q"
+)
+
+if ("stability_score_raw" %in% names(candidate_group_eval)) {
+  candidate_group_eval <- candidate_group_eval |>
+    mutate(stability_score_raw = as.numeric(stability_score_raw))
+} else {
+  assert_cols(candidate_group_eval, raw_required, "candidate_group_response_summary.csv")
+  candidate_group_eval <- candidate_group_eval |>
+    mutate(
+      stability_score_raw = 1.0 -
+        0.35 * as.numeric(edge_loaded_flag) -
+        0.35 * as.numeric(scale_jump_flag) -
+        0.20 * as.numeric(distribution_flutter_flag) -
+        0.20 * as.numeric(spatial_scale_jump_flag) +
+        0.50 * as.numeric(central_area_share_mean) -
+        0.10 * as.numeric(response_spread_q)
+    )
+}
+
+computed_clamp <- pmax(0.0, pmin(1.0, candidate_group_eval$stability_score_raw))
+if ("stability_score" %in% names(candidate_group_eval)) {
+  candidate_group_eval <- candidate_group_eval |>
+    mutate(
+      score_clamp_delta = stability_score - computed_clamp,
+      score_clamp_check = abs(score_clamp_delta) <= 1e-9
+    )
+} else {
+  candidate_group_eval <- candidate_group_eval |>
+    mutate(
+      stability_score = computed_clamp,
+      score_clamp_delta = NA_real_,
+      score_clamp_check = NA
+    )
+}
+
+true_ranked_candidates <- candidate_group_eval |>
+  arrange(desc(stability_score_raw), desc(stability_score), candidate_scale_group_id) |>
+  mutate(eval_rank = dplyr::row_number())
+
+true_rank_levels <- as.character(true_ranked_candidates$candidate_scale_group_id)
+eval_rank_lookup <- setNames(true_ranked_candidates$eval_rank, true_rank_levels)
+
+true_ranked_candidates <- true_ranked_candidates |>
+  mutate(
+    candidate_scale_group_id = factor(candidate_scale_group_id, levels = true_rank_levels)
+  )
+
+run_population_eval <- run_population |>
+  mutate(
+    eval_rank = unname(eval_rank_lookup[as.character(candidate_scale_group_id)]),
+    candidate_scale_group_id = factor(candidate_scale_group_id, levels = true_rank_levels)
+  ) |>
+  arrange(eval_rank, run_id)
+
+candidate_group_eval <- candidate_group_eval |>
+  mutate(
+    eval_rank = unname(eval_rank_lookup[as.character(candidate_scale_group_id)]),
+    candidate_scale_group_id = factor(candidate_scale_group_id, levels = true_rank_levels)
+  ) |>
+  arrange(eval_rank)
+
+ranked_used <- true_ranked_candidates |>
+  select(all_of(ranked_required))
+
+ranked_true_ranking <- true_ranked_candidates |>
+  select(
+    candidate_scale_group_id,
+    stored_rank,
+    eval_rank,
+    stability_score_raw,
+    stability_score,
+    score_clamp_check,
+    score_clamp_delta,
+    response_center_q,
+    response_spread_q,
+    central_area_share_mean,
+    upper_tail_area_share_mean,
+    candidate_outcome
+  )
+
+stored_order <- as.character(ranked_candidates$candidate_scale_group_id)
+true_order <- as.character(true_ranked_candidates$candidate_scale_group_id)
+stored_order_matches_eval <- identical(stored_order, true_order)
+stored_order_mismatch_count <- sum(stored_order != true_order)
+
+run_used <- run_population_eval |>
   select(all_of(run_required))
 
-group_used <- candidate_group |>
+group_used <- candidate_group_eval |>
   select(all_of(group_required))
-
-ranked_used <- ranked_candidates |>
-  select(all_of(ranked_required))
 
 readr::write_csv(run_used, file.path(eval_dir, "01_run_population_existing_stats_used.csv"))
 readr::write_csv(group_used, file.path(eval_dir, "02_candidate_group_existing_stats_used.csv"))
 readr::write_csv(ranked_used, file.path(eval_dir, "03_ranked_candidate_existing_stats_used.csv"))
+readr::write_csv(ranked_true_ranking, file.path(eval_dir, "ranked_candidate_true_ranking.csv"))
 
 p1 <- ggplot(run_used, aes(x = candidate_scale_group_id, y = area_weighted_q_median)) +
   geom_hline(yintercept = c(0.5, 1, 2), linetype = "dashed") +
@@ -329,11 +418,15 @@ report_lines <- c(
   "- 01_run_population_existing_stats_used.csv",
   "- 02_candidate_group_existing_stats_used.csv",
   "- 03_ranked_candidate_existing_stats_used.csv",
+  "- ranked_candidate_true_ranking.csv",
   "- 01_run_area_weighted_q_median.png",
   "- 02_run_tail_central_area_shares.png",
   "- 03_group_mean_area_shares.png",
   "- 04_ranked_candidate_stability_score.png",
-  "- 05_group_response_center_spread.png"
+  "- 05_group_response_center_spread.png",
+  "",
+  paste0("Stored ranked_candidate_scales.csv order matches true ranking: ", stored_order_matches_eval),
+  paste0("Stored ranking mismatch count: ", stored_order_mismatch_count)
 )
 
 writeLines(report_lines, con = file.path(eval_dir, "level1b_existing_stats_eval_report.txt"))
