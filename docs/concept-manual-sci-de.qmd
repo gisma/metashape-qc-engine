@@ -1,0 +1,554 @@
+---
+title: "Level-1b: Zentrale Formeln der Candidate-Scale Response Surface"
+format:
+  html:
+    toc: true
+    number-sections: true
+lang: de
+---
+
+# 1. Konzept und Zielsetzung
+
+Level-1b ist ein rasterbasierter Qualitaetsschritt fuer UAV-Orthomosaike. Ziel ist nicht die unmittelbare Erzeugung einer finalen oekologischen Objektkarte, sondern die Bestimmung eines plausiblen und stabilen Parameterraums fuer spaetere Segmentierungen oekologisch interpretierbarer Einheiten. Der zentrale methodische Gedanke lautet: Eine Segmentierung ist dann fachlich belastbar, wenn sie innerhalb eines deterministisch erzeugten Kandidatenraums eine stabile, skalenkonsistente Segmentpopulation erzeugt und diese Stabilitaet auch raeumlich im Bild erhalten bleibt.
+
+Im Unterschied zu klassischen Referenzvergleichen setzt Level-1b keine externe Objektwahrheit voraus. Fuer UAV-Orthomosaike existieren oekologische Zielobjekte haeufig nicht als eindeutige Referenzpolygone. Die operative Referenz entsteht daher aus der fachlichen Prozessannahme, dem gueltigen Beobachtungsraum, dem Proxy- und Feature-Raum sowie der daraus abgeleiteten Kandidatenskala. Level-1b prueft folglich nicht, ob eine Segmentierung einer externen Karte entspricht, sondern ob die Segmentierungsantwort im vorgesehenen Skalenraum stabil, zentriert und raeumlich konsistent bleibt.
+
+Der Workflow kann als Kette von Prozessskala, Kandidatenskala und Segmentantwort verstanden werden. Die Prozessskala beschreibt die fachliche Annahme ueber sinnvolle oekologische Einheiten. Die Kandidatenskala uebersetzt diese Annahme in operationalisierbare Segmentierungsparameter. Die Segmentantwort beschreibt schliesslich das empirische Verhalten der erzeugten Segmentpopulation im Bild. Methodisch entsteht damit kein finaler Objektlayer, sondern ein Evidenzraum, in dem stabile und instabile Skalenbereiche sichtbar werden.
+
+Der gueltige Beobachtungssupport wird dabei nur als technische Voraussetzung behandelt. Alle folgenden Groessen beziehen sich auf gueltige Pixel nach Maskierung von NoData, Footprint und Hintergrund. Entscheidend ist nicht die Maskenformel selbst, sondern dass Segmentflaechen, Feature-Distanzen und Stabilitaetsdiagnosen nicht durch kuenstliche Hintergrundsegmente verzerrt werden.
+
+# 2. Kandidatenskala und Segmentierungsparameter
+
+Eine Kandidatenskala in Metern muss in Pixelparameter uebersetzt werden, weil die Segmentierungssoftware rasterbasiert arbeitet. Die physische Skala bleibt dabei die fachliche Bezugsgroesse; die Bodenaufloesung dient nur zur Umrechnung.
+
+$$
+s_j =
+\max
+\left(
+1,
+\operatorname{round}
+\left(
+\frac{r_j}{g}
+\right)
+\right)
+$$
+
+- $r_j$: physische Kandidatenskala des Kandidaten $j$ in Metern.
+- $g$: Bodenaufloesung in Metern pro Pixel.
+- $s_j$: raeumlicher Suchradius in Pixeln.
+- $\max(1,\ldots)$ verhindert einen ungueltigen Radius von $0$ Pixeln.
+- Die GSD $g$ ist hier eine Umrechnungsgroesse, nicht die oekologische Zielskala.
+
+Die Mindestsegmentgroesse wird aus derselben physischen Kandidatenskala abgeleitet. Sie entspricht naeherungsweise der Pixelzahl eines Kreises mit Radius $r_j$.
+
+$$
+m_j =
+\max
+\left(
+1,
+\operatorname{round}
+\left(
+\frac{\pi r_j^2}{g^2}
+\right)
+\right)
+$$
+
+- $m_j$: Mindestsegmentgroesse des Kandidaten $j$ in Pixeln.
+- $\pi r_j^2$: Kreisflaeche zur physischen Kandidatenskala.
+- $g^2$: Flaeche eines Pixels in Quadratmetern.
+- $\pi r_j^2/g^2$ uebersetzt eine metrische Flaeche in Pixel.
+- Suchradius und Mindestgroesse werden damit aus derselben Skalenannahme abgeleitet.
+
+Der Feature-Distanzparameter wird getrennt vom raeumlichen Radius bestimmt. Er beschreibt Aehnlichkeit im Feature-Raum und nicht raeumliche Naehe.
+
+$$
+d_i^{(k)}
+=
+\left\lVert
+Y(x_i) - Y(x_{i,k})
+\right\rVert
+$$
+
+- $Y(x_i)$: Feature-Vektor eines gueltigen Pixels $x_i$.
+- $x_{i,k}$: $k$-ter naechster Nachbar von $x_i$ im Feature-Raum.
+- $d_i^{(k)}$: Distanz zum $k$-ten Feature-Nachbarn.
+- Diese Distanz bildet die lokale Streuung im Feature-Raum ab.
+
+Aus den kNN-Distanzen werden `ranger`-Kandidaten ueber Quantile bestimmt.
+
+$$
+\rho_q =
+Q_q
+\left(
+d_1^{(k)},
+d_2^{(k)},
+\ldots,
+d_n^{(k)}
+\right)
+$$
+
+- $\rho_q$: Feature-Distanzquantil.
+- $Q_q$: Quantilfunktion zum Niveau $q$.
+- $d_1^{(k)}, \ldots, d_n^{(k)}$: beobachtete kNN-Distanzen.
+- Der `ranger` wird aus der Feature-Raum-Verteilung abgeleitet, nicht aus der raeumlichen Kandidatenskala.
+
+Ein vollstaendiger Segmentierungskandidat kombiniert raeumlichen Radius, Mindestsegmentgroesse und Feature-Distanz.
+
+$$
+\theta_j =
+\left(
+s_j,
+m_j,
+\rho_j
+\right)
+$$
+
+- $\theta_j$: vollstaendige Parametrisierung des Kandidaten $j$.
+- $s_j$: raeumlicher Suchradius.
+- $m_j$: Mindestsegmentgroesse.
+- $\rho_j$: Feature-Distanzschwelle.
+- Erst die Kombination dieser drei Parameter definiert den eigentlichen Segmentierungskandidaten.
+
+Die lokale Stabilitaet wird durch kleine Perturbationen um diesen Kandidaten geprueft.
+
+$$
+\theta_{j,\ell}
+=
+\left(
+s_j + \Delta s_\ell,
+m_j + \Delta m_\ell,
+\rho_j + \Delta \rho_\ell
+\right)
+$$
+
+- $\theta_{j,\ell}$: lokale Variante des Kandidaten $j$.
+- $\ell$: Index der lokalen Perturbation.
+- $\Delta s_\ell$: Aenderung des raeumlichen Suchradius.
+- $\Delta m_\ell$: Aenderung der Mindestsegmentgroesse.
+- $\Delta \rho_\ell$: Aenderung des Feature-Distanzparameters.
+- Die Perturbation ist lokal und dient nicht als globaler Parameter-Sweep.
+
+Typische adaptive Schrittweiten halten die Perturbation relativ zur lokalen Skala interpretierbar.
+
+$$
+\Delta \rho =
+\max
+\left(
+0.005,
+0.10\rho_j
+\right)
+$$
+
+- $\Delta \rho$: adaptive Aenderung des Feature-Distanzparameters.
+- $0.005$: minimale numerische Aenderung.
+- $0.10\rho_j$: relative Aenderung von zehn Prozent des aktuellen `ranger`.
+- Dadurch wird die Feature-Perturbation weder zu klein noch unverhaeltnismaessig gross.
+
+$$
+\Delta m =
+\max
+\left(
+5,
+\operatorname{round}
+\left(
+0.20m_j
+\right)
+\right)
+$$
+
+- $\Delta m$: adaptive Aenderung der Mindestsegmentgroesse.
+- $5$: minimale Aenderung in Pixeln.
+- $0.20m_j$: Aenderung von etwa $20\%$ der aktuellen Mindestsegmentgroesse.
+- Groessere Kandidaten werden damit staerker perturbiert als sehr kleine Kandidaten.
+
+# 3. Segmentpopulation und relative Skalenmetrik
+
+Fuer jede lokale Parametrisierung entsteht ein Segmentierungsraster. Dieses wird nicht vektorisiert, sondern als Labelraster ausgewertet.
+
+$$
+L_{j,\ell}(x):
+\Omega
+\rightarrow
+\mathbb{N}
+$$
+
+- $L_{j,\ell}(x)$: Segmentlabel des Pixels $x$.
+- $\Omega$: gueltiger Beobachtungssupport.
+- $j$: Kandidatenskala.
+- $\ell$: lokale Perturbation.
+- $\mathbb{N}$: Menge der ganzzahligen Segmentlabels.
+
+Ein einzelnes Segment ist die Menge aller gueltigen Pixel mit gleichem Label.
+
+$$
+S_{j,\ell,h}
+=
+\left\{
+x \in \Omega :
+L_{j,\ell}(x)=h
+\right\}
+$$
+
+- $S_{j,\ell,h}$: Segment $h$ im Lauf $(j,\ell)$.
+- $h$: Segmentlabel.
+- Die Definition ist rein rasterbasiert.
+- Fuer die Level-1b-Diagnose ist keine Vektorisierung erforderlich.
+
+Die Segmentflaeche ergibt sich direkt aus der Pixelzahl.
+
+$$
+A_{j,\ell,h}
+=
+\left|
+S_{j,\ell,h}
+\right|
+\cdot
+g^2
+$$
+
+- $A_{j,\ell,h}$: Segmentflaeche in Quadratmetern.
+- $\left|S_{j,\ell,h}\right|$: Anzahl der Pixel im Segment.
+- $g^2$: Flaeche eines Pixels in Quadratmetern.
+- Damit wird die Segmentgroesse metrisch vergleichbar.
+
+Zur skalenbezogenen Interpretation wird jedes Segment in einen aequivalenten Radius ueberfuehrt.
+
+$$
+r^{eq}_{j,\ell,h}
+=
+\sqrt{
+\frac{
+A_{j,\ell,h}
+}{
+\pi
+}
+}
+$$
+
+- $r^{eq}_{j,\ell,h}$: Radius eines Kreises mit derselben Flaeche wie das Segment.
+- Der aequivalente Radius ist eine diagnostische Laengenskala.
+- Er behauptet nicht, dass das Segment kreisfoermig ist.
+- Er macht unterschiedlich geformte Segmente ueber eine gemeinsame Skala vergleichbar.
+
+Die zentrale dimensionslose Groesse ist das Verhaeltnis aus erzeugter Segmentgroesse und Kandidatenskala.
+
+$$
+q_{j,\ell,h}
+=
+\frac{
+r^{eq}_{j,\ell,h}
+}{
+r_j
+}
+$$
+
+- $q_{j,\ell,h}$: relative Segmentgroesse.
+- $q \approx 1$: Segmentgroesse liegt nahe der Kandidatenskala.
+- $q \ll 1$: Segmentierung ist deutlich feiner als erwartet.
+- $q \gg 1$: Segmentierung aggregiert deutlich staerker als erwartet.
+- Durch $q$ werden unterschiedliche Kandidatenskalen vergleichbar.
+
+Die relativen Segmentgroessen werden in diagnostische Klassen ueberfuehrt.
+
+$$
+\begin{aligned}
+\text{micro} &: q < 0.25, \\
+\text{small} &: 0.25 \le q < 0.5, \\
+\text{in\_scale} &: 0.5 \le q \le 2.0, \\
+\text{large} &: 2.0 < q \le 4.0, \\
+\text{oversize} &: q > 4.0.
+\end{aligned}
+$$
+
+- `micro`: deutlich kleiner als die Kandidatenskala.
+- `small`: kleiner als die Kandidatenskala.
+- `in_scale`: im erwarteten Skalenbereich.
+- `large`: groesser als die Kandidatenskala.
+- `oversize`: deutlich groesser als die Kandidatenskala.
+- Diese Klassen sind diagnostisch und nicht als finale Kartiereinheiten gemeint.
+
+Die ungewichtete Segmentgroessenverteilung eines Laufs zaehlt alle Segmente gleich.
+
+$$
+P_{j,\ell}(q)
+=
+\frac{1}{H_{j,\ell}}
+\sum_h
+\delta
+\left(
+q - q_{j,\ell,h}
+\right)
+$$
+
+- $P_{j,\ell}(q)$: empirische Verteilung der relativen Segmentgroessen.
+- $H_{j,\ell}$: Zahl der Segmente im Lauf $(j,\ell)$.
+- $\delta(q-q_{j,\ell,h})$: Punktmasse am beobachteten $q$-Wert.
+- Diese Verteilung beschreibt die Segmentpopulation nach Segmentanzahl.
+
+Die flaechengewichtete Verteilung beruecksichtigt, wie viel Flaeche die jeweiligen Segmente einnehmen.
+
+$$
+P^A_{j,\ell}(q)
+=
+\frac{1}{
+\sum_h A_{j,\ell,h}
+}
+\sum_h
+A_{j,\ell,h}
+\cdot
+\delta
+\left(
+q - q_{j,\ell,h}
+\right)
+$$
+
+- $P^A_{j,\ell}(q)$: flaechengewichtete Verteilung der relativen Segmentgroessen.
+- $A_{j,\ell,h}$: Flaeche des Segments $h$.
+- Grosse Segmente erhalten mehr Gewicht.
+- Viele kleine Segmente dominieren dadurch nicht automatisch die Diagnose.
+
+Eine plausible Kandidatenskala sollte eine zentrale Antwort nahe $q=1$ erzeugen.
+
+$$
+q \approx 1
+$$
+
+- Die Hauptmasse der Segmentpopulation liegt nahe der Kandidatenskala.
+- Die Segmentierung ist weder deutlich zu fein noch deutlich zu grob.
+- Dies ist die zentrale skalenkonsistente Antwort.
+
+Auf logarithmischer Skala entspricht das:
+
+$$
+\log(q)
+\approx
+0
+$$
+
+- $\log(q)<0$: Segmente sind kleiner als die Kandidatenskala.
+- $\log(q)>0$: Segmente sind groesser als die Kandidatenskala.
+- $\log(q)\approx 0$: Segmente liegen nahe der Kandidatenskala.
+- Die logarithmische Darstellung macht untere und obere Abweichungen symmetrischer interpretierbar.
+
+# 4. Response Surface und Stabilitaetsbewertung
+
+Die Candidate-Scale Response Surface fasst alle lokalen Perturbationslaeufe einer Kandidatenskala zusammen. Sie besteht aus globalen Segmentgroessenverteilungen und raeumlichen Diagnosemustern.
+
+$$
+R_j =
+\left\{
+P_{j,\ell},
+M_{j,\ell}
+:
+\theta_{j,\ell}
+\in
+\Theta_j
+\right\}
+$$
+
+- $R_j$: Response Surface der Kandidatenskala $j$.
+- $P_{j,\ell}$: globale Segmentgroessenverteilung eines Laufs.
+- $M_{j,\ell}$: raeumliche Matrixdiagnose eines Laufs.
+- $\Theta_j$: lokale Perturbationswolke des Kandidaten.
+- Stabilitaet bedeutet, dass die Antworten innerhalb von $R_j$ aehnlich bleiben.
+
+Eine einfache Distanz zwischen diagnostischen Klassenanteilen lautet:
+
+$$
+D_{\text{class}}
+\left(
+P_{j,\ell},
+P_{j,r}
+\right)
+=
+\frac{1}{2}
+\sum_{k \in K}
+\left|
+p_{j,\ell,k}
+-
+p_{j,r,k}
+\right|
+$$
+
+- $D_{\text{class}}$: Distanz der Groessenklassenanteile.
+- $K$: Menge der diagnostischen Klassen.
+- $p_{j,\ell,k}$: Anteil der Klasse $k$ im Lauf $\ell$.
+- $p_{j,r,k}$: Anteil der Klasse $k$ im Vergleichslauf $r$.
+- Die Distanz misst, ob sich die Segmentgroessenklassen bei kleinen Parameteraenderungen stark verschieben.
+
+Eine Distanz ueber kumulative Verteilungen betrachtet die gesamte Form der Segmentgroessenverteilung.
+
+$$
+D_{\text{CDF}}
+\left(
+P_{j,\ell},
+P_{j,r}
+\right)
+=
+\sum_b
+\left|
+F_{j,\ell}(b)
+-
+F_{j,r}(b)
+\right|
+\Delta b
+$$
+
+- $D_{\text{CDF}}$: Distanz der kumulativen Verteilungsformen.
+- $F_{j,\ell}(b)$: kumulative Verteilung im Bin $b$ fuer Lauf $\ell$.
+- $F_{j,r}(b)$: kumulative Verteilung im Bin $b$ fuer Lauf $r$.
+- $\Delta b$: Breite des Histogramm-Bins.
+- Diese Distanz reagiert auf Verschiebungen, Streuungsaenderungen und Tail-Unterschiede.
+
+Eine Quantilsdistanz vergleicht zentrale und randliche Verteilungspunkte.
+
+$$
+D_Q
+\left(
+P_{j,\ell},
+P_{j,r}
+\right)
+=
+\sum_{a \in A}
+w_a
+\left|
+Q_a(P_{j,\ell})
+-
+Q_a(P_{j,r})
+\right|
+$$
+
+- $D_Q$: Distanz ausgewaehlter Verteilungsquantile.
+- $A$: Menge der betrachteten Quantilniveaus.
+- $Q_a(P)$: Quantil $a$ der Verteilung $P$.
+- $w_a$: Gewicht des Quantils $a$.
+- Dadurch werden Lage, Streuung und Tails der Segmentgroessenverteilung vergleichbar.
+
+Die raeumliche Analyse-Matrix uebersetzt die Segmentpopulation zurueck in den Bildraum.
+
+$$
+a_j =
+\max
+\left(
+a_{\min},
+\lambda r_j,
+s_{\text{eff}}
+\right)
+$$
+
+- $a_j$: Zellgroesse der raeumlichen Analyse-Matrix.
+- $a_{\min}$: minimale Zellgroesse.
+- $\lambda r_j$: skalenabhaengige Zellgroesse.
+- $s_{\text{eff}}$: effektiver Struktur-Support, falls verfuegbar.
+- Die Matrix soll nicht feiner sein als die interpretierbare Strukturinformation.
+
+Der Anteil einer diagnostischen Klasse in einer Analysezelle lautet:
+
+$$
+p_{u,k}
+=
+\frac{
+\sum_{x \in G_u}
+\mathbf{1}
+\left[
+\text{class}(x)=k
+\right]
+}{
+\left|
+G_u \cap \Omega
+\right|
+}
+$$
+
+- $G_u$: Analysezelle $u$.
+- $p_{u,k}$: Anteil der Klasse $k$ in Zelle $u$.
+- Der Zaehler zaehlt Pixel der Klasse $k$.
+- Der Nenner zaehlt gueltige Pixel der Zelle.
+- Damit werden globale Segmentgroessenklassen raeumlich verortet.
+
+Die raeumliche Stabilitaet zweier Laeufe wird ueber die Aenderung dieser Zellanteile bewertet.
+
+$$
+D_{\text{spatial}}
+\left(
+M_{j,\ell},
+M_{j,r}
+\right)
+=
+\frac{1}{|U|}
+\sum_{u \in U}
+\frac{1}{2}
+\sum_{k \in K}
+\left|
+p_{u,k}^{(j,\ell)}
+-
+p_{u,k}^{(j,r)}
+\right|
+$$
+
+- $D_{\text{spatial}}$: raeumliche Distanz zweier Matrixdiagnosen.
+- $U$: Menge aller Analysezellen.
+- $M_{j,\ell}$: raeumliche Matrixdiagnose des Laufs $\ell$.
+- $p_{u,k}^{(j,\ell)}$: Anteil der Klasse $k$ in Zelle $u$ fuer Lauf $\ell$.
+- Diese Distanz misst, ob Problemzonen raeumlich stabil bleiben.
+
+Globale, raeumliche und tailbezogene Unterschiede koennen zu einer Gesamtdistanz kombiniert werden.
+
+$$
+D_{\text{total}}
+=
+\alpha D_{\text{run}}
++
+\beta D_{\text{spatial}}
++
+\gamma D_{\text{tail}}
+$$
+
+- $D_{\text{total}}$: kombinierte Distanz zweier Segmentierungsantworten.
+- $D_{\text{run}}$: globale Verteilungsdistanz.
+- $D_{\text{spatial}}$: raeumliche Matrixdistanz.
+- $D_{\text{tail}}$: Distanz der unteren und oberen Tail-Anteile.
+- $\alpha$, $\beta$ und $\gamma$: Gewichtungen der Teilaspekte.
+
+Ein Stabilitaetswert pro Kandidatenskala kann aus der mittleren Distanz aller Laufpaare gebildet werden.
+
+$$
+S_j =
+1 -
+\frac{2}{L(L-1)}
+\sum_{\ell < r}
+D_{\text{total}}
+\left(
+(j,\ell),
+(j,r)
+\right)
+$$
+
+- $S_j$: Stabilitaetswert der Kandidatenskala $j$.
+- $L$: Zahl der lokalen Perturbationslaeufe.
+- Die Summe $\sum_{\ell<r}$ laeuft ueber alle Laufpaare innerhalb derselben Kandidatenskala.
+- Je kleiner die mittlere Distanz, desto groesser die Stabilitaet.
+- Grosse Distanzen zeigen instabile Segmentpopulationen oder raeumliche Regimewechsel an.
+
+Ein repraesentativer Lauf kann als Medoid der Response Surface bestimmt werden.
+
+$$
+\theta_j^\star
+=
+\arg\min_{\theta_{j,\ell} \in \Theta_j}
+\sum_{r=1}^{L}
+D_{\text{total}}
+\left(
+(j,\ell),
+(j,r)
+\right)
+$$
+
+- $\theta_j^\star$: repraesentative Parameterkombination der Kandidatenskala $j$.
+- Der Medoid ist der Lauf mit der geringsten Gesamtdistanz zu allen anderen Laeufen.
+- Er ist keine externe Wahrheit.
+- Er ist die robusteste Repraesentation der lokalen Response Surface.
+
+Eine plausible Kandidatenskala zeigt eine zentrale Hauptmasse um $q \approx 1$, einen hohen Anteil in `in_scale`, begrenzte untere und obere Tails, geringe Verteilungsdistanz innerhalb der Perturbationswolke, geringe raeumliche Matrixdistanz und keinen skalengetriebenen Sprung bei kleinen Parameteraenderungen.
+
+Eine problematische Kandidatenskala zeigt Dominanz von `micro` oder `small`, Dominanz von `large` oder `oversize`, starke Tails, Multimodalitaet, Flurry-Verhalten, raeumliche Regimewechsel oder isolierte Ausreisserlaeufe innerhalb der Response Surface.

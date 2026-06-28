@@ -53,8 +53,10 @@ class Level1BCandidateResponseSurfaceConfig:
     candidate_id: str
     output_dir: Path
     perturbation_candidates_json_path: Path
-    feature_space_stack_path: Path
+    feature_space_stack_path: Path | None = None
     valid_mask_path: Path | None = None
+    segmentation_stack_path: Path | None = None
+    segmentation_stack_source: str | None = None
     otb_bin_dir: str | None = None
     ram_mb: int = 8192
     overwrite: bool = False
@@ -90,6 +92,24 @@ class Level1BCandidateResponseSurfaceConfig:
 
 def response_surface_output_dir(output_dir: str | Path) -> Path:
     return Path(output_dir) / "level1b" / "candidate_response_surface"
+
+
+def resolve_segmentation_stack(cfg: Level1BCandidateResponseSurfaceConfig) -> tuple[Path, str]:
+    """Resolve Step-9 input without silently treating PCA as the default."""
+    if cfg.segmentation_stack_path is not None:
+        path = Path(cfg.segmentation_stack_path)
+        source = cfg.segmentation_stack_source or "explicit_segmentation_stack"
+    elif cfg.feature_space_stack_path is not None:
+        path = Path(cfg.feature_space_stack_path)
+        source = cfg.segmentation_stack_source or "explicit_feature_space_stack_compat"
+    else:
+        path = Path(cfg.output_dir) / "level1b" / "channels" / "proxy_stack.tif"
+        source = cfg.segmentation_stack_source or "proxy_stack"
+    return path, source
+
+
+def resolve_valid_mask_path(cfg: Level1BCandidateResponseSurfaceConfig) -> Path:
+    return Path(cfg.valid_mask_path) if cfg.valid_mask_path is not None else Path(cfg.output_dir) / "level1b" / "mask" / "valid_mask.tif"
 
 
 def read_step8_local_parameter_combinations(json_path: str | Path) -> list[dict[str, Any]]:
@@ -149,11 +169,42 @@ def run_radius_m(row: dict[str, Any], pixel_size_m: float | None = None) -> floa
 def count_segment_sizes(labels: np.ndarray, pixel_size_m: float) -> dict[str, Any]:
     values, counts = np.unique(labels, return_counts=True)
     keep = values != 0
-    values = values[keep]
-    counts = counts[keep]
+    return _counts_report_from_values(values[keep], counts[keep], pixel_size_m, "sparse_unique")
+
+
+def count_segment_sizes_from_raster(labels_path: str | Path, valid_mask_path: str | Path, pixel_size_m: float) -> dict[str, Any]:
+    label_counts: dict[int, int] = {}
+    window_count = 0
+    for labels in _iter_masked_label_blocks(labels_path, valid_mask_path):
+        window_count += 1
+        labelled = labels[labels != 0]
+        if labelled.size == 0:
+            continue
+        values, counts = np.unique(labelled, return_counts=True)
+        for label, count in zip(values, counts):
+            label_int = int(label)
+            label_counts[label_int] = label_counts.get(label_int, 0) + int(count)
+    if label_counts:
+        values = np.fromiter(sorted(label_counts), dtype=np.int64)
+        counts = np.asarray([label_counts[int(label)] for label in values], dtype=np.int64)
+    else:
+        values = np.asarray([], dtype=np.int64)
+        counts = np.asarray([], dtype=np.int64)
+    report = _counts_report_from_values(values, counts, pixel_size_m, "windowed_sparse_unique")
+    report["memory_strategy"] = dict(
+        report["memory_strategy"],
+        strategy="windowed_sparse_unique",
+        raster_array_loaded_whole=False,
+        raster_window_count=window_count,
+    )
+    return report
+
+
+def _counts_report_from_values(values: np.ndarray, counts: np.ndarray, pixel_size_m: float, strategy: str) -> dict[str, Any]:
+    values = np.asarray(values, dtype=np.int64)
+    counts = np.asarray(counts, dtype=np.int64)
     max_label = int(values.max()) if values.size else 0
     dense_memory_bytes = (max_label + 1) * np.dtype(np.int64).itemsize if max_label >= 0 else 0
-    label_count_strategy = "sparse_unique"
     area_px = counts.astype(np.int64)
     area_m2 = area_px.astype(float) * float(pixel_size_m) ** 2
     return {
@@ -162,9 +213,9 @@ def count_segment_sizes(labels: np.ndarray, pixel_size_m: float) -> dict[str, An
         "area_m2": area_m2,
         "max_label": max_label,
         "unique_label_count": int(values.size),
-        "label_count_strategy": label_count_strategy,
+        "label_count_strategy": strategy,
         "memory_strategy": {
-            "strategy": "sparse_unique",
+            "strategy": strategy,
             "dense_count_bytes_if_used": int(dense_memory_bytes),
         },
     }
@@ -217,6 +268,17 @@ def compute_run_population_summary(
     cfg: Level1BCandidateResponseSurfaceConfig,
 ) -> dict[str, Any]:
     counts = count_segment_sizes(labels, pixel_size_m)
+    return compute_run_population_summary_from_counts(run_id, group_id, row, counts, pixel_size_m, cfg)
+
+
+def compute_run_population_summary_from_counts(
+    run_id: str,
+    group_id: str,
+    row: dict[str, Any],
+    counts: dict[str, Any],
+    pixel_size_m: float,
+    cfg: Level1BCandidateResponseSurfaceConfig,
+) -> dict[str, Any]:
     area_m2 = counts["area_m2"]
     radii_m = equivalent_radii(area_m2)
     r_source = source_candidate_radius_m(row)
@@ -513,6 +575,77 @@ def aggregate_analysis_matrix(
     return {"cell_records": cell_records, "summary": summary, "cell_size_m": cell_size_m, "cell_size_px": cell_px}
 
 
+def aggregate_analysis_matrix_from_raster(
+    labels_path: str | Path,
+    valid_mask_path: str | Path,
+    label_classes: dict[int, str],
+    pixel_size_m: float,
+    cell_size_m: float,
+    run_id: str = "",
+    group_id: str = "",
+) -> dict[str, Any]:
+    import rasterio
+    from rasterio.windows import Window
+
+    cell_px = max(1, int(math.ceil(cell_size_m / pixel_size_m)))
+    cell_records = []
+    with rasterio.open(labels_path) as label_dataset, rasterio.open(valid_mask_path) as mask_dataset:
+        _validate_raster_pair(label_dataset, mask_dataset, "valid mask and label raster dimensions are incompatible")
+        rows, cols = label_dataset.height, label_dataset.width
+        for r0 in range(0, rows, cell_px):
+            height = min(cell_px, rows - r0)
+            for c0 in range(0, cols, cell_px):
+                width = min(cell_px, cols - c0)
+                window = Window(c0, r0, width, height)
+                block = label_dataset.read(1, window=window)
+                mask = mask_dataset.read(1, window=window)
+                block = np.asarray(block).copy()
+                block[mask <= 0] = 0
+                labelled = block[block != 0]
+                if labelled.size == 0:
+                    continue
+                class_area = {cls: 0.0 for cls in SIZE_CLASSES}
+                values, counts = np.unique(labelled, return_counts=True)
+                for label, count in zip(values, counts):
+                    cls = label_classes.get(int(label))
+                    if cls:
+                        class_area[cls] += float(count) * pixel_size_m**2
+                labelled_area = sum(class_area.values())
+                shares = {cls: class_area[cls] / labelled_area if labelled_area else 0.0 for cls in SIZE_CLASSES}
+                dominant = max(SIZE_CLASSES, key=lambda cls: shares[cls])
+                lower = shares["micro"] + shares["small"]
+                central = shares["in_scale"]
+                upper = shares["large"] + shares["oversize"]
+                if central >= lower and central >= upper:
+                    tail = "central"
+                elif lower >= upper:
+                    tail = "lower_tail"
+                else:
+                    tail = "upper_tail"
+                cell_records.append(
+                    {
+                        "run_id": run_id,
+                        "candidate_scale_group_id": group_id,
+                        "cell_row": r0 // cell_px,
+                        "cell_col": c0 // cell_px,
+                        "labelled_area_m2": labelled_area,
+                        "micro_area_share": shares["micro"],
+                        "small_area_share": shares["small"],
+                        "in_scale_area_share": shares["in_scale"],
+                        "large_area_share": shares["large"],
+                        "oversize_area_share": shares["oversize"],
+                        "lower_tail_area_share": lower,
+                        "central_area_share": central,
+                        "upper_tail_area_share": upper,
+                        "dominant_size_class": dominant,
+                        "dominant_tail_class": tail,
+                        "problem_class_dominance": tail != "central",
+                    }
+                )
+    summary = spatial_dominance_summary(cell_records, run_id, group_id)
+    return {"cell_records": cell_records, "summary": summary, "cell_size_m": cell_size_m, "cell_size_px": cell_px}
+
+
 def spatial_dominance_summary(cell_records: list[dict[str, Any]], run_id: str = "", group_id: str = "") -> dict[str, Any]:
     count = len(cell_records)
     if count == 0:
@@ -708,7 +841,9 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
     group_summaries: list[dict[str, Any]] = []
     segmentation_reports: list[dict[str, Any]] = []
 
-    pixel_size = _pixel_size_m(cfg.feature_space_stack_path)
+    segmentation_stack_path, segmentation_stack_source = resolve_segmentation_stack(cfg)
+    valid_mask_path = resolve_valid_mask_path(cfg)
+    pixel_size = _pixel_size_m(segmentation_stack_path)
     for group in groups:
         group_id = group["candidate_scale_group_id"]
         rows_for_group = list(group["rows"])
@@ -721,30 +856,38 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
         group_matrix_summaries: list[dict[str, Any]] = []
         for row in rows_for_group:
             run_id = str(row.get("perturbation_id", f"{group_id}__row_{row.get('_step8_row_index', 0)}"))
+            status_recorded = False
             try:
                 if cfg.dry_run:
                     segmentation_report = {"status": "dry_run", "output_artifacts": {}, "failure_reasons": []}
                     labels = np.zeros((0, 0), dtype=np.int32)
                 else:
                     segmentation_report = _run_or_reuse_segmentation(cfg, out_dir, group_id, row, run_id)
+                    segmentation_reports.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": segmentation_report.get("step9_run_status", "computed"), "report": segmentation_report})
+                    status_recorded = True
+                    if segmentation_report.get("status") != "ok":
+                        raise RuntimeError("one-scale segmentation failed: " + "; ".join(segmentation_report.get("failure_reasons", [])))
                     labels_path = _merged_labels_path(segmentation_report)
                     if not labels_path:
                         raise RuntimeError("merged label raster missing from segmentation report")
-                    labels = _read_label_raster(labels_path)
-                segmentation_reports.append({"run_id": run_id, "candidate_scale_group_id": group_id, "report": segmentation_report})
+                    label_counts = count_segment_sizes_from_raster(labels_path, valid_mask_path, pixel_size)
+                if cfg.dry_run:
+                    segmentation_reports.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": "skipped_dry_run", "report": segmentation_report})
+                    status_recorded = True
                 if cfg.dry_run:
                     failed_runs.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": "omitted", "reason": "dry_run"})
                     continue
-                run_summary = compute_run_population_summary(run_id, group_id, row, labels, pixel_size, cfg)
+                if segmentation_report.get("step9_run_status") == "reused":
+                    run_summary = _read_run_q_summary(_run_artifact_paths(out_dir, group_id, run_id)["summary_json"])
+                else:
+                    run_summary = compute_run_population_summary_from_counts(run_id, group_id, row, label_counts, pixel_size, cfg)
+                    run_summary = _write_incremental_run_q_statistics_from_counts(out_dir, group_id, run_id, row, label_counts, pixel_size, cfg, run_summary)
                 run_summaries.append(run_summary)
                 group_run_summaries.append(run_summary)
-                counts = count_segment_sizes(labels, pixel_size)
-                radii = equivalent_radii(counts["area_m2"])
-                q = radii / source_candidate_radius_m(row)
-                classes = assign_scale_relative_size_classes(q, cfg)
-                label_classes = {int(label): str(cls) for label, cls in zip(counts["labels"], classes)}
-                matrix = aggregate_analysis_matrix(
-                    labels,
+                label_classes = label_classes_from_counts(label_counts, row, pixel_size, cfg)
+                matrix = aggregate_analysis_matrix_from_raster(
+                    labels_path,
+                    valid_mask_path,
                     label_classes,
                     pixel_size,
                     compute_analysis_cell_size_m(row, cfg),
@@ -757,6 +900,11 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
                 group_matrix_summaries.append(matrix_summary)
             except Exception as exc:  # noqa: BLE001 - every failed planned run is reported.
                 failed_runs.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": "failed", "reason": str(exc), "row": row})
+                if status_recorded:
+                    segmentation_reports[-1]["status"] = "failed"
+                    segmentation_reports[-1]["reason"] = str(exc)
+                else:
+                    segmentation_reports.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": "failed", "reason": str(exc)})
         if group_run_summaries:
             group_summaries.append(compute_candidate_group_response_summary(group_id, group_run_summaries, group_matrix_summaries, cfg))
 
@@ -779,6 +927,11 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
         started,
         planned_group_count=planned_group_count,
     )
+    report["segmentation_stack_path"] = str(segmentation_stack_path)
+    report["segmentation_stack_source"] = segmentation_stack_source
+    report["valid_mask_path"] = str(valid_mask_path)
+    report["invalid_support_excluded_from_q_statistics"] = True
+    report["perturbation_statuses"] = segmentation_reports
     _write_json(out_dir / OUTPUT_FILENAMES["report"], report)
     _write_json(out_dir / OUTPUT_FILENAMES["summary_json"], report)
     _write_csv(out_dir / OUTPUT_FILENAMES["summary_csv"], [report])
@@ -882,23 +1035,290 @@ def _run_or_reuse_segmentation(
     run_id: str,
 ) -> dict[str, Any]:
     run_dir = out_dir / "segmentations" / _safe_name(group_id)
+    artifact_paths = _run_artifact_paths(out_dir, group_id, run_id)
+    expected_metadata = _expected_run_metadata(cfg, artifact_paths, group_id, row, run_id)
+    run_artifacts_exist = _run_has_any_artifacts(artifact_paths)
+    if not cfg.overwrite and _is_complete_run(artifact_paths, expected_metadata, group_id):
+        report = json.loads(artifact_paths["report"].read_text(encoding="utf-8"))
+        report["step9_run_status"] = "reused"
+        return report
+    segmentation_stack_path, segmentation_stack_source = resolve_segmentation_stack(cfg)
     segmentation_cfg = Level1BOneScaleSegmentationConfig(
-        candidate_id=str(row.get("source_candidate_id", cfg.candidate_id)),
+        candidate_id=str(row.get("source_candidate_id", row.get("candidate_id", cfg.candidate_id))),
         output_dir=run_dir,
-        feature_space_stack_path=cfg.feature_space_stack_path,
+        feature_space_stack_path=segmentation_stack_path,
+        segmentation_stack_path=segmentation_stack_path,
+        segmentation_stack_source=segmentation_stack_source,
+        valid_mask_path=resolve_valid_mask_path(cfg),
         perturbation_candidates_json_path=cfg.perturbation_candidates_json_path,
         perturbation_id=run_id,
         ram_mb=cfg.ram_mb,
-        overwrite=cfg.overwrite,
+        overwrite=cfg.overwrite or run_artifacts_exist,
     )
-    return run_one_scale_segmentation_smoke(segmentation_cfg)
+    report = run_one_scale_segmentation_smoke(segmentation_cfg)
+    if report.get("status") != "ok":
+        report["step9_run_status"] = "failed"
+    elif run_artifacts_exist and not cfg.overwrite:
+        report["step9_run_status"] = "recomputed_incomplete"
+    else:
+        report["step9_run_status"] = "computed"
+    return report
+
+
+def _run_artifact_paths(out_dir: Path, group_id: str, run_id: str) -> dict[str, Path]:
+    run_path = out_dir / "segmentations" / _safe_name(group_id) / "level1b" / "segmentation_smoke" / run_id
+    return {
+        "labels": run_path / "merged_labels.tif",
+        "report": run_path / "one_scale_segmentation_report.json",
+        "segments_csv": run_path / "run_q_segments.csv",
+        "summary_json": run_path / "run_q_summary.json",
+        "summary_csv": run_path / "run_q_summary.csv",
+    }
+
+
+def _run_has_any_artifacts(paths: dict[str, Path]) -> bool:
+    run_path = paths["labels"].parent
+    return run_path.exists() and any(path.is_file() for path in run_path.rglob("*"))
+
+
+def _expected_run_metadata(
+    cfg: Level1BCandidateResponseSurfaceConfig,
+    paths: dict[str, Path],
+    group_id: str,
+    row: dict[str, Any],
+    run_id: str,
+) -> dict[str, Any]:
+    stack_path, stack_source = resolve_segmentation_stack(cfg)
+    return {
+        "perturbation_id": run_id,
+        "candidate_id": str(row.get("source_candidate_id", row.get("candidate_id", cfg.candidate_id))),
+        "scale_id": str(row.get("scale_id", row.get("source_scale_id", group_id))),
+        "radius_m": source_candidate_radius_m(row),
+        "spatialr_px": int(row["spatialr_px"]),
+        "minsize_px": int(row["minsize_px"]),
+        "ranger": float(row["ranger"]),
+        "segmentation_stack_path": str(stack_path),
+        "segmentation_stack_source": stack_source,
+        "valid_mask_path": str(resolve_valid_mask_path(cfg)),
+        "masked_segmentation_stack_path": str(paths["labels"].parent / "masked_segmentation_stack.tif"),
+        "pre_lsms_mask_applied": True,
+        "post_mask_applied": True,
+    }
+
+
+def _metadata_matches(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
+    for key, expected_value in expected.items():
+        actual_value = actual.get(key)
+        if isinstance(expected_value, bool):
+            if actual_value is not expected_value:
+                return False
+        elif isinstance(expected_value, (int, float)) and not isinstance(expected_value, bool):
+            try:
+                if not math.isclose(float(actual_value), float(expected_value), rel_tol=1e-12, abs_tol=1e-12):
+                    return False
+            except (TypeError, ValueError):
+                return False
+        elif str(actual_value) != str(expected_value):
+            return False
+    return True
+
+
+def _summary_csv_matches_json(csv_row: dict[str, str], summary: dict[str, Any]) -> bool:
+    if set(csv_row) != set(summary):
+        return False
+    for key, json_value in summary.items():
+        csv_value = csv_row.get(key, "")
+        if json_value is None:
+            if csv_value != "":
+                return False
+        elif isinstance(json_value, bool):
+            if csv_value.lower() != str(json_value).lower():
+                return False
+        elif isinstance(json_value, (int, float)) and not isinstance(json_value, bool):
+            try:
+                csv_number = float(csv_value)
+                json_number = float(json_value)
+                if not (math.isnan(csv_number) and math.isnan(json_number)) and not math.isclose(
+                    csv_number, json_number, rel_tol=1e-12, abs_tol=1e-12
+                ):
+                    return False
+            except (TypeError, ValueError):
+                return False
+        elif isinstance(json_value, (dict, list)):
+            try:
+                if json.loads(csv_value) != json_value:
+                    return False
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return False
+        elif csv_value != str(json_value):
+            return False
+    return True
+
+
+def _is_complete_run(paths: dict[str, Path], expected_metadata: dict[str, Any], group_id: str) -> bool:
+    if any(not path.exists() or path.stat().st_size == 0 for path in paths.values()):
+        return False
+    try:
+        report = json.loads(paths["report"].read_text(encoding="utf-8"))
+        summary = json.loads(paths["summary_json"].read_text(encoding="utf-8"))
+        with paths["segments_csv"].open(newline="", encoding="utf-8") as file_obj:
+            segment_reader = csv.DictReader(file_obj)
+            segment_rows = list(segment_reader)
+            segment_fields = set(segment_reader.fieldnames or [])
+        with paths["summary_csv"].open(newline="", encoding="utf-8") as file_obj:
+            summary_rows = list(csv.DictReader(file_obj))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    required_segment_fields = {"scale_id", "candidate_id", "perturbation_id", "area_m2", "req_m", "q", "q_class"}
+    run_id = str(expected_metadata["perturbation_id"])
+    return bool(
+        report.get("status") == "ok"
+        and _metadata_matches(report, expected_metadata)
+        and _metadata_matches(summary, expected_metadata)
+        and summary.get("run_id") == run_id
+        and summary.get("candidate_scale_group_id") == str(group_id)
+        and int(summary.get("n_segments", -1)) == len(segment_rows)
+        and len(summary_rows) == 1
+        and _summary_csv_matches_json(summary_rows[0], summary)
+        and required_segment_fields.issubset(segment_fields)
+        and all(item.get("perturbation_id") == run_id for item in segment_rows)
+        and str(report.get("output_artifacts", {}).get("merged_labels", "")) == str(paths["labels"])
+    )
+
+
+def label_classes_from_counts(
+    counts: dict[str, Any],
+    row: dict[str, Any],
+    pixel_size_m: float,
+    cfg: Level1BCandidateResponseSurfaceConfig,
+) -> dict[int, str]:
+    radii = equivalent_radii(counts["area_m2"])
+    q = radii / source_candidate_radius_m(row)
+    classes = assign_scale_relative_size_classes(q, cfg)
+    return {int(label): str(cls) for label, cls in zip(counts["labels"], classes)}
+
+
+def _apply_valid_mask_to_labels(labels: np.ndarray, valid_mask_path: str | Path) -> np.ndarray:
+    mask = _read_label_raster(valid_mask_path)
+    if mask.shape != labels.shape:
+        raise ValueError("valid mask and label raster dimensions are incompatible")
+    masked = np.asarray(labels).copy()
+    masked[mask <= 0] = 0
+    return masked
+
+
+def _read_run_q_summary(path: Path) -> dict[str, Any]:
+    return dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _write_incremental_run_q_statistics(
+    out_dir: Path,
+    group_id: str,
+    run_id: str,
+    row: dict[str, Any],
+    labels: np.ndarray,
+    pixel_size_m: float,
+    cfg: Level1BCandidateResponseSurfaceConfig,
+    run_summary: dict[str, Any],
+) -> dict[str, Any]:
+    counts = count_segment_sizes(labels, pixel_size_m)
+    return _write_incremental_run_q_statistics_from_counts(out_dir, group_id, run_id, row, counts, pixel_size_m, cfg, run_summary)
+
+
+def _write_incremental_run_q_statistics_from_counts(
+    out_dir: Path,
+    group_id: str,
+    run_id: str,
+    row: dict[str, Any],
+    counts: dict[str, Any],
+    pixel_size_m: float,
+    cfg: Level1BCandidateResponseSurfaceConfig,
+    run_summary: dict[str, Any],
+) -> dict[str, Any]:
+    req_m = equivalent_radii(counts["area_m2"])
+    radius_m = source_candidate_radius_m(row)
+    q_values = req_m / radius_m
+    classes = assign_scale_relative_size_classes(q_values, cfg)
+    common = {
+        "scale_id": str(row.get("scale_id", row.get("source_scale_id", group_id))),
+        "candidate_id": str(row.get("source_candidate_id", row.get("candidate_id", cfg.candidate_id))),
+        "perturbation_id": run_id,
+        "radius_m": radius_m,
+        "spatialr_px": row.get("spatialr_px"),
+        "minsize_px": row.get("minsize_px"),
+        "ranger": row.get("ranger"),
+    }
+    paths = _run_artifact_paths(out_dir, group_id, run_id)
+    expected_metadata = _expected_run_metadata(cfg, paths, group_id, row, run_id)
+    segment_rows = [
+        dict(common, label=int(label), area_m2=float(area), req_m=float(req), q=float(q_value), q_class=str(q_class))
+        for label, area, req, q_value, q_class in zip(counts["labels"], counts["area_m2"], req_m, q_values, classes)
+    ]
+    n_segments = len(segment_rows)
+    total_area = float(np.sum(counts["area_m2"]))
+    summary = dict(run_summary)
+    summary.update(common)
+    summary.update(
+        {
+            "n_segments": n_segments,
+            "q_p10": _quantile(q_values, 0.10),
+            "q_p25": _quantile(q_values, 0.25),
+            "q_median": _quantile(q_values, 0.50),
+            "q_p75": _quantile(q_values, 0.75),
+            "q_p90": _quantile(q_values, 0.90),
+            "valid_mask_path": str(resolve_valid_mask_path(cfg)),
+            "segmentation_stack_path": expected_metadata["segmentation_stack_path"],
+            "segmentation_stack_source": expected_metadata["segmentation_stack_source"],
+            "masked_segmentation_stack_path": expected_metadata["masked_segmentation_stack_path"],
+            "pre_lsms_mask_applied": True,
+            "post_mask_applied": True,
+            "label_invalid_support_value": 0,
+            "labels_postmasked": True,
+            "invalid_support_excluded_from_q_statistics": True,
+        }
+    )
+    for cls in SIZE_CLASSES:
+        cls_mask = classes == cls
+        summary[f"{cls}_frac_n"] = float(np.sum(cls_mask) / n_segments) if n_segments else 0.0
+        summary[f"{cls}_frac_area"] = float(np.sum(counts["area_m2"][cls_mask]) / total_area) if total_area else 0.0
+    segment_fields = [*common, "label", "area_m2", "req_m", "q", "q_class"]
+    _write_csv(paths["segments_csv"], segment_rows, fieldnames=segment_fields)
+    _write_json(paths["summary_json"], summary)
+    _write_csv(paths["summary_csv"], [summary])
+    return summary
 
 
 def _read_label_raster(path: str | Path) -> np.ndarray:
+    raise RuntimeError("Full-raster label reads are disabled in Step 9; use windowed helpers instead")
+
+
+def _iter_windows(width: int, height: int, block_size: int = 1024):
+    import rasterio
+    from rasterio.windows import Window
+
+    for row_off in range(0, height, block_size):
+        win_height = min(block_size, height - row_off)
+        for col_off in range(0, width, block_size):
+            win_width = min(block_size, width - col_off)
+            yield Window(col_off, row_off, win_width, win_height)
+
+
+def _iter_masked_label_blocks(labels_path: str | Path, valid_mask_path: str | Path):
     import rasterio
 
-    with rasterio.open(path) as src:
-        return src.read(1)
+    with rasterio.open(labels_path) as label_dataset, rasterio.open(valid_mask_path) as mask_dataset:
+        _validate_raster_pair(label_dataset, mask_dataset, "valid mask and label raster dimensions are incompatible")
+        for window in _iter_windows(label_dataset.width, label_dataset.height):
+            labels = label_dataset.read(1, window=window)
+            mask = mask_dataset.read(1, window=window)
+            labels = np.asarray(labels).copy()
+            labels[mask <= 0] = 0
+            yield labels
+
+
+def _validate_raster_pair(left, right, message: str) -> None:
+    if left.width != right.width or left.height != right.height:
+        raise ValueError(message)
 
 
 def _pixel_size_m(path: str | Path) -> float:
@@ -959,6 +1379,8 @@ def _top_report(
     planned_group_count: int | None = None,
 ) -> dict[str, Any]:
     planned_runs = sum(len(group.get("rows", [])) for group in groups) + len(omitted_runs)
+    segmentation_stack_path, segmentation_stack_source = resolve_segmentation_stack(cfg)
+    valid_mask_path = resolve_valid_mask_path(cfg)
     return {
         "candidate_id": cfg.candidate_id,
         "status": "ok" if not any(item.get("status") == "failed" for item in failed_runs) else "partial",
@@ -973,8 +1395,10 @@ def _top_report(
         ),
         "input_paths": {
             "perturbation_candidates_json_path": str(cfg.perturbation_candidates_json_path),
-            "feature_space_stack_path": str(cfg.feature_space_stack_path),
-            "valid_mask_path": str(cfg.valid_mask_path) if cfg.valid_mask_path else None,
+            "feature_space_stack_path": str(cfg.feature_space_stack_path) if cfg.feature_space_stack_path else None,
+            "segmentation_stack_path": str(segmentation_stack_path),
+            "segmentation_stack_source": segmentation_stack_source,
+            "valid_mask_path": str(valid_mask_path),
         },
         "config_values": _json_ready(asdict(cfg)),
         "thresholds": _thresholds(cfg),
@@ -1045,9 +1469,9 @@ def _write_json(path: Path, obj: Any) -> None:
     path.write_text(json.dumps(_json_ready(obj), indent=2), encoding="utf-8")
 
 
-def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+def _write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str] | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames: list[str] = []
+    fieldnames = list(fieldnames or [])
     for row in rows:
         for key in row:
             if key not in fieldnames:

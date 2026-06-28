@@ -1,33 +1,42 @@
 # Level-1b documentation set
 
-Generated from the uploaded documentation bundle `level1_doc_bundle` on 2026-06-26 14:30.
+Updated on 2026-06-26 after the Step-9 response-surface implementation.
 
-This set contains three separate manuals:
+This documentation set contains three manuals:
 
 1. [`LEVEL1B_USER_MANUAL.md`](LEVEL1B_USER_MANUAL.md) — operational start/run/check documentation.
-2. [`LEVEL1B_TECHNICAL_REFERENCE.md`](LEVEL1B_TECHNICAL_REFERENCE.md) — modules, functions, dataclasses, arguments and outputs.
-3. [`LEVEL1B_CONCEPTUAL_MANUAL.md`](LEVEL1B_CONCEPTUAL_MANUAL.md) — methodological rationale, formulas and ecological/UAV-scale interpretation.
+2. [`LEVEL1B_TECHNICAL_REFERENCE.md`](LEVEL1B_TECHNICAL_REFERENCE.md) — modules, dataclasses, run functions, outputs and current Step-9 API.
+3. [`LEVEL1B_CONCEPTUAL_MANUAL.md`](LEVEL1B_CONCEPTUAL_MANUAL.md) — methodological rationale, scale-domain logic, response-surface analysis and formulas.
 
-Current bundle state:
-
-```text
-M metashape_qc_engine/level1b_scale_distribution.py
- M tests/test_level1b_scale_distribution.py
-?? metashape_qc_engine/level1b_candidate_stability.py
-?? tests/test_level1b_candidate_stability.py
-```
-
-Changed tracked files reported by the bundle:
+Current documentation policy:
 
 ```text
-metashape_qc_engine/level1b_scale_distribution.py
-tests/test_level1b_scale_distribution.py
+Step 6 remains as implemented.
+The manuals do not request or describe further Step-6 code changes.
+The current update is a documentation update for the new active Step-9 response-surface workflow.
 ```
 
-Latest run root in the bundle:
+Current active Step-9 implementation:
 
 ```text
-/datadisk/data/uav/MOF_repro_test_recovered/level1b_runs/mof_rep004_fc050k_smooth5_clean_20260626T154455
+metashape_qc_engine.level1b_candidate_response_surface
+Level1BCandidateResponseSurfaceConfig
+run_candidate_response_surface_step
 ```
 
-Important status note: the latest bundled chain run completed Steps 1–8 and failed at Step 9 because the driver imported `run_candidate_stability_step`; the module exports `run_candidate_stability`. The user manual documents the corrected Step-9 call and a resume path.
+Legacy/Audit Step-9 implementation:
+
+```text
+metashape_qc_engine.legacy.level1b_candidate_stability_hoover_archive
+```
+
+The active Step 9 no longer uses full OTB Hoover comparison as the default criterion. Hoover is retained only as archived legacy/audit logic. The current driver Step-9 block is documented as `step9_candidate_response_surface`.
+
+Important source status for this manual update:
+
+```text
+Step 6 is left unchanged.
+Step 9 is documented as candidate-scale response surface analysis.
+Existing one-scale segmentation remains the segmentation backend.
+No final vector layer or selected final scale is produced by Level-1b.
+```

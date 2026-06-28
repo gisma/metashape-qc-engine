@@ -1,3 +1,4 @@
+import csv
 import json
 from pathlib import Path
 import sys
@@ -268,3 +269,243 @@ def test_19_required_outputs_are_written(tmp_path: Path, monkeypatch) -> None:
 
     for path in report["required_outputs"].values():
         assert Path(path).exists()
+
+
+def _one_run_candidates(path: Path) -> Path:
+    path.write_text(json.dumps({"candidates": [{"perturbation_id": "run-a", "source_candidate_id": "cand-a", "scale_id": "scale-a", "radius_m": 1.0, "spatialr_px": 1, "minsize_px": 1, "ranger": 0.1}]}), encoding="utf-8")
+    return path
+
+
+def test_20_proxy_stack_is_default_and_mask_is_forwarded(tmp_path: Path, monkeypatch) -> None:
+    output = tmp_path / "out"
+    proxy = write_raster(output / "level1b" / "channels" / "proxy_stack.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(output / "level1b" / "mask" / "valid_mask.tif", np.ones((2, 2), dtype=np.uint8))
+    labels = write_raster(tmp_path / "labels.tif", np.array([[1, 1], [2, 2]], dtype=np.uint32))
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    captured = []
+
+    def fake(config):
+        captured.append(config)
+        return {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(labels)}}
+
+    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", fake)
+    report = run_candidate_response_surface_step(Level1BCandidateResponseSurfaceConfig("candidate", output, candidates))
+
+    assert captured[0].segmentation_stack_path == proxy
+    assert captured[0].segmentation_stack_source == "proxy_stack"
+    assert captured[0].valid_mask_path == mask
+    assert report["segmentation_stack_path"] == str(proxy)
+    assert report["segmentation_stack_source"] == "proxy_stack"
+
+
+def test_21_pca_is_used_only_when_explicitly_configured(tmp_path: Path) -> None:
+    default_cfg = Level1BCandidateResponseSurfaceConfig("candidate", tmp_path / "out", tmp_path / "candidates.json")
+    assert rs.resolve_segmentation_stack(default_cfg)[0].name == "proxy_stack.tif"
+
+    pca = tmp_path / "pca_feature_stack.tif"
+    explicit_cfg = Level1BCandidateResponseSurfaceConfig(
+        "candidate", tmp_path / "out", tmp_path / "candidates.json", segmentation_stack_path=pca, segmentation_stack_source="pca_explicit"
+    )
+    assert rs.resolve_segmentation_stack(explicit_cfg) == (pca, "pca_explicit")
+
+
+def test_22_invalid_support_is_zero_and_excluded_from_run_statistics(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.array([[1, 1], [0, 0]], dtype=np.uint8))
+    labels = write_raster(tmp_path / "labels.tif", np.array([[1, 1], [99, 99]], dtype=np.uint32))
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", lambda config: {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(labels)}})
+
+    run_candidate_response_surface_step(cfg(tmp_path, perturbation_candidates_json_path=candidates, feature_space_stack_path=feature, valid_mask_path=mask))
+    paths = rs._run_artifact_paths(rs.response_surface_output_dir(tmp_path / "out"), "scale-a", "run-a")
+    summary_json = json.loads(paths["summary_json"].read_text(encoding="utf-8"))
+    segment_rows = list(__import__("csv").DictReader(paths["segments_csv"].open(encoding="utf-8")))
+
+    assert summary_json["n_segments"] == 1
+    assert summary_json["total_labelled_area_m2"] == 2.0
+    assert {row["label"] for row in segment_rows} == {"1"}
+    assert summary_json["invalid_support_excluded_from_q_statistics"] is True
+    assert summary_json["pre_lsms_mask_applied"] is True
+    assert summary_json["post_mask_applied"] is True
+    assert summary_json["label_invalid_support_value"] == 0
+    assert summary_json["segmentation_stack_path"] == str(feature)
+    assert summary_json["segmentation_stack_source"] == "explicit_feature_space_stack_compat"
+    assert summary_json["valid_mask_path"] == str(mask)
+    assert {"scale_id", "candidate_id", "perturbation_id", "radius_m", "spatialr_px", "minsize_px", "ranger", "n_segments", "q_p10", "q_p25", "q_median", "q_p75", "q_p90"}.issubset(summary_json)
+    assert {f"{size}_frac_{weight}" for size in rs.SIZE_CLASSES for weight in ("n", "area")}.issubset(summary_json)
+    assert {"area_m2", "req_m", "q", "q_class"}.issubset(segment_rows[0])
+
+
+def test_23_per_run_statistics_survive_a_later_run_failure(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    labels = write_raster(tmp_path / "labels.tif", np.array([[1, 1], [2, 2]], dtype=np.uint32))
+    candidates = tmp_path / "candidates.json"
+    candidates.write_text(json.dumps({"candidates": [
+        {"perturbation_id": "run-a", "source_candidate_id": "cand-a", "scale_id": "scale-a", "radius_m": 1.0, "spatialr_px": 1, "minsize_px": 1, "ranger": 0.1},
+        {"perturbation_id": "run-b", "source_candidate_id": "cand-a", "scale_id": "scale-a", "radius_m": 1.0, "spatialr_px": 1, "minsize_px": 1, "ranger": 0.2},
+    ]}), encoding="utf-8")
+    calls = []
+
+    def fake(config):
+        calls.append(config.perturbation_id)
+        if config.perturbation_id == "run-b":
+            raise RuntimeError("stop after first run")
+        return {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(labels)}}
+
+    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", fake)
+    run_candidate_response_surface_step(cfg(tmp_path, perturbation_candidates_json_path=candidates, feature_space_stack_path=feature, valid_mask_path=mask))
+    paths = rs._run_artifact_paths(rs.response_surface_output_dir(tmp_path / "out"), "scale-a", "run-a")
+
+    assert calls == ["run-a", "run-b"]
+    assert paths["segments_csv"].exists() and paths["summary_json"].exists() and paths["summary_csv"].exists()
+
+
+def _seed_complete_run(tmp_path: Path, feature: Path, mask: Path, candidates: Path) -> tuple[Level1BCandidateResponseSurfaceConfig, dict[str, Path]]:
+    config = cfg(tmp_path, perturbation_candidates_json_path=candidates, feature_space_stack_path=feature, valid_mask_path=mask, overwrite=False)
+    out_dir = rs.response_surface_output_dir(config.output_dir)
+    paths = rs._run_artifact_paths(out_dir, "scale-a", "run-a")
+    write_raster(paths["labels"], np.array([[1, 1], [2, 2]], dtype=np.uint32))
+    row = json.loads(candidates.read_text(encoding="utf-8"))["candidates"][0]
+    expected = rs._expected_run_metadata(config, paths, "scale-a", row, "run-a")
+    paths["report"].write_text(json.dumps(dict(expected, status="ok", output_artifacts={"merged_labels": str(paths["labels"])})), encoding="utf-8")
+    labels = rs._apply_valid_mask_to_labels(rs._read_label_raster(paths["labels"]), mask)
+    summary_row = compute_run_population_summary("run-a", "scale-a", row, labels, 1.0, config)
+    rs._write_incremental_run_q_statistics(out_dir, "scale-a", "run-a", row, labels, 1.0, config, summary_row)
+    return config, paths
+
+
+def test_24_resume_skips_complete_perturbation(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    config, _paths = _seed_complete_run(tmp_path, feature, mask, candidates)
+    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", lambda config: (_ for _ in ()).throw(AssertionError("complete run was recomputed")))
+
+    report = run_candidate_response_surface_step(config)
+
+    assert report["perturbation_statuses"][0]["status"] == "reused"
+
+
+def test_25_resume_recomputes_incomplete_perturbation(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    config, paths = _seed_complete_run(tmp_path, feature, mask, candidates)
+    paths["summary_csv"].unlink()
+    calls = []
+
+    def fake(segmentation_config):
+        calls.append(segmentation_config)
+        return {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(paths["labels"])}}
+
+    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", fake)
+    report = run_candidate_response_surface_step(config)
+
+    assert len(calls) == 1
+    assert calls[0].overwrite is True
+    assert report["perturbation_statuses"][0]["status"] == "recomputed_incomplete"
+
+
+def _run_and_assert_recomputed(config, paths, monkeypatch) -> None:
+    calls = []
+
+    def fake(segmentation_config):
+        calls.append(segmentation_config)
+        return {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(paths["labels"])}}
+
+    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", fake)
+    report = run_candidate_response_surface_step(config)
+    assert len(calls) == 1
+    assert calls[0].overwrite is True
+    assert report["perturbation_statuses"][0]["status"] == "recomputed_incomplete"
+
+
+def test_26_resume_recomputes_when_segmentation_stack_path_changes(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    replacement = write_raster(tmp_path / "replacement.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    config, paths = _seed_complete_run(tmp_path, feature, mask, candidates)
+    config.feature_space_stack_path = replacement
+
+    _run_and_assert_recomputed(config, paths, monkeypatch)
+
+
+def test_27_resume_recomputes_when_valid_mask_path_changes(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    replacement = write_raster(tmp_path / "replacement_mask.tif", np.ones((2, 2), dtype=np.uint8))
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    config, paths = _seed_complete_run(tmp_path, feature, mask, candidates)
+    config.valid_mask_path = replacement
+
+    _run_and_assert_recomputed(config, paths, monkeypatch)
+
+
+def test_28_resume_recomputes_when_candidate_parameters_change(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    for field, value in (("radius_m", 2.0), ("spatialr_px", 2), ("minsize_px", 2), ("ranger", 0.2)):
+        case_dir = tmp_path / field
+        case_dir.mkdir()
+        candidates = _one_run_candidates(case_dir / "candidates.json")
+        config, paths = _seed_complete_run(case_dir, feature, mask, candidates)
+        payload = json.loads(candidates.read_text(encoding="utf-8"))
+        payload["candidates"][0][field] = value
+        candidates.write_text(json.dumps(payload), encoding="utf-8")
+
+        _run_and_assert_recomputed(config, paths, monkeypatch)
+
+
+def test_29_resume_recomputes_intermediate_only_state(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    config = cfg(tmp_path, perturbation_candidates_json_path=candidates, feature_space_stack_path=feature, valid_mask_path=mask, overwrite=False)
+    paths = rs._run_artifact_paths(rs.response_surface_output_dir(config.output_dir), "scale-a", "run-a")
+    paths["labels"].parent.mkdir(parents=True, exist_ok=True)
+    (paths["labels"].parent / "lsms_labels.tif").write_bytes(b"partial")
+    computed_labels = write_raster(tmp_path / "computed_labels.tif", np.array([[1, 1], [2, 2]], dtype=np.uint32))
+    calls = []
+
+    def fake(segmentation_config):
+        calls.append(segmentation_config)
+        return {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(computed_labels)}}
+
+    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", fake)
+    report = run_candidate_response_surface_step(config)
+
+    assert len(calls) == 1 and calls[0].overwrite is True
+    assert report["perturbation_statuses"][0]["status"] == "recomputed_incomplete"
+
+
+def test_30_resume_recomputes_when_summary_csv_disagrees_with_json(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    config, paths = _seed_complete_run(tmp_path, feature, mask, candidates)
+    with paths["summary_csv"].open(newline="", encoding="utf-8") as file_obj:
+        rows = list(csv.DictReader(file_obj))
+    rows[0]["n_segments"] = "999"
+    rs._write_csv(paths["summary_csv"], rows)
+
+    _run_and_assert_recomputed(config, paths, monkeypatch)
+
+
+def test_31_resume_recomputes_when_stack_source_or_candidate_id_changes(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    for field in ("stack_source", "candidate_id"):
+        case_dir = tmp_path / field
+        case_dir.mkdir()
+        candidates = _one_run_candidates(case_dir / "candidates.json")
+        config, paths = _seed_complete_run(case_dir, feature, mask, candidates)
+        if field == "stack_source":
+            config.segmentation_stack_source = "changed_source"
+        else:
+            payload = json.loads(candidates.read_text(encoding="utf-8"))
+            payload["candidates"][0]["source_candidate_id"] = "cand-b"
+            candidates.write_text(json.dumps(payload), encoding="utf-8")
+
+        _run_and_assert_recomputed(config, paths, monkeypatch)

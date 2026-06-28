@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -7,29 +8,53 @@ import subprocess
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
 OTB_APP_CLI_NAMES = {
+    "BandMathX": "otbcli_BandMathX",
     "MeanShiftSmoothing": "otbcli_MeanShiftSmoothing",
     "LSMSSegmentation": "otbcli_LSMSSegmentation",
     "SmallRegionsMerging": "otbcli_SmallRegionsMerging",
 }
+GDAL_EDIT_CLI_NAME = "gdal_edit.py"
 REPORT_FILENAME = "one_scale_segmentation_report.json"
 OUTPUT_ARTIFACT_FILENAMES = {
     "meanshift_smoothed": "meanshift_smoothed.tif",
     "meanshift_position": "meanshift_position.tif",
+    "meanshift_smoothed_masked": "meanshift_smoothed_masked.tif",
+    "meanshift_position_masked": "meanshift_position_masked.tif",
     "lsms_labels": "lsms_labels.tif",
     "merged_labels": "merged_labels.tif",
     "report": REPORT_FILENAME,
+    "masked_segmentation_stack": "masked_segmentation_stack.tif",
+    "merged_labels_unmasked": "merged_labels_unmasked.tif",
 }
 REPORT_KEYS = (
     "candidate_id",
+    "scale_id",
     "output_dir",
     "smoke_dir",
     "tmp_dir",
     "feature_space_stack_path",
+    "segmentation_stack_path",
+    "segmentation_stack_source",
+    "valid_mask_path",
+    "masked_segmentation_stack_path",
+    "meanshift_smoothed_path",
+    "meanshift_position_path",
+    "meanshift_smoothed_masked_path",
+    "meanshift_position_masked_path",
+    "segmentation_nodata_value",
+    "pre_lsms_mask_applied",
+    "post_mask_applied",
+    "label_invalid_support_value",
+    "labels_postmasked",
+    "invalid_support_excluded_from_q_statistics",
     "perturbation_candidates_json_path",
     "perturbation_id",
     "selected_candidate",
     "spatialr",
+    "spatialr_px",
     "minsize",
+    "minsize_px",
+    "radius_m",
     "ranger",
     "tilesizex",
     "tilesizey",
@@ -62,6 +87,8 @@ CHECK_KEYS = (
     "candidate_id_non_empty",
     "feature_space_stack_path_exists",
     "feature_space_stack_suffix_raster_like",
+    "valid_mask_path_exists",
+    "valid_mask_suffix_raster_like",
     "perturbation_candidates_json_path_exists",
     "perturbation_candidates_json_path_suffix_json",
     "perturbation_id_non_empty",
@@ -73,6 +100,8 @@ CHECK_KEYS = (
     "otb_meanshift_smoothing_discoverable",
     "otb_lsms_segmentation_discoverable",
     "otb_small_regions_merging_discoverable",
+    "otb_bandmathx_discoverable",
+    "gdal_edit_discoverable",
 )
 
 
@@ -83,6 +112,10 @@ class Level1BOneScaleSegmentationConfig:
     feature_space_stack_path: str | Path
     perturbation_candidates_json_path: str | Path
     perturbation_id: str
+    valid_mask_path: str | Path | None = None
+    segmentation_stack_path: str | Path | None = None
+    segmentation_stack_source: str = "proxy_stack"
+    segmentation_nodata_value: float = 0.0
     tilesizex: int = 512
     tilesizey: int = 512
     ram_mb: int = 1024
@@ -99,13 +132,20 @@ def build_level1b_one_scale_segmentation_layout(output_dir, perturbation_id) -> 
 
 
 def discover_one_scale_segmentation_otb_apps() -> dict[str, str | None]:
-    return {name: shutil.which(cli_name) for name, cli_name in OTB_APP_CLI_NAMES.items()}
+    apps = {name: shutil.which(cli_name) for name, cli_name in OTB_APP_CLI_NAMES.items()}
+    apps["gdal_edit"] = shutil.which(GDAL_EDIT_CLI_NAME)
+    return apps
+
+
+def _segmentation_stack_path(config) -> Path:
+    return Path(config.segmentation_stack_path or config.feature_space_stack_path)
 
 
 def validate_one_scale_segmentation_config(config, layout, apps) -> tuple[dict[str, bool], list[str]]:
     checks = {key: True for key in CHECK_KEYS}
     failure_reasons: list[str] = []
-    feature_space_stack_path = Path(config.feature_space_stack_path)
+    feature_space_stack_path = _segmentation_stack_path(config)
+    valid_mask_path = Path(config.valid_mask_path) if config.valid_mask_path is not None else None
     perturbation_candidates_json_path = Path(config.perturbation_candidates_json_path)
 
     if not str(config.candidate_id).strip():
@@ -117,6 +157,12 @@ def validate_one_scale_segmentation_config(config, layout, apps) -> tuple[dict[s
     if feature_space_stack_path.suffix.lower() not in RASTER_SUFFIXES:
         checks["feature_space_stack_suffix_raster_like"] = False
         failure_reasons.append("feature_space_stack_path suffix must be one of .tif, .tiff, .vrt, .img, .jp2")
+    if valid_mask_path is None or not valid_mask_path.exists():
+        checks["valid_mask_path_exists"] = False
+        failure_reasons.append("valid_mask_path does not exist")
+    if valid_mask_path is None or valid_mask_path.suffix.lower() not in RASTER_SUFFIXES:
+        checks["valid_mask_suffix_raster_like"] = False
+        failure_reasons.append("valid_mask_path suffix must be one of .tif, .tiff, .vrt, .img, .jp2")
     if not perturbation_candidates_json_path.exists():
         checks["perturbation_candidates_json_path_exists"] = False
         failure_reasons.append("perturbation_candidates_json_path does not exist")
@@ -145,6 +191,7 @@ def validate_one_scale_segmentation_config(config, layout, apps) -> tuple[dict[s
             checks["output_artifacts_available"] = False
             failure_reasons.append("output artifacts already exist and overwrite is false")
     app_checks = {
+        "BandMathX": "otb_bandmathx_discoverable",
         "MeanShiftSmoothing": "otb_meanshift_smoothing_discoverable",
         "LSMSSegmentation": "otb_lsms_segmentation_discoverable",
         "SmallRegionsMerging": "otb_small_regions_merging_discoverable",
@@ -153,6 +200,9 @@ def validate_one_scale_segmentation_config(config, layout, apps) -> tuple[dict[s
         if not apps.get(app_name):
             checks[check_key] = False
             failure_reasons.append(f"no OTB {app_name} app discoverable")
+    if not apps.get("gdal_edit"):
+        checks["gdal_edit_discoverable"] = False
+        failure_reasons.append("no GDAL gdal_edit.py discoverable")
 
     return checks, failure_reasons
 
@@ -207,12 +257,37 @@ def selected_candidate_to_parameters(selected_candidate) -> dict[str, object]:
     return {"spatialr": spatialr, "minsize": minsize, "ranger": ranger}
 
 
+def selected_candidate_radius_m(selected_candidate) -> float | None:
+    def positive_number(key):
+        try:
+            value = float(selected_candidate.get(key))
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) and value > 0 else None
+
+    for key in ("source_candidate_radius_m", "candidate_radius_m", "radius_m", "r_candidate_source_m"):
+        value = positive_number(key)
+        if value is not None:
+            return value
+    area_m2 = positive_number("area_m2")
+    if area_m2 is not None:
+        return math.sqrt(area_m2 / math.pi)
+    spatialr_m = positive_number("spatialr_m")
+    if spatialr_m is not None:
+        return spatialr_m
+    spatialr_px = positive_number("spatialr_px")
+    pixel_size_m = positive_number("pixel_size_m")
+    if spatialr_px is not None and pixel_size_m is not None:
+        return spatialr_px * pixel_size_m
+    return None
+
+
 def build_meanshift_smoothing_command(config, apps, layout, selected_candidate) -> list[str]:
     parameters = selected_candidate_to_parameters(selected_candidate)
     return [
         OTB_APP_CLI_NAMES["MeanShiftSmoothing"],
         "-in",
-        str(Path(config.feature_space_stack_path)),
+        str(layout["smoke_dir"] / "masked_segmentation_stack.tif"),
         "-fout",
         str(layout["smoke_dir"] / "meanshift_smoothed.tif"),
         "float",
@@ -233,9 +308,9 @@ def build_lsms_segmentation_command(config, apps, layout, selected_candidate) ->
     return [
         OTB_APP_CLI_NAMES["LSMSSegmentation"],
         "-in",
-        str(layout["smoke_dir"] / "meanshift_smoothed.tif"),
+        str(layout["smoke_dir"] / "meanshift_smoothed_masked.tif"),
         "-inpos",
-        str(layout["smoke_dir"] / "meanshift_position.tif"),
+        str(layout["smoke_dir"] / "meanshift_position_masked.tif"),
         "-out",
         str(layout["smoke_dir"] / "lsms_labels.tif"),
         "uint32",
@@ -259,16 +334,81 @@ def build_small_regions_merging_command(config, apps, layout, selected_candidate
     return [
         OTB_APP_CLI_NAMES["SmallRegionsMerging"],
         "-in",
-        str(Path(config.feature_space_stack_path)),
+        str(layout["smoke_dir"] / "masked_segmentation_stack.tif"),
         "-inseg",
         str(layout["smoke_dir"] / "lsms_labels.tif"),
         "-out",
-        str(layout["smoke_dir"] / "merged_labels.tif"),
+        str(layout["smoke_dir"] / "merged_labels_unmasked.tif"),
         "uint32",
         "-minsize",
         str(parameters["minsize"]),
         "-ram",
         str(config.ram_mb),
+    ]
+
+
+def build_masked_segmentation_stack_command(config, layout) -> list[str]:
+    return [
+        OTB_APP_CLI_NAMES["BandMathX"],
+        "-il",
+        str(_segmentation_stack_path(config)),
+        str(Path(config.valid_mask_path)),
+        "-exp",
+        "im2b1 > 0 ? im1 : im1 * 0",
+        "-out",
+        str(layout["smoke_dir"] / "masked_segmentation_stack.tif"),
+        "float",
+    ]
+
+
+def build_set_nodata_command(config, layout) -> list[str]:
+    return [
+        GDAL_EDIT_CLI_NAME,
+        "-a_nodata",
+        f"{float(config.segmentation_nodata_value):.17g}",
+        str(layout["smoke_dir"] / "masked_segmentation_stack.tif"),
+    ]
+
+
+def build_masked_meanshift_smoothed_command(config, layout) -> list[str]:
+    return [
+        OTB_APP_CLI_NAMES["BandMathX"],
+        "-il",
+        str(layout["smoke_dir"] / "meanshift_smoothed.tif"),
+        str(Path(config.valid_mask_path)),
+        "-exp",
+        "im2b1 > 0 ? im1 : im1 * 0",
+        "-out",
+        str(layout["smoke_dir"] / "meanshift_smoothed_masked.tif"),
+        "float",
+    ]
+
+
+def build_masked_meanshift_position_command(config, layout) -> list[str]:
+    return [
+        OTB_APP_CLI_NAMES["BandMathX"],
+        "-il",
+        str(layout["smoke_dir"] / "meanshift_position.tif"),
+        str(Path(config.valid_mask_path)),
+        "-exp",
+        "im2b1 > 0 ? im1 : im1 * 0",
+        "-out",
+        str(layout["smoke_dir"] / "meanshift_position_masked.tif"),
+        "float",
+    ]
+
+
+def build_postmask_labels_command(config, layout) -> list[str]:
+    return [
+        OTB_APP_CLI_NAMES["BandMathX"],
+        "-il",
+        str(layout["smoke_dir"] / "merged_labels_unmasked.tif"),
+        str(Path(config.valid_mask_path)),
+        "-exp",
+        "im2b1 > 0 ? im1b1 : 0",
+        "-out",
+        str(layout["smoke_dir"] / "merged_labels.tif"),
+        "uint32",
     ]
 
 
@@ -295,15 +435,33 @@ def _base_report(config, layout, checks, failure_reasons, apps) -> dict[str, obj
     artifacts = _output_artifacts(layout)
     values = {
         "candidate_id": str(config.candidate_id).strip(),
+        "scale_id": None,
         "output_dir": str(Path(config.output_dir)),
         "smoke_dir": str(layout["smoke_dir"]),
         "tmp_dir": str(layout["tmp_dir"]),
         "feature_space_stack_path": str(Path(config.feature_space_stack_path)),
+        "segmentation_stack_path": str(_segmentation_stack_path(config)),
+        "segmentation_stack_source": str(config.segmentation_stack_source),
+        "valid_mask_path": str(Path(config.valid_mask_path)) if config.valid_mask_path is not None else None,
+        "masked_segmentation_stack_path": str(layout["smoke_dir"] / "masked_segmentation_stack.tif"),
+        "meanshift_smoothed_path": str(layout["smoke_dir"] / "meanshift_smoothed.tif"),
+        "meanshift_position_path": str(layout["smoke_dir"] / "meanshift_position.tif"),
+        "meanshift_smoothed_masked_path": str(layout["smoke_dir"] / "meanshift_smoothed_masked.tif"),
+        "meanshift_position_masked_path": str(layout["smoke_dir"] / "meanshift_position_masked.tif"),
+        "segmentation_nodata_value": config.segmentation_nodata_value,
+        "pre_lsms_mask_applied": False,
+        "post_mask_applied": False,
+        "label_invalid_support_value": 0,
+        "labels_postmasked": False,
+        "invalid_support_excluded_from_q_statistics": False,
         "perturbation_candidates_json_path": str(Path(config.perturbation_candidates_json_path)),
         "perturbation_id": str(config.perturbation_id).strip(),
         "selected_candidate": {},
         "spatialr": None,
+        "spatialr_px": None,
         "minsize": None,
+        "minsize_px": None,
+        "radius_m": None,
         "ranger": None,
         "tilesizex": config.tilesizex,
         "tilesizey": config.tilesizey,
@@ -366,13 +524,22 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
         selected_candidate = select_one_perturbation_candidate(candidates, str(config.perturbation_id).strip())
         parameters = selected_candidate_to_parameters(selected_candidate)
         report["selected_candidate"] = selected_candidate
+        report["scale_id"] = str(selected_candidate["scale_id"])
         report["spatialr"] = parameters["spatialr"]
+        report["spatialr_px"] = parameters["spatialr"]
         report["minsize"] = parameters["minsize"]
+        report["minsize_px"] = parameters["minsize"]
+        report["radius_m"] = selected_candidate_radius_m(selected_candidate)
         report["ranger"] = parameters["ranger"]
         commands = [
+            build_masked_segmentation_stack_command(config, layout),
+            build_set_nodata_command(config, layout),
             build_meanshift_smoothing_command(config, apps, layout, selected_candidate),
+            build_masked_meanshift_smoothed_command(config, layout),
+            build_masked_meanshift_position_command(config, layout),
             build_lsms_segmentation_command(config, apps, layout, selected_candidate),
             build_small_regions_merging_command(config, apps, layout, selected_candidate),
+            build_postmask_labels_command(config, layout),
         ]
         report["otb_commands"] = commands
     except (OSError, json.JSONDecodeError, ValueError) as exc:
@@ -380,8 +547,13 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
         return _write_report(report, layout)
 
     expected_by_step = (
+        ("masked_segmentation_stack",),
+        ("masked_segmentation_stack",),
         ("meanshift_smoothed", "meanshift_position"),
+        ("meanshift_smoothed_masked",),
+        ("meanshift_position_masked",),
         ("lsms_labels",),
+        ("merged_labels_unmasked",),
         ("merged_labels",),
     )
     for index, command in enumerate(report["otb_commands"]):
@@ -405,6 +577,12 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
             if output_path.stat().st_size == 0:
                 report["failure_reasons"].append(f"empty expected output {output_path.name}")
                 return _write_report(report, layout)
+        if index == 4:
+            report["pre_lsms_mask_applied"] = True
+        if index == 7:
+            report["post_mask_applied"] = True
+            report["labels_postmasked"] = True
+            report["invalid_support_excluded_from_q_statistics"] = True
 
     report["status"] = "ok"
     if config.cleanup and layout["tmp_dir"].exists():

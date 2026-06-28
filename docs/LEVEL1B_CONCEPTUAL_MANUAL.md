@@ -2,15 +2,16 @@
 
 ## Methodological aim
 
-Level-1b is a raster-only segmentation-quality workflow for UAV orthomosaics. Its purpose is not to produce a final object layer immediately. Its purpose is to determine which candidate segmentation scales are structurally plausible and stable under local perturbation.
+Level-1b is a raster-only segmentation-quality workflow for UAV orthomosaics. Its purpose is not to produce a final object layer immediately. Its purpose is to determine which candidate scale regimes are structurally plausible, internally stable and useful enough for later ecological interpretation.
 
-The chain separates three questions that are often mixed together:
+The chain separates four questions that are often mixed together:
 
 1. What pixels are valid observations?
 2. What feature/proxy space should segmentation see?
-3. Which segmentation parameter region is stable enough to consider later?
+3. Which candidate scale space should be considered?
+4. How does that candidate scale space behave under local parameter variation?
 
-The final product is therefore not a single segmentation, but a stability evidence space.
+The final product is therefore not a single segmentation, but a response-surface evidence space.
 
 ## Valid observation support
 
@@ -41,90 +42,32 @@ The first three bands are color/index style proxies. The last two are texture/su
 
 Scaling normalizes the proxy feature stack inside valid support. PCA is retained because the segmentation and ranger derivation should operate in a compact feature space rather than raw, differently scaled proxy bands. PCA is not a final interpretation layer. It is an intermediate feature-space construction.
 
-## Step 6: sampling-regime-adaptive scale distribution
+## Step 6: scale distribution
 
-Step 6 is the conceptual core of the current repair.
+Step 6 remains the repository implementation. This manual update does not redefine Step 6.
 
-The old placeholder logic treated `structure_derived_scale_distribution` as another manual radius list. That was wrong. The current logic treats candidate generation as two coupled but distinct scales:
+Conceptually, Step 6 provides the candidate scale distribution consumed by Step 7 and Step 8. Its output is not a final selection. It is the scale source for the later response-surface analysis.
 
-1. The structural/proxy support scale represented in the evidence stack.
-2. The image sampling scale represented by GSD.
-
-GSD is used to map physical radius into segmentation pixel parameters. GSD does not justify a longest-possible fine-to-coarse scale series.
-
-## Sentinel vs UAV logic
-
-Sentinel-like data are under-resolved for many ecological structures. With 10 m pixels, fine structures are not visible, so the relevant series tends toward the smallest resolvable scales.
-
-UAV data are often over-resolved. At 1–5 cm GSD, leaves, shadows, small texture and homogeneous surfaces can dominate. The problem is not lack of detail; it is too much detail relative to ecological segment objects. Therefore the Level-1b scale logic must restrict the plausible segment-similarity domain.
-
-## Sampling regimes
-
-Step 6 supports:
+The important boundary is:
 
 ```text
-auto
-undersample
-balanced
-oversample
+Step 6 defines the candidate scale input.
+Step 8 creates local parameter combinations.
+Step 9 evaluates the response surface created by those combinations.
 ```
 
-The automatic regime is based on:
+## GSD and scale interpretation
 
-```text
-structure_support_to_gsd_ratio = effective_structure_support_max_m / pixel_size_m
-```
+GSD maps physical scale assumptions to pixel parameters. It does not, by itself, define ecological scale.
 
-For the current MOF run:
-
-```text
-effective_structure_support_max_m = 2.0 m
-pixel_size_m ≈ 0.04998 m
-ratio ≈ 40
-sampling_regime_resolved = oversample
-```
-
-Oversample means the image contains many pixels across the structural support. This is typical for UAV imagery and implies that the upper candidate domain must be constrained.
-
-## Patch-derived radii
-
-Step 6 reads structure/proxy evidence, selects texture/structure bands by default, creates evidence masks, computes connected components and converts patch areas to equivalent radii:
-
-```text
-area_m2 = n_px * pixel_size_m²
-r_eq = sqrt(area_m2 / π)
-```
-
-Candidate radii are quantiles of observed patch radii inside the allowed sampling domain. The candidate radius is then mapped to MeanShift-style parameters:
+For a candidate radius:
 
 ```text
 spatialr_px = max(1, round(radius_m / pixel_size_m))
 minsize_px  = max(1, round(π * radius_m² / pixel_size_m²))
 ```
 
-`ranger` is intentionally not assigned in Step 6.
-
-## Texture support envelope
-
-For the default proxy stack, Step 6 selects `TEX_100M` and `TEX_200M` rather than all bands. The largest inferred structure support is therefore 2 m. In oversample mode, the upper envelope is:
-
-```text
-upper_envelope_radius_m = effective_structure_support_max_m * oversample_default_upper_radius_factor
-```
-
-With factor 2.5:
-
-```text
-2.0 m * 2.5 = 5.0 m
-```
-
-The 5 m envelope is not a candidate. It is an interpretation and search boundary. Patch-derived candidate radii above that envelope are dropped, not capped. Large homogeneous patches above this envelope are retained only as diagnostics.
-
-## Extreme homogeneous surfaces
-
-A large fresh asphalt surface can appear as a huge homogeneous patch. That does not imply a meaningful ecological segmentation radius of tens of metres. In oversample mode, such patches are counted as above-envelope/extreme homogeneous surfaces and are excluded from candidate generation.
-
-The bundled MOF Step-6 report shows an example: 135 patches above the 5 m envelope and an `extreme_homogeneous_patch_flag=true`. The largest patch radius was about 75 m, but the largest emitted candidate radius was about 3.87 m.
+`ranger` is intentionally assigned later in feature space.
 
 ## Step 7: feature-space ranger
 
@@ -145,7 +88,9 @@ This separates spatial support (`spatialr_px`, `minsize_px`) from feature-space 
 
 ## Step 8: local perturbations
 
-Step 8 creates local parameter perturbations around each coupled Step-6/Step-7 candidate. It does not create a global parameter matrix. For each source candidate it keeps a baseline and adds local perturbations in `spatialr_px`, `minsize_px` and `ranger`.
+Step 8 creates local parameter combinations around each coupled Step-6/Step-7 candidate. It does not create a global parameter sweep.
+
+For each source candidate it adds local variation in `spatialr_px`, `minsize_px` and `ranger`.
 
 The implemented R-style logic uses adaptive deltas:
 
@@ -157,21 +102,171 @@ ds = 1, except ds = 0 for very small spatialr
 
 A deterministic sample of perturbations is used if the local grid is too large.
 
-## Step 9: candidate stability
+## Step 9: candidate-scale response surface analysis
 
-Step 9 consumes all Step-8 perturbation candidates. For every candidate group it runs the baseline segmentation, then each local perturbation segmentation, and compares each perturbation result against its own baseline using Hoover comparison on raster labels.
+The active Step 9 is candidate-scale response surface analysis.
 
-The stability logic is deliberately raster-only. It does not vectorize, does not select a final scale, and does not create final objects. It only creates evidence for which candidate regions are stable.
+German conceptual equivalent:
+
+```text
+skalengetriebene Sensitivitätsanalyse der Segmentpopulationen
+```
+
+The object of analysis is not one segmentation result. The object of analysis is the response surface generated by the local parameter combinations inside each candidate-scale group.
+
+The operational chain is:
+
+```text
+candidate scale
+→ local parameter combinations
+→ segmentation runs
+→ segment populations
+→ scale-relative distributions
+→ spatial analysis-matrix patterns
+→ response-surface summary
+```
+
+The final Step-9 output is a ranked and documented narrowing of the candidate-scale space.
+
+## Scale-relative segment population
+
+For every run and every segment \(s_i\), Step 9 computes:
+
+```text
+A_i      = segment area
+r_eq_i   = sqrt(A_i / π)
+q_i      = r_eq_i / r_candidate_source
+```
+
+The primary interpretation uses the source candidate scale.
+
+The resulting segment population is summarized by equivalent-radius quantiles, area-weighted `q` summaries, segment density and diagnostic size-class shares.
+
+## Diagnostic size classes
+
+Step 9 assigns segments to scale-relative diagnostic classes:
+
+```text
+micro     q < 0.25
+small     0.25 <= q < 0.5
+in_scale  0.5 <= q <= 2.0
+large     2.0 < q <= 4.0
+oversize  q > 4.0
+```
+
+These classes describe the response distribution of a candidate scale.
+
+They are used to detect central concentration, lower-tail behaviour, upper-tail behaviour, edge loading, skewness, multimodality, distributional flutter and scale jumps.
+
+## Normal-response diagnostics
+
+Within one candidate-scale group, the local parameter cloud is expected to produce an approximately centered, unimodal, normal-like response distribution around the candidate-scale domain.
+
+Step 9 therefore reports whether the response is:
+
+```text
+centered
+lower-tail dominated
+upper-tail dominated
+edge-loaded
+strongly skewed
+multimodal where detectable
+unstably spread
+flurry-like
+scale-jumping
+```
+
+The important diagnostic is not a fragile p-value normality test. The important diagnostic is robust behaviour of the response distribution.
+
+## Scale jumps and flurry behaviour
+
+A scale jump is a distributional or spatial-regime discontinuity inside one candidate-scale group.
+
+Scale jumps include:
+
+```text
+transition from central response to lower-tail dominance
+transition from central response to upper-tail dominance
+loss of central mass
+strong one-sided response drift
+multimodal response behaviour
+high distributional variance across local parameter combinations
+flurry behaviour
+strong spatial reorganization of size-class dominance
+```
+
+Flurry behaviour means repeated unstable switching between incompatible distributional regimes under local parameter variation.
+
+The target is a stable candidate-scale response distribution.
+
+## Spatial backprojection into the analysis matrix
+
+For every run, Step 9 maps diagnostic size classes back into space using a regular raster-space analysis matrix.
+
+For every analysis cell, Step 9 summarizes:
+
+```text
+micro area share
+small area share
+in_scale area share
+large area share
+oversize area share
+lower-tail area share
+central area share
+upper-tail area share
+dominant size class
+dominant tail class
+problem-class dominance
+```
+
+The analysis matrix is the spatial backprojection of the distributional response. It is used to see whether size-regime patterns remain spatially coherent under local parameter variation.
+
+## Representative parameter combinations
+
+Step 9 identifies representative parameter combinations from the response surface.
+
+The selected representative is derived from summary distances across all runs in the candidate-scale group. A suitable implementation is medoid logic:
+
+```text
+medoid = run with smallest average summary-distance to all other runs in the group
+```
+
+The response-surface report includes medoid parameters, mean and maximum distance to the medoid, compatible/incompatible combination counts and spread around the representative response.
+
+## Full candidate-space distribution
+
+After all candidate-scale groups have been evaluated, Step 9 analyzes the distribution over the full candidate space.
+
+This answers:
+
+```text
+Where are stable scale regimes concentrated?
+Are there gaps between candidate-scale regimes?
+Are there multiple stable modes?
+Are some candidate ranges systematically unstable?
+Do accepted candidates form coherent modes or isolated outliers?
+How does the full ensemble of runs map back into the analysis matrix?
+```
+
+The final result is not only a per-candidate table. It is a response landscape over the derived candidate space.
+
+## Role of Hoover
+
+Hoover comparison is no longer the active default Step-9 criterion.
+
+The Hoover-based implementation is retained only as legacy/audit logic. It may be useful for explicit, limited audits, but it is not the conceptual core of Level-1b.
+
+The active Step 9 does not run full Hoover by default.
 
 ## What Level-1b does not do
 
 Level-1b does not yet:
 
 - select `selected_scale_id`
-- perform stable-region interpretation as a final decision
-- produce final label rasters for the selected scale
+- perform final ecological object interpretation
+- produce final label rasters for a selected scale
 - vectorize segments
 - write GPKG or shapefile final products
 - run zonal statistics
 
-Those belong after the Level-1b stability evidence is interpreted.
+Those belong after the response-surface evidence is interpreted.
