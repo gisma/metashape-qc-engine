@@ -333,6 +333,67 @@ def _step9b_adjacent_gate(**overrides) -> dict[str, object]:
     return gate
 
 
+def _step9b_ranked_support_rows() -> list[dict[str, object]]:
+    return [
+        {"candidate_scale_group_id": "r999px001", "stability_score_raw": 1.0, "stability_score": 1.0},
+        {"candidate_scale_group_id": "r001px999", "stability_score_raw": 0.0, "stability_score": 0.0},
+    ]
+
+
+def _step9b_boundary_run_rows() -> list[dict[str, object]]:
+    return [
+        {
+            "run_id": "lower-central-opaque",
+            "candidate_scale_group_id": "r999px001",
+            "source_candidate_id": "source-lower-900",
+            "source_candidate_radius_m": 1.0,
+            "spatialr_px": 4,
+            "minsize_px": 10,
+            "ranger": 0.2,
+            "original_row_metadata": json.dumps({"is_baseline": True}),
+        },
+        {
+            "run_id": "lower-variation-opaque",
+            "candidate_scale_group_id": "r999px001",
+            "source_candidate_id": "source-lower-900",
+            "source_candidate_radius_m": 1.0,
+            "spatialr_px": 99,
+            "minsize_px": 99,
+            "ranger": 9.9,
+            "original_row_metadata": json.dumps({"is_baseline": False}),
+        },
+        {
+            "run_id": "upper-central-opaque",
+            "candidate_scale_group_id": "r001px999",
+            "source_candidate_id": "source-upper-100",
+            "source_candidate_radius_m": 3.0,
+            "spatialr_px": 5,
+            "minsize_px": 11,
+            "ranger": 0.4,
+            "original_row_metadata": {"is_baseline": True},
+        },
+        {
+            "run_id": "upper-variation-opaque",
+            "candidate_scale_group_id": "r001px999",
+            "source_candidate_id": "source-upper-100",
+            "source_candidate_radius_m": 3.0,
+            "spatialr_px": 1,
+            "minsize_px": 1,
+            "ranger": 0.01,
+            "original_row_metadata": {"is_baseline": False},
+        },
+    ]
+
+
+def _step9b_perturbation_config(tmp_path: Path) -> rs.Level1BPerturbationConfig:
+    return rs.Level1BPerturbationConfig(
+        candidate_id="step9b",
+        output_dir=tmp_path,
+        scale_candidates_with_ranger_json_path=None,
+        K=2,
+    )
+
+
 def test_20_proxy_stack_is_default_and_mask_is_forwarded(tmp_path: Path, monkeypatch) -> None:
     output = tmp_path / "out"
     proxy = write_raster(output / "level1b" / "channels" / "proxy_stack.tif", np.ones((2, 2), dtype=np.uint8))
@@ -764,7 +825,7 @@ def test_39_rank1_upper_boundary_is_reported_without_extending_the_ladder() -> N
     assert gate["top_pair_upper_scale_candidate_group_id"] == "gamma"
 
 
-def test_40_step9b_blocks_non_adjacent_top_pair() -> None:
+def test_40_step9b_non_adjacent_top_pair_requires_user_choice() -> None:
     gate = _step9b_adjacent_gate(
         top_pair_scale_continuity_status="non_adjacent_top_pair_possible_bimodal_or_multimodal",
         top_pair_is_scale_adjacent=False,
@@ -773,7 +834,10 @@ def test_40_step9b_blocks_non_adjacent_top_pair() -> None:
 
     result = rs.validate_step9b_local_transition_refinement(gate, [1.0, 1.5, 2.0], "/step9a")
 
-    assert result["step9b_status"] == "step9b_blocked_non_adjacent_top_pair"
+    assert result["step9b_status"] == "step9b_user_choice_required_bimodal_or_multimodal"
+    assert result["user_choice_required"] is True
+    assert result["supported_alternative_count"] == 2
+    assert result["supported_alternative_candidate_scale_group_ids"] == ["r999px001", "r001px999"]
     assert result["local_coordinate_plan"] == []
     assert result["local_candidate_count"] == 0
 
@@ -929,3 +993,262 @@ def test_50_step9b_requires_both_confirmed_interval_endpoints() -> None:
 
     assert result["step9b_status"] == "step9b_blocked_missing_explicit_local_scale_coordinates"
     assert result["local_coordinate_plan"] == []
+
+
+def test_51_step9b_non_adjacent_forwards_two_supported_alternatives_without_midpoint(tmp_path: Path) -> None:
+    gate = _step9b_adjacent_gate(
+        top_pair_scale_continuity_status="non_adjacent_top_pair_possible_bimodal_or_multimodal",
+        top_pair_is_scale_adjacent=False,
+        top_pair_intervening_candidate_scale_group_ids=["unselected-middle"],
+    )
+
+    result = rs.run_step9b_midpoint_support_probe(
+        tmp_path / "out",
+        "/step9a",
+        gate,
+        _step9b_ranked_support_rows(),
+        _step9b_boundary_run_rows(),
+        None,
+    )
+
+    step9b_dir = rs.local_transition_refinement_output_dir(tmp_path / "out")
+    assert result["step9b_status"] == "step9b_user_choice_required_bimodal_or_multimodal"
+    assert result["user_choice_required"] is True
+    assert result["supported_alternative_count"] == 2
+    assert [row["candidate_scale_group_id"] for row in result["supported_alternatives"]] == [
+        "r999px001",
+        "r001px999",
+    ]
+    assert result["midpoint_candidate_count"] == 0
+    assert (step9b_dir / "step9b_supported_scale_alternatives.csv").exists()
+    assert (step9b_dir / "step9b_supported_scale_alternatives.json").exists()
+    assert not (step9b_dir / "step9b_midpoint_probe_candidate.csv").exists()
+    assert not (step9b_dir / "step9b_midpoint_perturbation_candidates.csv").exists()
+
+
+def test_52_step9b_adjacent_midpoint_uses_central_rows_and_existing_perturbation_helper(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: list[dict[str, object]] = []
+
+    def fake_builder(config, complete_candidates):
+        assert isinstance(config, rs.Level1BPerturbationConfig)
+        captured.extend(complete_candidates)
+        midpoint = complete_candidates[0]
+        return [
+            {
+                "perturbation_id": "local_midpoint__baseline",
+                "source_candidate_id": midpoint["candidate_id"],
+                "scale_id": midpoint["scale_id"],
+                "spatialr_px": midpoint["spatialr_px"],
+                "minsize_px": midpoint["minsize_px"],
+                "ranger": midpoint["ranger"],
+                "deltas": {},
+                "is_baseline": True,
+            },
+            {
+                "perturbation_id": "local_midpoint__variation",
+                "source_candidate_id": midpoint["candidate_id"],
+                "scale_id": midpoint["scale_id"],
+                "spatialr_px": midpoint["spatialr_px"] + 1,
+                "minsize_px": midpoint["minsize_px"],
+                "ranger": midpoint["ranger"],
+                "deltas": {"spatialr_px_delta": 1},
+                "is_baseline": False,
+            },
+        ]
+
+    monkeypatch.setattr(rs, "build_perturbation_candidates", fake_builder)
+    result = rs.run_step9b_midpoint_support_probe(
+        tmp_path / "out",
+        "/step9a",
+        _step9b_adjacent_gate(),
+        _step9b_ranked_support_rows(),
+        _step9b_boundary_run_rows(),
+        _step9b_perturbation_config(tmp_path),
+    )
+
+    assert result["step9b_status"] == "step9b_midpoint_probe_ready"
+    assert result["midpoint_candidate_count"] == 1
+    assert len(captured) == 1
+    midpoint = captured[0]
+    assert midpoint["candidate_id"] == "local_midpoint"
+    assert midpoint["scale_id"] == "local_midpoint"
+    assert midpoint["scale_coordinate_value"] == 1.5
+    assert midpoint["source_candidate_radius_m"] == 2.0
+    assert midpoint["spatialr_px"] == 5
+    assert midpoint["minsize_px"] == 11
+    assert midpoint["ranger"] == pytest.approx(0.3)
+    assert midpoint["source_lower_candidate_scale_group_id"] == "r999px001"
+    assert midpoint["source_upper_candidate_scale_group_id"] == "r001px999"
+    assert midpoint["source_lower_candidate_id"] == "source-lower-900"
+    assert midpoint["source_upper_candidate_id"] == "source-upper-100"
+    assert midpoint["requires_step9b_execution"] is True
+    assert midpoint["source_step9a_metrics_reused"] is False
+    assert all(anchor["requires_step9b_execution"] is False for anchor in result["anchor_references"])
+    assert all(anchor["source_step9a_metrics_reused"] is True for anchor in result["anchor_references"])
+    assert all("pair_key" not in row for row in result["anchor_references"])
+    step9b_dir = rs.local_transition_refinement_output_dir(tmp_path / "out")
+    perturbations = json.loads((step9b_dir / "step9b_midpoint_perturbation_candidates.json").read_text(encoding="utf-8"))
+    assert len(perturbations) == 2
+    assert all(row["candidate_scale_group_id"] == "local_midpoint" for row in perturbations)
+    assert all(row["scale_coordinate_value"] == 1.5 for row in perturbations)
+    assert all(row["source_candidate_radius_m"] == 2.0 for row in perturbations)
+    assert not (step9b_dir / "step9b_midpoint_gain_share_handoff.json").exists()
+
+
+def test_53_step9b_midpoint_requires_explicit_boundary_metadata(tmp_path: Path) -> None:
+    for field in (
+        "top_pair_lower_scale_candidate_group_id",
+        "top_pair_upper_scale_candidate_group_id",
+        "top_pair_scale_coordinate_name",
+        "top_pair_lower_scale_coordinate_value",
+        "top_pair_upper_scale_coordinate_value",
+    ):
+        gate = _step9b_adjacent_gate()
+        del gate[field]
+
+        result = rs.run_step9b_midpoint_support_probe(
+            tmp_path / field,
+            "/step9a",
+            gate,
+            _step9b_ranked_support_rows(),
+            _step9b_boundary_run_rows(),
+            _step9b_perturbation_config(tmp_path),
+        )
+
+        assert result["step9b_status"] == "step9b_blocked_missing_top_pair_or_boundary_metadata"
+        assert result["midpoint_candidate_count"] == 0
+
+
+def test_54_step9b_midpoint_blocks_invalid_bounds_and_cannot_determine_continuity(tmp_path: Path) -> None:
+    for lower, upper in ((2.0, 1.0), (1.0, 1.0), (1.0, float("inf"))):
+        gate = _step9b_adjacent_gate(
+            top_pair_lower_scale_coordinate_value=lower,
+            top_pair_upper_scale_coordinate_value=upper,
+        )
+        result = rs.run_step9b_midpoint_support_probe(
+            tmp_path / "bounds",
+            "/step9a",
+            gate,
+            _step9b_ranked_support_rows(),
+            _step9b_boundary_run_rows(),
+            _step9b_perturbation_config(tmp_path),
+        )
+        assert result["step9b_status"] == "step9b_blocked_invalid_interval_bounds"
+
+    cannot_gate = _step9b_adjacent_gate(
+        top_pair_scale_continuity_status="cannot_determine_scale_order_disagreement",
+        top_pair_is_scale_adjacent=False,
+    )
+    cannot = rs.run_step9b_midpoint_support_probe(
+        tmp_path / "cannot",
+        "/step9a",
+        cannot_gate,
+        _step9b_ranked_support_rows(),
+        _step9b_boundary_run_rows(),
+        _step9b_perturbation_config(tmp_path),
+    )
+    assert cannot["step9b_status"] == "step9b_blocked_cannot_determine_scale_continuity"
+
+
+def test_55_step9b_midpoint_requires_one_nonconflicting_central_row_per_boundary(tmp_path: Path) -> None:
+    conflicting_rows = _step9b_boundary_run_rows()
+    conflicting_rows[0]["is_baseline"] = False
+    conflict = rs.run_step9b_midpoint_support_probe(
+        tmp_path / "conflict",
+        "/step9a",
+        _step9b_adjacent_gate(),
+        _step9b_ranked_support_rows(),
+        conflicting_rows,
+        _step9b_perturbation_config(tmp_path),
+    )
+    assert conflict["step9b_status"] == "step9b_blocked_conflicting_baseline_metadata"
+
+    missing_rows = [
+        row
+        for row in _step9b_boundary_run_rows()
+        if not (
+            row["candidate_scale_group_id"] == "r999px001"
+            and json.loads(row["original_row_metadata"])["is_baseline"] is True
+        )
+    ]
+    missing = rs.run_step9b_midpoint_support_probe(
+        tmp_path / "missing",
+        "/step9a",
+        _step9b_adjacent_gate(),
+        _step9b_ranked_support_rows(),
+        missing_rows,
+        _step9b_perturbation_config(tmp_path),
+    )
+    assert missing["step9b_status"] == "step9b_blocked_missing_central_boundary_rows"
+
+
+def test_56_step9b_gain_share_uses_strict_half_threshold() -> None:
+    above = rs.compute_step9b_gain_share_handoff("no1", "no2", "local_midpoint", 1.0, 0.0, 0.5001)
+    equal = rs.compute_step9b_gain_share_handoff("no1", "no2", "local_midpoint", 1.0, 0.0, 0.5)
+    below = rs.compute_step9b_gain_share_handoff("no1", "no2", "local_midpoint", 1.0, 0.0, 0.4999)
+
+    assert above["midpoint_gain_share"] == pytest.approx(0.5001)
+    assert above["handoff_candidate_id"] == "local_midpoint"
+    assert above["status"] == "step9b_midpoint_gain_share_handoff"
+    assert equal["midpoint_gain_share"] == 0.5
+    assert equal["handoff_candidate_id"] == "no1"
+    assert equal["status"] == "step9b_no1_retained_gain_share"
+    assert below["handoff_candidate_id"] == "no1"
+    assert below["status"] == "step9b_no1_retained_gain_share"
+    assert above["gain_share_threshold"] == 0.5
+    assert above["gain_share_comparator"] == ">"
+
+
+def test_57_step9b_gain_share_retains_no1_for_invalid_reference_or_midpoint_support() -> None:
+    invalid_gain = rs.compute_step9b_gain_share_handoff("no1", "no2", "local_midpoint", 0.0, 0.0, 0.5)
+    missing_midpoint = rs.compute_step9b_gain_share_handoff("no1", "no2", "local_midpoint", 1.0, 0.0, None)
+    nonfinite_midpoint = rs.compute_step9b_gain_share_handoff("no1", "no2", "local_midpoint", 1.0, 0.0, float("nan"))
+
+    assert invalid_gain["status"] == "step9b_no1_retained_invalid_reference_gain"
+    assert invalid_gain["handoff_candidate_id"] == "no1" and invalid_gain["warning"] is True
+    assert missing_midpoint["status"] == "step9b_no1_retained_midpoint_uninterpretable"
+    assert missing_midpoint["handoff_candidate_id"] == "no1" and missing_midpoint["warning"] is True
+    assert nonfinite_midpoint["status"] == "step9b_no1_retained_midpoint_uninterpretable"
+    assert nonfinite_midpoint["warning"] is True
+
+
+def test_58_step9b_stubbed_midpoint_support_writes_gain_share_handoff(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        rs,
+        "build_perturbation_candidates",
+        lambda config, candidates: [
+            {
+                "perturbation_id": "local_midpoint__baseline",
+                "source_candidate_id": "local_midpoint",
+                "scale_id": "local_midpoint",
+                "spatialr_px": candidates[0]["spatialr_px"],
+                "minsize_px": candidates[0]["minsize_px"],
+                "ranger": candidates[0]["ranger"],
+                "is_baseline": True,
+            }
+        ],
+    )
+    result = rs.run_step9b_midpoint_support_probe(
+        tmp_path / "out",
+        "/step9a",
+        _step9b_adjacent_gate(),
+        _step9b_ranked_support_rows(),
+        _step9b_boundary_run_rows(),
+        _step9b_perturbation_config(tmp_path),
+        midpoint_family_support_raw=0.75,
+    )
+
+    step9b_dir = rs.local_transition_refinement_output_dir(tmp_path / "out")
+    assert result["step9b_status"] == "step9b_midpoint_gain_share_handoff"
+    handoff = json.loads((step9b_dir / "step9b_midpoint_gain_share_handoff.json").read_text(encoding="utf-8"))
+    assert handoff["midpoint_gain_share"] == 0.75
+    assert handoff["handoff_candidate_id"] == "local_midpoint"
+    forbidden = ("optim", "search", "best-scale", "final-selection", "distribution_break", "inconclusive")
+    user_facing = " ".join(
+        str(value).lower()
+        for value in (result["step9b_status"], result["step9b_status_reason"], handoff["status"], handoff["handoff_reason"])
+    )
+    assert not any(term in user_facing for term in forbidden)

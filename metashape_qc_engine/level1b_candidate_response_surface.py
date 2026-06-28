@@ -15,6 +15,10 @@ from metashape_qc_engine.level1b_one_scale_segmentation import (
     Level1BOneScaleSegmentationConfig,
     run_one_scale_segmentation_smoke,
 )
+from metashape_qc_engine.level1b_perturbations import (
+    Level1BPerturbationConfig,
+    build_perturbation_candidates,
+)
 
 
 SIZE_CLASSES = ("micro", "small", "in_scale", "large", "oversize")
@@ -59,6 +63,13 @@ STEP9B_OUTPUT_FILENAMES = {
     "local_candidates": "step9b_local_candidate_table.csv",
     "response_csv": "step9b_local_response_surface.csv",
     "response_json": "step9b_local_response_surface.json",
+    "supported_alternatives_csv": "step9b_supported_scale_alternatives.csv",
+    "supported_alternatives_json": "step9b_supported_scale_alternatives.json",
+    "midpoint_probe_csv": "step9b_midpoint_probe_candidate.csv",
+    "midpoint_probe_json": "step9b_midpoint_probe_candidate.json",
+    "midpoint_perturbations_csv": "step9b_midpoint_perturbation_candidates.csv",
+    "midpoint_perturbations_json": "step9b_midpoint_perturbation_candidates.json",
+    "gain_share_handoff": "step9b_midpoint_gain_share_handoff.json",
 }
 
 STEP9B_GATE_METADATA_FIELDS = (
@@ -1082,10 +1093,15 @@ def validate_step9b_local_transition_refinement(
 
     continuity_status = step9a_gate_metadata.get("top_pair_scale_continuity_status")
     if continuity_status == "non_adjacent_top_pair_possible_bimodal_or_multimodal":
-        return blocked(
-            "step9b_blocked_non_adjacent_top_pair",
-            "Step-9a top pair is not adjacent in the explicit scale ladder",
-        )
+        result["step9b_status"] = "step9b_user_choice_required_bimodal_or_multimodal"
+        result["step9b_status_reason"] = "Step-9a supports two non-adjacent scale alternatives for analyst choice"
+        result["user_choice_required"] = True
+        result["supported_alternative_count"] = 2
+        result["supported_alternative_candidate_scale_group_ids"] = [
+            step9a_gate_metadata.get("top_pair_rank1_candidate_scale_group_id"),
+            step9a_gate_metadata.get("top_pair_rank2_candidate_scale_group_id"),
+        ]
+        return result
     if continuity_status in {
         "cannot_determine_no_explicit_scale_coordinate",
         "cannot_determine_scale_order_disagreement",
@@ -1219,6 +1235,420 @@ def run_step9b_local_transition_refinement_preflight(
     step9b_dir = local_transition_refinement_output_dir(output_dir)
     _write_json(step9b_dir / STEP9B_OUTPUT_FILENAMES["preflight"], result)
     return result
+
+
+def compute_step9b_gain_share_handoff(
+    no1_candidate_scale_group_id: str,
+    no2_candidate_scale_group_id: str,
+    midpoint_candidate_id: str,
+    S1: Any,
+    S2: Any,
+    SM: Any,
+) -> dict[str, Any]:
+    def finite_number(value: Any) -> float | None:
+        if isinstance(value, bool):
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+
+    s1 = finite_number(S1)
+    s2 = finite_number(S2)
+    sm = finite_number(SM)
+    total_gain = s1 - s2 if s1 is not None and s2 is not None else None
+    result = {
+        "no1_candidate_scale_group_id": str(no1_candidate_scale_group_id),
+        "no2_candidate_scale_group_id": str(no2_candidate_scale_group_id),
+        "midpoint_candidate_id": str(midpoint_candidate_id),
+        "S1": s1,
+        "S2": s2,
+        "SM": sm,
+        "total_gain": total_gain,
+        "midpoint_gain": None,
+        "midpoint_gain_share": None,
+        "gain_share_threshold": 0.5,
+        "gain_share_comparator": ">",
+        "handoff_candidate_id": str(no1_candidate_scale_group_id),
+        "handoff_reason": None,
+        "warning": False,
+        "status": None,
+    }
+    if total_gain is None or total_gain <= 0:
+        result["status"] = "step9b_no1_retained_invalid_reference_gain"
+        result["handoff_reason"] = "Reference raw-support gain is not positive"
+        result["warning"] = True
+        return result
+    if sm is None:
+        result["status"] = "step9b_no1_retained_midpoint_uninterpretable"
+        result["handoff_reason"] = "Midpoint-family raw support is missing or non-finite"
+        result["warning"] = True
+        return result
+
+    midpoint_gain = sm - s2
+    midpoint_gain_share = midpoint_gain / total_gain
+    result["midpoint_gain"] = midpoint_gain
+    result["midpoint_gain_share"] = midpoint_gain_share
+    if midpoint_gain_share > 0.5:
+        result["status"] = "step9b_midpoint_gain_share_handoff"
+        result["handoff_candidate_id"] = str(midpoint_candidate_id)
+        result["handoff_reason"] = "Midpoint-family raw support delivers more than half of the local reference gain"
+    else:
+        result["status"] = "step9b_no1_retained_gain_share"
+        result["handoff_reason"] = "Midpoint-family raw support does not deliver more than half of the local reference gain"
+    return result
+
+
+def _step9b_metadata_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _step9b_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value in (0, 1):
+        return bool(value)
+    return None
+
+
+def _step9b_central_boundary_row(
+    run_population_rows: list[dict[str, Any]],
+    candidate_scale_group_id: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    central_rows: list[dict[str, Any]] = []
+    for row in run_population_rows:
+        if str(row.get("candidate_scale_group_id", "")) != str(candidate_scale_group_id):
+            continue
+        original_metadata = _step9b_metadata_dict(row.get("original_row_metadata"))
+        original_flag = _step9b_bool(original_metadata.get("is_baseline")) if "is_baseline" in original_metadata else None
+        top_level_flag = _step9b_bool(row.get("is_baseline")) if "is_baseline" in row else None
+        if original_flag is not None and top_level_flag is not None and original_flag is not top_level_flag:
+            return None, "step9b_blocked_conflicting_baseline_metadata"
+        baseline_flag = original_flag if original_flag is not None else top_level_flag
+        if baseline_flag is True:
+            central_rows.append(row)
+    if len(central_rows) != 1:
+        return None, "step9b_blocked_missing_central_boundary_rows"
+    return central_rows[0], None
+
+
+def _step9b_ranked_candidate_row(
+    ranked_candidate_rows: list[dict[str, Any]],
+    candidate_scale_group_id: str,
+) -> dict[str, Any] | None:
+    matches = [
+        row
+        for row in ranked_candidate_rows
+        if str(row.get("candidate_scale_group_id", "")) == str(candidate_scale_group_id)
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _step9b_raw_support(row: dict[str, Any] | None) -> float | None:
+    if row is None or "stability_score_raw" not in row or isinstance(row["stability_score_raw"], bool):
+        return None
+    try:
+        value = float(row["stability_score_raw"])
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def run_step9b_midpoint_support_probe(
+    output_dir: str | Path,
+    source_step9a_directory: str | Path,
+    step9a_gate_metadata: dict[str, Any],
+    ranked_candidate_rows: list[dict[str, Any]],
+    run_population_rows: list[dict[str, Any]],
+    perturbation_config: Level1BPerturbationConfig | None,
+    midpoint_family_support_raw: Any = None,
+) -> dict[str, Any]:
+    step9b_dir = local_transition_refinement_output_dir(output_dir)
+    result = {
+        "step9b_status": None,
+        "step9b_status_reason": None,
+        "source_step9a_directory": str(source_step9a_directory),
+        **{field: step9a_gate_metadata.get(field) for field in STEP9B_GATE_METADATA_FIELDS},
+        "user_choice_required": False,
+        "supported_alternative_count": 0,
+        "midpoint_candidate_count": 0,
+        "midpoint_perturbation_candidate_count": 0,
+        "step9b_no_extrapolation_beyond_interval": False,
+        "real_midpoint_family_support_available": midpoint_family_support_raw is not None,
+    }
+
+    def finish(status: str, reason: str) -> dict[str, Any]:
+        result["step9b_status"] = status
+        result["step9b_status_reason"] = reason
+        _write_json(step9b_dir / STEP9B_OUTPUT_FILENAMES["preflight"], result)
+        return result
+
+    continuity_status = step9a_gate_metadata.get("top_pair_scale_continuity_status")
+    if continuity_status in {
+        "cannot_determine_no_explicit_scale_coordinate",
+        "cannot_determine_scale_order_disagreement",
+        "cannot_determine_missing_top_pair",
+    }:
+        return finish(
+            "step9b_blocked_cannot_determine_scale_continuity",
+            f"Step-9a scale continuity status is {continuity_status}",
+        )
+
+    no1_id = str(step9a_gate_metadata.get("top_pair_rank1_candidate_scale_group_id", "")).strip()
+    no2_id = str(step9a_gate_metadata.get("top_pair_rank2_candidate_scale_group_id", "")).strip()
+    if not no1_id or not no2_id:
+        return finish(
+            "step9b_blocked_missing_top_pair_or_boundary_metadata",
+            "Step-9a No1 or No2 candidate metadata is missing",
+        )
+
+    if (
+        continuity_status == "non_adjacent_top_pair_possible_bimodal_or_multimodal"
+        or step9a_gate_metadata.get("top_pair_is_scale_adjacent") is False
+    ):
+        lower_id = step9a_gate_metadata.get("top_pair_lower_scale_candidate_group_id")
+        upper_id = step9a_gate_metadata.get("top_pair_upper_scale_candidate_group_id")
+        coordinate_name = step9a_gate_metadata.get("top_pair_scale_coordinate_name")
+        coordinate_by_id = {
+            str(lower_id): step9a_gate_metadata.get("top_pair_lower_scale_coordinate_value"),
+            str(upper_id): step9a_gate_metadata.get("top_pair_upper_scale_coordinate_value"),
+        }
+        alternatives = []
+        for rank, candidate_id in ((1, no1_id), (2, no2_id)):
+            ranked_row = _step9b_ranked_candidate_row(ranked_candidate_rows, candidate_id)
+            alternative = {
+                "rank": rank,
+                "candidate_scale_group_id": candidate_id,
+                "stability_score_raw": _step9b_raw_support(ranked_row),
+                "scale_coordinate_name": coordinate_name,
+                "scale_coordinate_value": coordinate_by_id.get(candidate_id),
+                "requires_step9b_execution": False,
+                "source_step9a_metrics_reused": True,
+            }
+            if ranked_row is not None:
+                alternative.update(
+                    {
+                        key: value
+                        for key, value in ranked_row.items()
+                        if str(key).endswith("_path") and value not in (None, "")
+                    }
+                )
+            alternatives.append(alternative)
+        result["user_choice_required"] = True
+        result["supported_alternative_count"] = 2
+        result["supported_alternatives"] = alternatives
+        _write_csv(step9b_dir / STEP9B_OUTPUT_FILENAMES["supported_alternatives_csv"], alternatives)
+        _write_json(step9b_dir / STEP9B_OUTPUT_FILENAMES["supported_alternatives_json"], alternatives)
+        return finish(
+            "step9b_user_choice_required_bimodal_or_multimodal",
+            "Step-9a supports two non-adjacent scale alternatives for analyst choice",
+        )
+
+    required_boundary_fields = (
+        "top_pair_lower_scale_candidate_group_id",
+        "top_pair_upper_scale_candidate_group_id",
+        "top_pair_scale_coordinate_name",
+        "top_pair_lower_scale_coordinate_value",
+        "top_pair_upper_scale_coordinate_value",
+    )
+    if (
+        continuity_status != "adjacent_top_pair_confirmed"
+        or step9a_gate_metadata.get("top_pair_is_scale_adjacent") is not True
+        or any(
+            field not in step9a_gate_metadata or step9a_gate_metadata.get(field) in (None, "")
+            for field in required_boundary_fields
+        )
+    ):
+        return finish(
+            "step9b_blocked_missing_top_pair_or_boundary_metadata",
+            "Confirmed adjacent top-pair boundary metadata is incomplete",
+        )
+
+    lower_id = str(step9a_gate_metadata["top_pair_lower_scale_candidate_group_id"])
+    upper_id = str(step9a_gate_metadata["top_pair_upper_scale_candidate_group_id"])
+    coordinate_name = str(step9a_gate_metadata["top_pair_scale_coordinate_name"])
+    try:
+        lower_coordinate = float(step9a_gate_metadata["top_pair_lower_scale_coordinate_value"])
+        upper_coordinate = float(step9a_gate_metadata["top_pair_upper_scale_coordinate_value"])
+    except (TypeError, ValueError):
+        return finish(
+            "step9b_blocked_invalid_interval_bounds",
+            "Step-9a boundary coordinates must be finite numeric values",
+        )
+    if not math.isfinite(lower_coordinate) or not math.isfinite(upper_coordinate) or lower_coordinate >= upper_coordinate:
+        return finish(
+            "step9b_blocked_invalid_interval_bounds",
+            "Step-9a boundary coordinates must be finite and strictly increasing",
+        )
+
+    lower_row, lower_error = _step9b_central_boundary_row(run_population_rows, lower_id)
+    upper_row, upper_error = _step9b_central_boundary_row(run_population_rows, upper_id)
+    boundary_error = lower_error or upper_error
+    if boundary_error is not None:
+        reason = (
+            "Original and top-level baseline metadata disagree"
+            if boundary_error == "step9b_blocked_conflicting_baseline_metadata"
+            else "Exactly one central baseline row is required for each Step-9a boundary"
+        )
+        return finish(boundary_error, reason)
+    assert lower_row is not None and upper_row is not None
+
+    required_central_fields = ("source_candidate_radius_m", "spatialr_px", "minsize_px", "ranger")
+    if any(field not in lower_row or field not in upper_row for field in required_central_fields):
+        return finish(
+            "step9b_blocked_missing_central_boundary_rows",
+            "Central Step-9a boundary rows lack required midpoint parameters",
+        )
+    try:
+        lower_radius = float(lower_row["source_candidate_radius_m"])
+        upper_radius = float(upper_row["source_candidate_radius_m"])
+        lower_spatialr = float(lower_row["spatialr_px"])
+        upper_spatialr = float(upper_row["spatialr_px"])
+        lower_minsize = float(lower_row["minsize_px"])
+        upper_minsize = float(upper_row["minsize_px"])
+        lower_ranger = float(lower_row["ranger"])
+        upper_ranger = float(upper_row["ranger"])
+    except (TypeError, ValueError):
+        return finish(
+            "step9b_blocked_missing_central_boundary_rows",
+            "Central Step-9a boundary midpoint parameters must be numeric",
+        )
+    numeric_values = (
+        lower_radius,
+        upper_radius,
+        lower_spatialr,
+        upper_spatialr,
+        lower_minsize,
+        upper_minsize,
+        lower_ranger,
+        upper_ranger,
+    )
+    if not all(math.isfinite(value) for value in numeric_values):
+        return finish(
+            "step9b_blocked_missing_central_boundary_rows",
+            "Central Step-9a boundary midpoint parameters must be finite",
+        )
+
+    midpoint_coordinate = (lower_coordinate + upper_coordinate) / 2.0
+    if not lower_coordinate < midpoint_coordinate < upper_coordinate:
+        return finish(
+            "step9b_blocked_invalid_interval_bounds",
+            "Arithmetic midpoint must lie strictly inside the confirmed interval",
+        )
+    midpoint_radius = (lower_radius + upper_radius) / 2.0
+    midpoint_spatialr = math.floor(((lower_spatialr + upper_spatialr) / 2.0) + 0.5)
+    midpoint_minsize = math.floor(((lower_minsize + upper_minsize) / 2.0) + 0.5)
+    midpoint_ranger = (lower_ranger + upper_ranger) / 2.0
+    lower_candidate_id = str(lower_row.get("source_candidate_id", lower_row.get("candidate_id", ""))).strip()
+    upper_candidate_id = str(upper_row.get("source_candidate_id", upper_row.get("candidate_id", ""))).strip()
+    if not lower_candidate_id or not upper_candidate_id:
+        return finish(
+            "step9b_blocked_missing_central_boundary_rows",
+            "Central Step-9a boundary rows lack source candidate IDs",
+        )
+
+    midpoint_candidate = {
+        "step9b_row_role": "new_midpoint_probe",
+        "candidate_id": "local_midpoint",
+        "scale_id": "local_midpoint",
+        "candidate_scale_group_id": "local_midpoint",
+        "scale_coordinate_name": coordinate_name,
+        "scale_coordinate_value": midpoint_coordinate,
+        "source_candidate_radius_m": midpoint_radius,
+        "radius_m": midpoint_radius,
+        "spatialr_px": midpoint_spatialr,
+        "minsize_px": midpoint_minsize,
+        "ranger": midpoint_ranger,
+        "source_lower_candidate_scale_group_id": lower_id,
+        "source_upper_candidate_scale_group_id": upper_id,
+        "source_lower_candidate_id": lower_candidate_id,
+        "source_upper_candidate_id": upper_candidate_id,
+        "requires_step9b_execution": True,
+        "source_step9a_metrics_reused": False,
+    }
+    if perturbation_config is None:
+        return finish(
+            "step9b_blocked_missing_perturbation_config",
+            "A perturbation configuration is required for the midpoint family",
+        )
+    midpoint_perturbations = build_perturbation_candidates(perturbation_config, [midpoint_candidate])
+    midpoint_metadata = {
+        "candidate_scale_group_id": "local_midpoint",
+        "scale_coordinate_name": coordinate_name,
+        "scale_coordinate_value": midpoint_coordinate,
+        "source_candidate_radius_m": midpoint_radius,
+        "source_lower_candidate_scale_group_id": lower_id,
+        "source_upper_candidate_scale_group_id": upper_id,
+        "source_lower_candidate_id": lower_candidate_id,
+        "source_upper_candidate_id": upper_candidate_id,
+        "requires_step9b_execution": True,
+        "source_step9a_metrics_reused": False,
+    }
+    midpoint_perturbations = [dict(row, **midpoint_metadata) for row in midpoint_perturbations]
+    anchor_references = [
+        {
+            "step9b_row_role": "existing_lower_anchor",
+            "candidate_scale_group_id": lower_id,
+            "requires_step9b_execution": False,
+            "source_step9a_metrics_reused": True,
+        },
+        {
+            "step9b_row_role": "existing_upper_anchor",
+            "candidate_scale_group_id": upper_id,
+            "requires_step9b_execution": False,
+            "source_step9a_metrics_reused": True,
+        },
+    ]
+    result.update(
+        {
+            "midpoint_candidate_count": 1,
+            "midpoint_perturbation_candidate_count": len(midpoint_perturbations),
+            "midpoint_probe_candidate": midpoint_candidate,
+            "anchor_references": anchor_references,
+            "step9b_no_extrapolation_beyond_interval": True,
+        }
+    )
+    _write_csv(step9b_dir / STEP9B_OUTPUT_FILENAMES["midpoint_probe_csv"], [midpoint_candidate])
+    _write_json(step9b_dir / STEP9B_OUTPUT_FILENAMES["midpoint_probe_json"], midpoint_candidate)
+    _write_csv(step9b_dir / STEP9B_OUTPUT_FILENAMES["midpoint_perturbations_csv"], midpoint_perturbations)
+    _write_json(step9b_dir / STEP9B_OUTPUT_FILENAMES["midpoint_perturbations_json"], midpoint_perturbations)
+
+    no1_row = _step9b_ranked_candidate_row(ranked_candidate_rows, no1_id)
+    no2_row = _step9b_ranked_candidate_row(ranked_candidate_rows, no2_id)
+    s1 = _step9b_raw_support(no1_row)
+    s2 = _step9b_raw_support(no2_row)
+    if midpoint_family_support_raw is not None and s1 is not None and s2 is not None:
+        handoff = compute_step9b_gain_share_handoff(
+            no1_id,
+            no2_id,
+            "local_midpoint",
+            s1,
+            s2,
+            midpoint_family_support_raw,
+        )
+        result["gain_share_handoff"] = handoff
+        _write_json(step9b_dir / STEP9B_OUTPUT_FILENAMES["gain_share_handoff"], handoff)
+        return finish(handoff["status"], handoff["handoff_reason"])
+
+    return finish(
+        "step9b_midpoint_probe_ready",
+        "Exactly one midpoint probe family is prepared inside the confirmed adjacent interval",
+    )
 
 
 def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConfig) -> dict[str, Any]:
