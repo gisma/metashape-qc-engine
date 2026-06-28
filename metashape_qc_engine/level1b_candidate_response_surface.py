@@ -78,6 +78,20 @@ STEP9B_GATE_METADATA_FIELDS = (
     "top_pair_boundary_constrained",
 )
 
+STEP9B_TELEPHONE_BOOK_ROW_ROLES = (
+    "existing_lower_anchor",
+    "new_interior_candidate",
+    "existing_upper_anchor",
+)
+
+STEP9B_REQUIRED_CANDIDATE_PARAMETER_FIELDS = (
+    "scale_id",
+    "source_candidate_radius_m",
+    "spatialr_px",
+    "minsize_px",
+    "ranger",
+)
+
 
 @dataclass
 class Level1BCandidateResponseSurfaceConfig:
@@ -1198,25 +1212,389 @@ def validate_step9b_local_transition_refinement(
     return result
 
 
+def validate_step9b_explicit_candidate_table(
+    step9a_gate_metadata: dict[str, Any],
+    explicit_candidate_table: list[dict[str, Any]] | tuple[dict[str, Any], ...] | str | Path | None,
+    source_step9a_directory: str | Path,
+) -> dict[str, Any]:
+    explicit_candidate_table_path: str | None = None
+    table_rows: list[dict[str, Any]] | None = None
+    table_load_error: str | None = None
+    if isinstance(explicit_candidate_table, (str, Path)):
+        table_path = Path(explicit_candidate_table)
+        explicit_candidate_table_path = str(table_path)
+        if not table_path.is_file():
+            table_load_error = f"Explicit Step-9b candidate table does not exist: {table_path}"
+        else:
+            try:
+                with table_path.open(newline="", encoding="utf-8") as file_obj:
+                    reader = csv.DictReader(file_obj)
+                    if not reader.fieldnames:
+                        table_load_error = "Explicit Step-9b candidate table has no CSV header"
+                    else:
+                        table_rows = [dict(row) for row in reader]
+            except (OSError, csv.Error) as exc:
+                table_load_error = f"Explicit Step-9b candidate table could not be read: {exc}"
+    elif isinstance(explicit_candidate_table, (list, tuple)):
+        table_rows = list(explicit_candidate_table)
+    elif explicit_candidate_table is not None:
+        table_load_error = "Explicit Step-9b candidate table must be a CSV path or a list of row dictionaries"
+
+    result = validate_step9b_local_transition_refinement(
+        step9a_gate_metadata,
+        None,
+        source_step9a_directory,
+    )
+    result.update(
+        {
+            "explicit_candidate_table_used": explicit_candidate_table is not None,
+            "explicit_candidate_table_path": explicit_candidate_table_path,
+            "explicit_candidate_table_schema_status": "not_validated",
+            "step9b_telephone_book_anchor_roles_enforced": False,
+            "telephone_book_lower_anchor_count": 0,
+            "telephone_book_upper_anchor_count": 0,
+            "telephone_book_interior_candidate_count": 0,
+            "endpoint_anchors_reused_by_reference": False,
+            "endpoint_anchors_require_step9b_execution": False,
+            "interior_candidates_require_step9b_execution": False,
+            "real_response_surface_metrics_written": False,
+        }
+    )
+    if result["step9b_status"] != "step9b_blocked_missing_explicit_local_scale_coordinates":
+        return result
+
+    def blocked(status: str, reason: str, schema_status: str = "invalid") -> dict[str, Any]:
+        result["step9b_status"] = status
+        result["step9b_status_reason"] = reason
+        result["explicit_candidate_table_schema_status"] = schema_status
+        result["local_candidate_count"] = 0
+        result["local_coordinate_plan"] = []
+        return result
+
+    if explicit_candidate_table is None or table_rows == []:
+        return blocked(
+            "step9b_blocked_missing_explicit_candidate_table",
+            "A non-empty caller-supplied explicit Step-9b candidate table is required",
+            "missing",
+        )
+    if table_load_error is not None:
+        return blocked(
+            "step9b_blocked_invalid_explicit_candidate_table_schema",
+            table_load_error,
+        )
+    if table_rows is None or not all(isinstance(row, dict) for row in table_rows):
+        return blocked(
+            "step9b_blocked_invalid_telephone_book_schema",
+            "Every explicit Step-9b candidate table row must be a dictionary",
+        )
+
+    for row_index, row in enumerate(table_rows):
+        role = row.get("step9b_row_role")
+        if role not in STEP9B_TELEPHONE_BOOK_ROW_ROLES:
+            return blocked(
+                "step9b_blocked_invalid_telephone_book_schema",
+                f"Explicit Step-9b candidate table row {row_index} has a missing or unknown step9b_row_role",
+            )
+
+    rows_by_role = {
+        role: [row for row in table_rows if row["step9b_row_role"] == role]
+        for role in STEP9B_TELEPHONE_BOOK_ROW_ROLES
+    }
+    lower_anchor_count = len(rows_by_role["existing_lower_anchor"])
+    upper_anchor_count = len(rows_by_role["existing_upper_anchor"])
+    interior_count = len(rows_by_role["new_interior_candidate"])
+    result.update(
+        {
+            "telephone_book_lower_anchor_count": lower_anchor_count,
+            "telephone_book_upper_anchor_count": upper_anchor_count,
+            "telephone_book_interior_candidate_count": interior_count,
+        }
+    )
+    if lower_anchor_count == 0 or upper_anchor_count == 0:
+        return blocked(
+            "step9b_blocked_missing_endpoint_anchor_rows",
+            "The telephone-book table must contain one existing_lower_anchor and one existing_upper_anchor row",
+        )
+    if lower_anchor_count != 1 or upper_anchor_count != 1:
+        return blocked(
+            "step9b_blocked_invalid_telephone_book_schema",
+            "The telephone-book table must contain exactly one lower anchor and exactly one upper anchor",
+        )
+    if interior_count == 0:
+        return blocked(
+            "step9b_blocked_missing_interior_candidate",
+            "The telephone-book table must contain at least one new_interior_candidate row",
+        )
+
+    endpoint_required_fields = (
+        "source_step9a_candidate_scale_group_id",
+        "scale_coordinate_name",
+        "scale_coordinate_value",
+    )
+    interior_required_fields = (
+        "step9b_local_candidate_id",
+        "scale_coordinate_name",
+        "scale_coordinate_value",
+    )
+    for role in ("existing_lower_anchor", "existing_upper_anchor"):
+        row = rows_by_role[role][0]
+        missing_fields = [field for field in endpoint_required_fields if field not in row]
+        if missing_fields:
+            return blocked(
+                "step9b_blocked_invalid_telephone_book_schema",
+                f"Telephone-book {role} row is missing required fields: {', '.join(missing_fields)}",
+            )
+    for row_index, row in enumerate(rows_by_role["new_interior_candidate"]):
+        missing_fields = [field for field in interior_required_fields if field not in row]
+        if missing_fields:
+            return blocked(
+                "step9b_blocked_invalid_telephone_book_schema",
+                f"Telephone-book interior row {row_index} is missing schema fields: {', '.join(missing_fields)}",
+            )
+        source_step9a_id = row.get("source_step9a_candidate_scale_group_id")
+        if source_step9a_id is not None and str(source_step9a_id).strip():
+            return blocked(
+                "step9b_blocked_invalid_telephone_book_schema",
+                f"Telephone-book interior row {row_index} must not reference a source Step-9a candidate",
+            )
+        missing_parameters = [field for field in STEP9B_REQUIRED_CANDIDATE_PARAMETER_FIELDS if field not in row]
+        if missing_parameters:
+            return blocked(
+                "step9b_blocked_missing_required_interior_parameters",
+                f"Telephone-book interior row {row_index} is missing required parameters: "
+                + ", ".join(missing_parameters),
+            )
+
+    expected_coordinate_name = str(step9a_gate_metadata["top_pair_scale_coordinate_name"])
+    lower_value = float(step9a_gate_metadata["top_pair_lower_scale_coordinate_value"])
+    upper_value = float(step9a_gate_metadata["top_pair_upper_scale_coordinate_value"])
+    endpoint_specs = (
+        (
+            "existing_lower_anchor",
+            str(step9a_gate_metadata["top_pair_lower_scale_candidate_group_id"]),
+            lower_value,
+        ),
+        (
+            "existing_upper_anchor",
+            str(step9a_gate_metadata["top_pair_upper_scale_candidate_group_id"]),
+            upper_value,
+        ),
+    )
+    parsed_anchors: dict[str, tuple[float, dict[str, Any]]] = {}
+    for role, expected_group_id, expected_coordinate_value in endpoint_specs:
+        row = rows_by_role[role][0]
+        source_group_id = str(row["source_step9a_candidate_scale_group_id"]).strip()
+        coordinate_name = str(row["scale_coordinate_name"]).strip()
+        if source_group_id != expected_group_id or coordinate_name != expected_coordinate_name:
+            return blocked(
+                "step9b_blocked_endpoint_anchor_mismatch",
+                f"Telephone-book {role} row does not match its confirmed Step-9a candidate ID or coordinate name",
+            )
+        if isinstance(row["scale_coordinate_value"], bool):
+            return blocked(
+                "step9b_blocked_endpoint_anchor_mismatch",
+                f"Telephone-book {role} scale coordinate must match the confirmed Step-9a endpoint",
+            )
+        try:
+            coordinate_value = float(row["scale_coordinate_value"])
+        except (TypeError, ValueError):
+            return blocked(
+                "step9b_blocked_endpoint_anchor_mismatch",
+                f"Telephone-book {role} scale coordinate must match the confirmed Step-9a endpoint",
+            )
+        if not math.isfinite(coordinate_value) or not math.isclose(
+            coordinate_value,
+            expected_coordinate_value,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            return blocked(
+                "step9b_blocked_endpoint_anchor_mismatch",
+                f"Telephone-book {role} scale coordinate does not match the confirmed Step-9a endpoint",
+            )
+        parsed_anchors[role] = (expected_coordinate_value, dict(row))
+
+    local_ids: list[str] = []
+    parsed_interiors: list[tuple[float, dict[str, Any]]] = []
+    for row_index, row in enumerate(rows_by_role["new_interior_candidate"]):
+        local_id = str(row["step9b_local_candidate_id"]).strip()
+        coordinate_name = str(row["scale_coordinate_name"]).strip()
+        if not local_id or coordinate_name != expected_coordinate_name:
+            return blocked(
+                "step9b_blocked_invalid_telephone_book_schema",
+                f"Telephone-book interior row {row_index} must have a non-empty local ID and the confirmed coordinate name",
+            )
+        if isinstance(row["scale_coordinate_value"], bool):
+            return blocked(
+                "step9b_blocked_invalid_telephone_book_schema",
+                f"Telephone-book interior row {row_index} scale_coordinate_value must be finite numeric",
+            )
+        try:
+            coordinate_value = float(row["scale_coordinate_value"])
+        except (TypeError, ValueError):
+            return blocked(
+                "step9b_blocked_invalid_telephone_book_schema",
+                f"Telephone-book interior row {row_index} scale_coordinate_value must be finite numeric",
+            )
+        if not math.isfinite(coordinate_value):
+            return blocked(
+                "step9b_blocked_invalid_telephone_book_schema",
+                f"Telephone-book interior row {row_index} scale_coordinate_value must be finite numeric",
+            )
+        if not lower_value < coordinate_value < upper_value:
+            return blocked(
+                "step9b_blocked_interior_candidate_outside_interval",
+                f"Telephone-book interior row {row_index} must lie strictly inside the confirmed interval",
+            )
+        local_ids.append(local_id)
+        parsed_interiors.append((coordinate_value, dict(row)))
+
+    if len(set(local_ids)) != len(local_ids):
+        return blocked(
+            "step9b_blocked_invalid_telephone_book_schema",
+            "Telephone-book interior local candidate IDs must be unique",
+        )
+    parsed_interiors.sort(key=lambda item: item[0])
+    interior_coordinates = [item[0] for item in parsed_interiors]
+    if len(set(interior_coordinates)) != len(interior_coordinates):
+        return blocked(
+            "step9b_blocked_local_coordinate_duplicate",
+            "Telephone-book interior scale-coordinate values must be unique",
+        )
+
+    normalized_interiors: list[dict[str, Any]] = []
+    for interior_index, (coordinate_value, row) in enumerate(parsed_interiors):
+        local_id = str(row["step9b_local_candidate_id"]).strip()
+        scale_id = str(row["scale_id"]).strip()
+        if not scale_id:
+            return blocked(
+                "step9b_blocked_invalid_interior_parameter_values",
+                f"Telephone-book interior candidate {local_id!r} scale_id must be non-empty",
+            )
+        numeric_parameters: dict[str, float | int] = {}
+        for field in ("source_candidate_radius_m", "ranger"):
+            value = row[field]
+            if isinstance(value, bool):
+                return blocked(
+                    "step9b_blocked_invalid_interior_parameter_values",
+                    f"Telephone-book interior candidate {local_id!r} {field} must be finite and greater than zero",
+                )
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError):
+                return blocked(
+                    "step9b_blocked_invalid_interior_parameter_values",
+                    f"Telephone-book interior candidate {local_id!r} {field} must be finite and greater than zero",
+                )
+            if not math.isfinite(numeric_value) or numeric_value <= 0:
+                return blocked(
+                    "step9b_blocked_invalid_interior_parameter_values",
+                    f"Telephone-book interior candidate {local_id!r} {field} must be finite and greater than zero",
+                )
+            numeric_parameters[field] = numeric_value
+        for field in ("spatialr_px", "minsize_px"):
+            value = row[field]
+            if isinstance(value, bool):
+                return blocked(
+                    "step9b_blocked_invalid_interior_parameter_values",
+                    f"Telephone-book interior candidate {local_id!r} {field} must be a positive integer",
+                )
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError):
+                return blocked(
+                    "step9b_blocked_invalid_interior_parameter_values",
+                    f"Telephone-book interior candidate {local_id!r} {field} must be a positive integer",
+                )
+            if not math.isfinite(numeric_value) or numeric_value < 1 or not numeric_value.is_integer():
+                return blocked(
+                    "step9b_blocked_invalid_interior_parameter_values",
+                    f"Telephone-book interior candidate {local_id!r} {field} must be a positive integer",
+                )
+            numeric_parameters[field] = int(numeric_value)
+
+        normalized = dict(row)
+        normalized.update(
+            {
+                "step9b_row_role": "new_interior_candidate",
+                "step9b_local_candidate_id": f"local_{interior_index:03d}",
+                "input_step9b_local_candidate_id": local_id,
+                "source_step9a_candidate_scale_group_id": None,
+                "step9b_interval_id": result["step9b_interval_id"],
+                "source_step9a_rank1_candidate_scale_group_id": step9a_gate_metadata["top_pair_rank1_candidate_scale_group_id"],
+                "source_step9a_rank2_candidate_scale_group_id": step9a_gate_metadata["top_pair_rank2_candidate_scale_group_id"],
+                "source_step9a_lower_candidate_scale_group_id": step9a_gate_metadata["top_pair_lower_scale_candidate_group_id"],
+                "source_step9a_upper_candidate_scale_group_id": step9a_gate_metadata["top_pair_upper_scale_candidate_group_id"],
+                "scale_coordinate_name": expected_coordinate_name,
+                "scale_coordinate_value": coordinate_value,
+                "scale_id": scale_id,
+                "requires_step9b_execution": True,
+                "source_step9a_metrics_reused": False,
+                **numeric_parameters,
+            }
+        )
+        normalized["perturbation_id"] = f"local_{interior_index:03d}"
+        normalized_interiors.append(normalized)
+
+    def normalized_anchor(role: str, canonical_id: str) -> dict[str, Any]:
+        coordinate_value, row = parsed_anchors[role]
+        input_local_id = row.get("step9b_local_candidate_id")
+        input_local_id = str(input_local_id).strip() if input_local_id is not None else ""
+        normalized = {
+            "step9b_row_role": role,
+            "step9b_local_candidate_id": canonical_id,
+            "input_step9b_local_candidate_id": input_local_id or None,
+            "source_step9a_candidate_scale_group_id": row["source_step9a_candidate_scale_group_id"],
+            "scale_coordinate_name": expected_coordinate_name,
+            "scale_coordinate_value": coordinate_value,
+            "requires_step9b_execution": False,
+            "source_step9a_metrics_reused": True,
+            "step9b_interval_id": result["step9b_interval_id"],
+            "source_step9a_rank1_candidate_scale_group_id": step9a_gate_metadata["top_pair_rank1_candidate_scale_group_id"],
+            "source_step9a_rank2_candidate_scale_group_id": step9a_gate_metadata["top_pair_rank2_candidate_scale_group_id"],
+            "source_step9a_lower_candidate_scale_group_id": step9a_gate_metadata["top_pair_lower_scale_candidate_group_id"],
+            "source_step9a_upper_candidate_scale_group_id": step9a_gate_metadata["top_pair_upper_scale_candidate_group_id"],
+            "perturbation_id": None,
+        }
+        normalized.update({field: None for field in STEP9B_REQUIRED_CANDIDATE_PARAMETER_FIELDS})
+        return normalized
+
+    normalized_rows = [
+        normalized_anchor("existing_lower_anchor", "anchor_lower"),
+        *normalized_interiors,
+        normalized_anchor("existing_upper_anchor", "anchor_upper"),
+    ]
+    result["local_scale_coordinate_values"] = [row["scale_coordinate_value"] for row in normalized_rows]
+    result["local_scale_coordinate_count"] = len(normalized_rows)
+    result["local_coordinate_plan"] = normalized_rows
+    result["local_candidate_count"] = len(normalized_interiors)
+    result["explicit_candidate_table_schema_status"] = "valid"
+    result["step9b_telephone_book_anchor_roles_enforced"] = True
+    result["endpoint_anchors_reused_by_reference"] = True
+    result["endpoint_anchors_require_step9b_execution"] = False
+    result["interior_candidates_require_step9b_execution"] = True
+    result["step9b_no_extrapolation_beyond_interval"] = True
+    result["step9b_status"] = "step9b_ready_explicit_candidate_table"
+    result["step9b_status_reason"] = "Step-9a endpoint anchors and explicit Step-9b interior candidates are valid"
+    return result
+
+
 def run_step9b_local_transition_refinement_preflight(
     output_dir: str | Path,
     source_step9a_directory: str | Path,
     step9a_gate_metadata: dict[str, Any],
     local_scale_coordinate_values: list[Any] | tuple[Any, ...] | None,
+    explicit_candidate_table: list[dict[str, Any]] | tuple[dict[str, Any], ...] | str | Path | None = None,
 ) -> dict[str, Any]:
-    result = validate_step9b_local_transition_refinement(
+    result = validate_step9b_explicit_candidate_table(
         step9a_gate_metadata,
-        local_scale_coordinate_values,
+        explicit_candidate_table,
         source_step9a_directory,
     )
-    if result["step9b_status"] == "step9b_ready_adjacent_interval":
-        result["step9b_status"] = "step9b_blocked_parameter_construction_unavailable"
-        result["step9b_status_reason"] = (
-            "The current module has no deterministic explicit scale-coordinate mapping to all required "
-            "segmentation and perturbation parameters"
-        )
 
     step9b_dir = local_transition_refinement_output_dir(output_dir)
+    if result["step9b_status"] == "step9b_ready_explicit_candidate_table":
+        _write_csv(step9b_dir / STEP9B_OUTPUT_FILENAMES["local_candidates"], result["local_coordinate_plan"])
     _write_json(step9b_dir / STEP9B_OUTPUT_FILENAMES["preflight"], result)
     return result
 
