@@ -47,6 +47,13 @@ OUTPUT_FILENAMES = {
     "failed": "failed_runs.json",
 }
 
+SCALE_COORDINATE_FIELDS = (
+    "source_candidate_radius_m",
+    "source_spatial_radius",
+    "run_spatial_radius_m",
+    "run_spatial_radius",
+)
+
 
 @dataclass
 class Level1BCandidateResponseSurfaceConfig:
@@ -815,6 +822,213 @@ def analyze_full_candidate_space(group_summaries: list[dict[str, Any]], run_summ
     }
 
 
+def compute_top_pair_scale_continuity_and_boundary_gate(
+    run_summaries: list[dict[str, Any]],
+    ranked_summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    group_ids = [str(item.get("candidate_scale_group_id", "")) for item in ranked_summaries if str(item.get("candidate_scale_group_id", ""))]
+    if len(group_ids) < 2:
+        return {
+            "selected_scale_coordinate_name": None,
+            "usable_scale_coordinate_fields": [],
+            "scale_coordinate_order_agreement": None,
+            "scale_coordinate_value_by_group": {},
+            "scale_ladder_rank_by_group": {},
+            "scale_ladder": [],
+            "top_pair_scale_continuity_status": "cannot_determine_missing_top_pair",
+            "top_pair_is_scale_adjacent": False,
+            "top_pair_rank1_candidate_scale_group_id": group_ids[0] if group_ids else None,
+            "top_pair_rank2_candidate_scale_group_id": group_ids[1] if len(group_ids) > 1 else None,
+            "top_pair_lower_scale_candidate_group_id": None,
+            "top_pair_upper_scale_candidate_group_id": None,
+            "top_pair_scale_coordinate_name": None,
+            "top_pair_lower_scale_coordinate_value": None,
+            "top_pair_upper_scale_coordinate_value": None,
+            "top_pair_intervening_candidate_scale_group_ids": [],
+            "top_pair_rank1_at_scale_boundary": False,
+            "top_pair_rank1_boundary_side": "cannot_determine",
+            "top_pair_rank1_upper_extrapolation_not_tested": False,
+            "top_pair_boundary_constrained": False,
+        }
+
+    group_order = []
+    seen_groups = set()
+    for item in ranked_summaries:
+        group_id = str(item.get("candidate_scale_group_id", ""))
+        if group_id and group_id not in seen_groups:
+            group_order.append(group_id)
+            seen_groups.add(group_id)
+
+    def scale_coordinate_values(field_name: str) -> dict[str, float] | None:
+        values_by_group: dict[str, float] = {}
+        for row in run_summaries:
+            group_id = str(row.get("candidate_scale_group_id", ""))
+            if not group_id:
+                return None
+            try:
+                value = float(row.get(field_name))
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(value):
+                return None
+            existing = values_by_group.get(group_id)
+            if existing is None:
+                values_by_group[group_id] = value
+            elif not math.isclose(existing, value, rel_tol=0.0, abs_tol=1e-12):
+                return None
+        if set(values_by_group) != set(group_order):
+            return None
+        if len(set(values_by_group.values())) != len(values_by_group):
+            return None
+        return values_by_group
+
+    usable_fields: list[dict[str, Any]] = []
+    for field_name in SCALE_COORDINATE_FIELDS:
+        values_by_group = scale_coordinate_values(field_name)
+        if values_by_group is None:
+            continue
+        ordered_groups = [group_id for group_id, _ in sorted(values_by_group.items(), key=lambda item: item[1])]
+        usable_fields.append(
+            {
+                "name": field_name,
+                "value_by_group": values_by_group,
+                "ordered_groups": ordered_groups,
+            }
+        )
+
+    if not usable_fields:
+        return {
+            "selected_scale_coordinate_name": None,
+            "usable_scale_coordinate_fields": [],
+            "scale_coordinate_order_agreement": None,
+            "scale_coordinate_value_by_group": {},
+            "scale_ladder_rank_by_group": {},
+            "scale_ladder": [],
+            "top_pair_scale_continuity_status": "cannot_determine_no_explicit_scale_coordinate",
+            "top_pair_is_scale_adjacent": False,
+            "top_pair_rank1_candidate_scale_group_id": group_order[0],
+            "top_pair_rank2_candidate_scale_group_id": group_order[1],
+            "top_pair_lower_scale_candidate_group_id": None,
+            "top_pair_upper_scale_candidate_group_id": None,
+            "top_pair_scale_coordinate_name": None,
+            "top_pair_lower_scale_coordinate_value": None,
+            "top_pair_upper_scale_coordinate_value": None,
+            "top_pair_intervening_candidate_scale_group_ids": [],
+            "top_pair_rank1_at_scale_boundary": False,
+            "top_pair_rank1_boundary_side": "cannot_determine",
+            "top_pair_rank1_upper_extrapolation_not_tested": False,
+            "top_pair_boundary_constrained": False,
+        }
+
+    selected_field = usable_fields[0]
+    order_agreement = all(item["ordered_groups"] == selected_field["ordered_groups"] for item in usable_fields[1:])
+    if not order_agreement:
+        return {
+            "selected_scale_coordinate_name": None,
+            "usable_scale_coordinate_fields": [item["name"] for item in usable_fields],
+            "scale_coordinate_order_agreement": False,
+            "scale_coordinate_value_by_group": {},
+            "scale_ladder_rank_by_group": {},
+            "scale_ladder": [],
+            "top_pair_scale_continuity_status": "cannot_determine_scale_order_disagreement",
+            "top_pair_is_scale_adjacent": False,
+            "top_pair_rank1_candidate_scale_group_id": group_order[0],
+            "top_pair_rank2_candidate_scale_group_id": group_order[1],
+            "top_pair_lower_scale_candidate_group_id": None,
+            "top_pair_upper_scale_candidate_group_id": None,
+            "top_pair_scale_coordinate_name": None,
+            "top_pair_lower_scale_coordinate_value": None,
+            "top_pair_upper_scale_coordinate_value": None,
+            "top_pair_intervening_candidate_scale_group_ids": [],
+            "top_pair_rank1_at_scale_boundary": False,
+            "top_pair_rank1_boundary_side": "cannot_determine",
+            "top_pair_rank1_upper_extrapolation_not_tested": False,
+            "top_pair_boundary_constrained": False,
+        }
+
+    scale_ladder = [
+        {
+            "scale_ladder_rank": index + 1,
+            "candidate_scale_group_id": group_id,
+            "scale_coordinate_name": selected_field["name"],
+            "scale_coordinate_value": selected_field["value_by_group"][group_id],
+        }
+        for index, group_id in enumerate(selected_field["ordered_groups"])
+    ]
+    ladder_rank_by_group = {item["candidate_scale_group_id"]: item["scale_ladder_rank"] for item in scale_ladder}
+    value_by_group = {item["candidate_scale_group_id"]: item["scale_coordinate_value"] for item in scale_ladder}
+
+    rank1_group = group_order[0]
+    rank2_group = group_order[1]
+    rank1_pos = ladder_rank_by_group.get(rank1_group)
+    rank2_pos = ladder_rank_by_group.get(rank2_group)
+    if rank1_pos is None or rank2_pos is None:
+        return {
+            "selected_scale_coordinate_name": selected_field["name"],
+            "usable_scale_coordinate_fields": [item["name"] for item in usable_fields],
+            "scale_coordinate_order_agreement": True,
+            "scale_coordinate_value_by_group": value_by_group,
+            "scale_ladder_rank_by_group": ladder_rank_by_group,
+            "scale_ladder": scale_ladder,
+            "top_pair_scale_continuity_status": "cannot_determine_missing_top_pair",
+            "top_pair_is_scale_adjacent": False,
+            "top_pair_rank1_candidate_scale_group_id": rank1_group,
+            "top_pair_rank2_candidate_scale_group_id": rank2_group,
+            "top_pair_lower_scale_candidate_group_id": None,
+            "top_pair_upper_scale_candidate_group_id": None,
+            "top_pair_scale_coordinate_name": selected_field["name"],
+            "top_pair_lower_scale_coordinate_value": None,
+            "top_pair_upper_scale_coordinate_value": None,
+            "top_pair_intervening_candidate_scale_group_ids": [],
+            "top_pair_rank1_at_scale_boundary": False,
+            "top_pair_rank1_boundary_side": "cannot_determine",
+            "top_pair_rank1_upper_extrapolation_not_tested": False,
+            "top_pair_boundary_constrained": False,
+        }
+
+    lower_pos = min(rank1_pos, rank2_pos)
+    upper_pos = max(rank1_pos, rank2_pos)
+    lower_group = scale_ladder[lower_pos - 1]["candidate_scale_group_id"]
+    upper_group = scale_ladder[upper_pos - 1]["candidate_scale_group_id"]
+    intervening = [item["candidate_scale_group_id"] for item in scale_ladder[lower_pos:upper_pos - 1]]
+    is_adjacent = abs(rank1_pos - rank2_pos) == 1
+    status = (
+        "adjacent_top_pair_confirmed"
+        if is_adjacent
+        else "non_adjacent_top_pair_possible_bimodal_or_multimodal"
+    )
+    rank1_at_lower_boundary = rank1_pos == 1
+    rank1_at_upper_boundary = rank1_pos == len(scale_ladder)
+    if rank1_at_lower_boundary:
+        boundary_side = "lower"
+    elif rank1_at_upper_boundary:
+        boundary_side = "upper"
+    else:
+        boundary_side = "none"
+    return {
+        "selected_scale_coordinate_name": selected_field["name"],
+        "usable_scale_coordinate_fields": [item["name"] for item in usable_fields],
+        "scale_coordinate_order_agreement": True,
+        "scale_coordinate_value_by_group": value_by_group,
+        "scale_ladder_rank_by_group": ladder_rank_by_group,
+        "scale_ladder": scale_ladder,
+        "top_pair_scale_continuity_status": status,
+        "top_pair_is_scale_adjacent": is_adjacent,
+        "top_pair_rank1_candidate_scale_group_id": rank1_group,
+        "top_pair_rank2_candidate_scale_group_id": rank2_group,
+        "top_pair_lower_scale_candidate_group_id": lower_group,
+        "top_pair_upper_scale_candidate_group_id": upper_group,
+        "top_pair_scale_coordinate_name": selected_field["name"],
+        "top_pair_lower_scale_coordinate_value": value_by_group[lower_group],
+        "top_pair_upper_scale_coordinate_value": value_by_group[upper_group],
+        "top_pair_intervening_candidate_scale_group_ids": intervening,
+        "top_pair_rank1_at_scale_boundary": rank1_at_lower_boundary or rank1_at_upper_boundary,
+        "top_pair_rank1_boundary_side": boundary_side,
+        "top_pair_rank1_upper_extrapolation_not_tested": rank1_at_upper_boundary,
+        "top_pair_boundary_constrained": rank1_at_lower_boundary or rank1_at_upper_boundary,
+    }
+
+
 def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConfig) -> dict[str, Any]:
     started = time.time()
     out_dir = response_surface_output_dir(cfg.output_dir)
@@ -918,6 +1132,30 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
             str(item["candidate_scale_group_id"]),
         ),
     )
+    scale_gate = compute_top_pair_scale_continuity_and_boundary_gate(run_summaries, ranked)
+    if scale_gate["selected_scale_coordinate_name"] is not None:
+        selected_scale_coordinate_name = scale_gate["selected_scale_coordinate_name"]
+        scale_coordinate_value_by_group = scale_gate["scale_coordinate_value_by_group"]
+        scale_ladder_rank_by_group = scale_gate["scale_ladder_rank_by_group"]
+        for item in group_summaries:
+            group_id = str(item["candidate_scale_group_id"])
+            item["scale_coordinate_name"] = selected_scale_coordinate_name
+            item["scale_coordinate_value"] = scale_coordinate_value_by_group.get(group_id)
+            item["scale_ladder_rank"] = scale_ladder_rank_by_group.get(group_id)
+        for item in ranked:
+            group_id = str(item["candidate_scale_group_id"])
+            item["scale_coordinate_name"] = selected_scale_coordinate_name
+            item["scale_coordinate_value"] = scale_coordinate_value_by_group.get(group_id)
+            item["scale_ladder_rank"] = scale_ladder_rank_by_group.get(group_id)
+    else:
+        for item in group_summaries:
+            item["scale_coordinate_name"] = None
+            item["scale_coordinate_value"] = None
+            item["scale_ladder_rank"] = None
+        for item in ranked:
+            item["scale_coordinate_name"] = None
+            item["scale_coordinate_value"] = None
+            item["scale_ladder_rank"] = None
     accepted = [item for item in ranked if item.get("candidate_outcome") in ("stable_representative_candidate", "stable_candidate_mode", "stable_with_warnings")]
     removed = [item for item in ranked if item.get("candidate_outcome") not in ("stable_representative_candidate", "stable_candidate_mode", "stable_with_warnings")]
 
@@ -940,6 +1178,7 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
     report["valid_mask_path"] = str(valid_mask_path)
     report["invalid_support_excluded_from_q_statistics"] = True
     report["perturbation_statuses"] = segmentation_reports
+    report.update(scale_gate)
     _write_json(out_dir / OUTPUT_FILENAMES["report"], report)
     _write_json(out_dir / OUTPUT_FILENAMES["summary_json"], report)
     _write_csv(out_dir / OUTPUT_FILENAMES["summary_csv"], [report])

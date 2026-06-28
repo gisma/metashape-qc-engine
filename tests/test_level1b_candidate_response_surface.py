@@ -274,13 +274,36 @@ def test_19_required_outputs_are_written(tmp_path: Path, monkeypatch) -> None:
     for stem in ("candidate_group_response_summary", "ranked_candidate_scales"):
         summaries = json.loads((output_dir / f"{stem}.json").read_text(encoding="utf-8"))
         assert "stability_score_raw" in summaries[0]
+        assert "scale_coordinate_name" in summaries[0]
+        assert "scale_coordinate_value" in summaries[0]
+        assert "scale_ladder_rank" in summaries[0]
         with (output_dir / f"{stem}.csv").open(newline="", encoding="utf-8") as file_obj:
-            assert "stability_score_raw" in next(csv.DictReader(file_obj))
+            header = next(csv.DictReader(file_obj))
+            assert "stability_score_raw" in header
+            assert "scale_coordinate_name" in header
+            assert "scale_coordinate_value" in header
+            assert "scale_ladder_rank" in header
+    assert report["top_pair_scale_continuity_status"] == "cannot_determine_missing_top_pair"
+    assert report["top_pair_is_scale_adjacent"] is False
+    assert report["top_pair_rank1_boundary_side"] == "cannot_determine"
+    assert report["top_pair_rank1_upper_extrapolation_not_tested"] is False
+    assert report["top_pair_boundary_constrained"] is False
 
 
 def _one_run_candidates(path: Path) -> Path:
     path.write_text(json.dumps({"candidates": [{"perturbation_id": "run-a", "source_candidate_id": "cand-a", "scale_id": "scale-a", "radius_m": 1.0, "spatialr_px": 1, "minsize_px": 1, "ranger": 0.1}]}), encoding="utf-8")
     return path
+
+
+def _gate_run_rows(pairs: list[tuple[str, float]], field_name: str = "source_candidate_radius_m") -> list[dict[str, object]]:
+    return [{"candidate_scale_group_id": group_id, field_name: coordinate} for group_id, coordinate in pairs]
+
+
+def _gate_rank_rows(entries: list[tuple[str, float, float]]) -> list[dict[str, object]]:
+    return [
+        {"candidate_scale_group_id": group_id, "stability_score_raw": raw, "stability_score": clamped}
+        for group_id, raw, clamped in entries
+    ]
 
 
 def test_20_proxy_stack_is_default_and_mask_is_forwarded(tmp_path: Path, monkeypatch) -> None:
@@ -567,3 +590,141 @@ def test_33_zero_score_candidates_rank_by_raw_score_before_id(tmp_path: Path, mo
     )
 
     assert [item["candidate_scale_group_id"] for item in ranked] == ["zulu", "alpha"]
+
+
+def test_34_true_ranking_uses_clamped_score_before_candidate_id(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    labels = write_raster(tmp_path / "labels.tif", np.array([[1, 1], [2, 2]], dtype=np.uint32))
+    candidates = tmp_path / "candidates.json"
+    candidates.write_text(json.dumps({"candidates": [
+        {"perturbation_id": "run-alpha", "source_candidate_id": "candidate-alpha", "scale_id": "alpha", "radius_m": 1.0, "spatialr_px": 1, "minsize_px": 1, "ranger": 0.1},
+        {"perturbation_id": "run-zulu", "source_candidate_id": "candidate-zulu", "scale_id": "zulu", "radius_m": 1.0, "spatialr_px": 1, "minsize_px": 1, "ranger": 0.1},
+    ]}), encoding="utf-8")
+    clamped_scores = iter([0.1, 0.9])
+
+    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", lambda config: {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(labels)}})
+    monkeypatch.setattr(
+        rs,
+        "compute_candidate_group_response_summary",
+        lambda group_id, run_summaries, matrix_summaries, config: {
+            "candidate_scale_group_id": group_id,
+            "stability_score_raw": 0.0,
+            "stability_score": next(clamped_scores),
+            "candidate_outcome": "scale_jump_detected",
+            "medoid_run_id": "",
+        },
+    )
+
+    run_candidate_response_surface_step(
+        cfg(tmp_path, perturbation_candidates_json_path=candidates, feature_space_stack_path=feature, valid_mask_path=mask)
+    )
+    ranked = json.loads(
+        (rs.response_surface_output_dir(tmp_path / "out") / "ranked_candidate_scales.json").read_text(encoding="utf-8")
+    )
+
+    assert [item["candidate_scale_group_id"] for item in ranked] == ["zulu", "alpha"]
+
+
+def test_35_scale_continuity_confirms_adjacent_top_pair_and_opaque_ids_are_inert() -> None:
+    run_rows = _gate_run_rows(
+        [
+            ("candidate-100", 1.0),
+            ("candidate-020", 2.0),
+            ("candidate-300", 3.0),
+            ("candidate-040", 4.0),
+        ]
+    )
+    ranked_rows = _gate_rank_rows(
+        [
+            ("candidate-300", 0.9, 0.9),
+            ("candidate-020", 0.8, 0.8),
+            ("candidate-100", 0.7, 0.7),
+            ("candidate-040", 0.6, 0.6),
+        ]
+    )
+
+    gate = rs.compute_top_pair_scale_continuity_and_boundary_gate(run_rows, ranked_rows)
+
+    assert gate["top_pair_scale_continuity_status"] == "adjacent_top_pair_confirmed"
+    assert gate["top_pair_is_scale_adjacent"] is True
+    assert gate["top_pair_rank1_candidate_scale_group_id"] == "candidate-300"
+    assert gate["top_pair_rank2_candidate_scale_group_id"] == "candidate-020"
+    assert gate["top_pair_lower_scale_candidate_group_id"] == "candidate-020"
+    assert gate["top_pair_upper_scale_candidate_group_id"] == "candidate-300"
+    assert gate["top_pair_intervening_candidate_scale_group_ids"] == []
+    assert gate["top_pair_rank1_at_scale_boundary"] is False
+    assert gate["top_pair_rank1_boundary_side"] == "none"
+    assert gate["top_pair_rank1_upper_extrapolation_not_tested"] is False
+    assert gate["top_pair_boundary_constrained"] is False
+    assert gate["selected_scale_coordinate_name"] == "source_candidate_radius_m"
+    assert [item["candidate_scale_group_id"] for item in gate["scale_ladder"]] == [
+        "candidate-100",
+        "candidate-020",
+        "candidate-300",
+        "candidate-040",
+    ]
+
+
+def test_36_scale_continuity_reports_non_adjacent_top_pair_and_intervening_ids() -> None:
+    run_rows = _gate_run_rows([("alpha", 1.0), ("beta", 2.0), ("gamma", 3.0), ("delta", 4.0)])
+    ranked_rows = _gate_rank_rows(
+        [
+            ("gamma", 0.9, 0.9),
+            ("alpha", 0.8, 0.8),
+            ("beta", 0.7, 0.7),
+            ("delta", 0.6, 0.6),
+        ]
+    )
+
+    gate = rs.compute_top_pair_scale_continuity_and_boundary_gate(run_rows, ranked_rows)
+
+    assert gate["top_pair_scale_continuity_status"] == "non_adjacent_top_pair_possible_bimodal_or_multimodal"
+    assert gate["top_pair_is_scale_adjacent"] is False
+    assert gate["top_pair_rank1_candidate_scale_group_id"] == "gamma"
+    assert gate["top_pair_rank2_candidate_scale_group_id"] == "alpha"
+    assert gate["top_pair_lower_scale_candidate_group_id"] == "alpha"
+    assert gate["top_pair_upper_scale_candidate_group_id"] == "gamma"
+    assert gate["top_pair_intervening_candidate_scale_group_ids"] == ["beta"]
+
+
+def test_37_scale_continuity_reports_missing_explicit_coordinate() -> None:
+    run_rows = [{"candidate_scale_group_id": "alpha"}, {"candidate_scale_group_id": "beta"}]
+    ranked_rows = _gate_rank_rows([("beta", 0.9, 0.9), ("alpha", 0.8, 0.8)])
+
+    gate = rs.compute_top_pair_scale_continuity_and_boundary_gate(run_rows, ranked_rows)
+
+    assert gate["top_pair_scale_continuity_status"] == "cannot_determine_no_explicit_scale_coordinate"
+    assert gate["top_pair_is_scale_adjacent"] is False
+    assert gate["top_pair_rank1_boundary_side"] == "cannot_determine"
+    assert gate["top_pair_rank1_at_scale_boundary"] is False
+    assert gate["top_pair_boundary_constrained"] is False
+    assert gate["selected_scale_coordinate_name"] is None
+
+
+def test_38_duplicate_explicit_scale_coordinates_do_not_form_a_valid_scale_ladder() -> None:
+    run_rows = _gate_run_rows([("alpha", 1.0), ("omega", 1.0), ("beta", 2.0)])
+    ranked_rows = _gate_rank_rows([("beta", 0.9, 0.9), ("omega", 0.8, 0.8), ("alpha", 0.7, 0.7)])
+
+    gate = rs.compute_top_pair_scale_continuity_and_boundary_gate(run_rows, ranked_rows)
+
+    assert gate["top_pair_scale_continuity_status"] == "cannot_determine_no_explicit_scale_coordinate"
+    assert gate["top_pair_is_scale_adjacent"] is False
+    assert gate["selected_scale_coordinate_name"] is None
+    assert gate["scale_ladder"] == []
+
+
+def test_39_rank1_upper_boundary_is_reported_without_extending_the_ladder() -> None:
+    run_rows = _gate_run_rows([("alpha", 1.0), ("beta", 2.0), ("gamma", 3.0)])
+    ranked_rows = _gate_rank_rows([("gamma", 0.9, 0.9), ("beta", 0.8, 0.8), ("alpha", 0.7, 0.7)])
+
+    gate = rs.compute_top_pair_scale_continuity_and_boundary_gate(run_rows, ranked_rows)
+
+    assert gate["top_pair_scale_continuity_status"] == "adjacent_top_pair_confirmed"
+    assert gate["top_pair_is_scale_adjacent"] is True
+    assert gate["top_pair_rank1_at_scale_boundary"] is True
+    assert gate["top_pair_rank1_boundary_side"] == "upper"
+    assert gate["top_pair_rank1_upper_extrapolation_not_tested"] is True
+    assert gate["top_pair_boundary_constrained"] is True
+    assert gate["top_pair_lower_scale_candidate_group_id"] == "beta"
+    assert gate["top_pair_upper_scale_candidate_group_id"] == "gamma"
