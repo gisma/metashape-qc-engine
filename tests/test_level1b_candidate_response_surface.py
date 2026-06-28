@@ -306,6 +306,27 @@ def _gate_rank_rows(entries: list[tuple[str, float, float]]) -> list[dict[str, o
     ]
 
 
+def _step9b_adjacent_gate(**overrides) -> dict[str, object]:
+    gate = {
+        "top_pair_scale_continuity_status": "adjacent_top_pair_confirmed",
+        "top_pair_is_scale_adjacent": True,
+        "top_pair_rank1_candidate_scale_group_id": "r999px001",
+        "top_pair_rank2_candidate_scale_group_id": "r001px999",
+        "top_pair_lower_scale_candidate_group_id": "r999px001",
+        "top_pair_upper_scale_candidate_group_id": "r001px999",
+        "top_pair_scale_coordinate_name": "source_candidate_radius_m",
+        "top_pair_lower_scale_coordinate_value": 1.0,
+        "top_pair_upper_scale_coordinate_value": 2.0,
+        "top_pair_intervening_candidate_scale_group_ids": [],
+        "top_pair_rank1_at_scale_boundary": False,
+        "top_pair_rank1_boundary_side": "none",
+        "top_pair_rank1_upper_extrapolation_not_tested": False,
+        "top_pair_boundary_constrained": False,
+    }
+    gate.update(overrides)
+    return gate
+
+
 def test_20_proxy_stack_is_default_and_mask_is_forwarded(tmp_path: Path, monkeypatch) -> None:
     output = tmp_path / "out"
     proxy = write_raster(output / "level1b" / "channels" / "proxy_stack.tif", np.ones((2, 2), dtype=np.uint8))
@@ -728,3 +749,170 @@ def test_39_rank1_upper_boundary_is_reported_without_extending_the_ladder() -> N
     assert gate["top_pair_boundary_constrained"] is True
     assert gate["top_pair_lower_scale_candidate_group_id"] == "beta"
     assert gate["top_pair_upper_scale_candidate_group_id"] == "gamma"
+
+
+def test_40_step9b_blocks_non_adjacent_top_pair() -> None:
+    gate = _step9b_adjacent_gate(
+        top_pair_scale_continuity_status="non_adjacent_top_pair_possible_bimodal_or_multimodal",
+        top_pair_is_scale_adjacent=False,
+        top_pair_intervening_candidate_scale_group_ids=["middle"],
+    )
+
+    result = rs.validate_step9b_local_transition_refinement(gate, [1.0, 1.5, 2.0], "/step9a")
+
+    assert result["step9b_status"] == "step9b_blocked_non_adjacent_top_pair"
+    assert result["local_coordinate_plan"] == []
+    assert result["local_candidate_count"] == 0
+
+
+def test_41_step9b_blocks_cannot_determine_scale_continuity() -> None:
+    for status in (
+        "cannot_determine_no_explicit_scale_coordinate",
+        "cannot_determine_scale_order_disagreement",
+        "cannot_determine_missing_top_pair",
+    ):
+        gate = _step9b_adjacent_gate(top_pair_scale_continuity_status=status, top_pair_is_scale_adjacent=False)
+
+        result = rs.validate_step9b_local_transition_refinement(gate, [1.0, 1.5, 2.0], "/step9a")
+
+        assert result["step9b_status"] == "step9b_blocked_cannot_determine_scale_continuity"
+        assert result["local_coordinate_plan"] == []
+
+
+def test_42_step9b_blocks_missing_top_pair_metadata() -> None:
+    for field in (
+        "top_pair_rank1_candidate_scale_group_id",
+        "top_pair_rank2_candidate_scale_group_id",
+        "top_pair_lower_scale_candidate_group_id",
+        "top_pair_upper_scale_candidate_group_id",
+        "top_pair_scale_coordinate_name",
+    ):
+        gate = _step9b_adjacent_gate()
+        del gate[field]
+
+        result = rs.validate_step9b_local_transition_refinement(gate, [1.0, 1.5, 2.0], "/step9a")
+
+        assert result["step9b_status"] == "step9b_blocked_missing_top_pair_metadata"
+        assert result["local_coordinate_plan"] == []
+
+
+def test_43_step9b_blocks_invalid_interval_bounds() -> None:
+    for lower, upper in ((2.0, 1.0), (1.0, 1.0), ("invalid", 2.0)):
+        gate = _step9b_adjacent_gate(
+            top_pair_lower_scale_coordinate_value=lower,
+            top_pair_upper_scale_coordinate_value=upper,
+        )
+
+        result = rs.validate_step9b_local_transition_refinement(gate, [1.0, 1.5, 2.0], "/step9a")
+
+        assert result["step9b_status"] == "step9b_blocked_invalid_interval_bounds"
+        assert result["local_coordinate_plan"] == []
+
+
+def test_44_step9b_blocks_missing_explicit_local_scale_coordinates() -> None:
+    for local_values in (None, []):
+        result = rs.validate_step9b_local_transition_refinement(_step9b_adjacent_gate(), local_values, "/step9a")
+
+        assert result["step9b_status"] == "step9b_blocked_missing_explicit_local_scale_coordinates"
+        assert result["local_coordinate_plan"] == []
+
+
+def test_45_step9b_blocks_coordinates_outside_confirmed_interval() -> None:
+    below = rs.validate_step9b_local_transition_refinement(_step9b_adjacent_gate(), [0.9, 1.0, 2.0], "/step9a")
+    above = rs.validate_step9b_local_transition_refinement(_step9b_adjacent_gate(), [1.0, 2.0, 2.1], "/step9a")
+
+    assert below["step9b_status"] == "step9b_blocked_local_coordinate_outside_interval"
+    assert above["step9b_status"] == "step9b_blocked_local_coordinate_outside_interval"
+    assert below["step9b_no_extrapolation_beyond_interval"] is False
+    assert above["step9b_no_extrapolation_beyond_interval"] is False
+
+
+def test_46_step9b_blocks_duplicate_local_coordinates() -> None:
+    result = rs.validate_step9b_local_transition_refinement(
+        _step9b_adjacent_gate(),
+        [1.0, 1.5, 1.5, 2.0],
+        "/step9a",
+    )
+
+    assert result["step9b_status"] == "step9b_blocked_local_coordinate_duplicate"
+    assert result["local_coordinate_plan"] == []
+
+
+def test_47_step9b_blocks_non_strict_local_coordinate_ordering() -> None:
+    result = rs.validate_step9b_local_transition_refinement(
+        _step9b_adjacent_gate(),
+        [1.0, 1.75, 1.5, 2.0],
+        "/step9a",
+    )
+
+    assert result["step9b_status"] == "step9b_blocked_local_coordinate_not_strictly_ordered"
+    assert result["local_coordinate_plan"] == []
+
+
+def test_48_step9b_accepts_ordered_explicit_coordinates_and_keeps_ids_opaque() -> None:
+    gate = _step9b_adjacent_gate(
+        top_pair_rank1_candidate_scale_group_id="scale-00000099",
+        top_pair_rank2_candidate_scale_group_id="scale-99999900",
+        top_pair_lower_scale_candidate_group_id="scale-00000099",
+        top_pair_upper_scale_candidate_group_id="scale-99999900",
+    )
+
+    result = rs.validate_step9b_local_transition_refinement(gate, [1.0, 1.25, 1.75, 2.0], "/step9a")
+
+    assert result["step9b_status"] == "step9b_ready_adjacent_interval"
+    assert result["local_scale_coordinate_values"] == [1.0, 1.25, 1.75, 2.0]
+    assert result["local_scale_coordinate_count"] == 4
+    assert result["step9b_no_extrapolation_beyond_interval"] is True
+    assert [row["step9b_local_candidate_id"] for row in result["local_coordinate_plan"]] == [
+        "local_000",
+        "local_001",
+        "local_002",
+        "local_003",
+    ]
+    assert [row["scale_coordinate_value"] for row in result["local_coordinate_plan"]] == [1.0, 1.25, 1.75, 2.0]
+    assert result["local_coordinate_plan"][0]["source_step9a_lower_candidate_scale_group_id"] == "scale-00000099"
+    assert result["local_coordinate_plan"][-1]["source_step9a_upper_candidate_scale_group_id"] == "scale-99999900"
+
+
+def test_49_step9b_propagates_upper_boundary_and_blocks_unavailable_parameter_construction(tmp_path: Path) -> None:
+    gate = _step9b_adjacent_gate(
+        top_pair_rank1_at_scale_boundary=True,
+        top_pair_rank1_boundary_side="upper",
+        top_pair_rank1_upper_extrapolation_not_tested=True,
+        top_pair_boundary_constrained=True,
+    )
+
+    result = rs.run_step9b_local_transition_refinement_preflight(
+        tmp_path / "out",
+        "/step9a/candidate_response_surface",
+        gate,
+        [1.0, 1.5, 2.0],
+    )
+
+    step9b_dir = rs.local_transition_refinement_output_dir(tmp_path / "out")
+    assert result["step9b_status"] == "step9b_blocked_parameter_construction_unavailable"
+    assert result["top_pair_rank1_boundary_side"] == "upper"
+    assert result["top_pair_rank1_upper_extrapolation_not_tested"] is True
+    assert result["top_pair_boundary_constrained"] is True
+    assert result["step9b_no_extrapolation_beyond_interval"] is True
+    assert max(row["scale_coordinate_value"] for row in result["local_coordinate_plan"]) == 2.0
+    assert result["local_candidate_count"] == 0
+    assert all(
+        not {"radius_m", "spatialr_px", "minsize_px", "ranger"}.intersection(row)
+        for row in result["local_coordinate_plan"]
+    )
+    assert (step9b_dir / "step9b_interval_preflight.json").exists()
+    assert not (step9b_dir / "step9b_local_candidate_table.csv").exists()
+    assert not (step9b_dir / "step9b_local_response_surface.csv").exists()
+    assert not (step9b_dir / "step9b_local_response_surface.json").exists()
+
+
+def test_50_step9b_requires_both_confirmed_interval_endpoints() -> None:
+    result = rs.validate_step9b_local_transition_refinement(
+        _step9b_adjacent_gate(),
+        [1.25, 1.5, 2.0],
+        "/step9a",
+    )
+
+    assert result["step9b_status"] == "step9b_blocked_missing_explicit_local_scale_coordinates"
+    assert result["local_coordinate_plan"] == []

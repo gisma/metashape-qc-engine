@@ -54,6 +54,30 @@ SCALE_COORDINATE_FIELDS = (
     "run_spatial_radius",
 )
 
+STEP9B_OUTPUT_FILENAMES = {
+    "preflight": "step9b_interval_preflight.json",
+    "local_candidates": "step9b_local_candidate_table.csv",
+    "response_csv": "step9b_local_response_surface.csv",
+    "response_json": "step9b_local_response_surface.json",
+}
+
+STEP9B_GATE_METADATA_FIELDS = (
+    "top_pair_scale_continuity_status",
+    "top_pair_is_scale_adjacent",
+    "top_pair_rank1_candidate_scale_group_id",
+    "top_pair_rank2_candidate_scale_group_id",
+    "top_pair_lower_scale_candidate_group_id",
+    "top_pair_upper_scale_candidate_group_id",
+    "top_pair_scale_coordinate_name",
+    "top_pair_lower_scale_coordinate_value",
+    "top_pair_upper_scale_coordinate_value",
+    "top_pair_intervening_candidate_scale_group_ids",
+    "top_pair_rank1_at_scale_boundary",
+    "top_pair_rank1_boundary_side",
+    "top_pair_rank1_upper_extrapolation_not_tested",
+    "top_pair_boundary_constrained",
+)
+
 
 @dataclass
 class Level1BCandidateResponseSurfaceConfig:
@@ -99,6 +123,10 @@ class Level1BCandidateResponseSurfaceConfig:
 
 def response_surface_output_dir(output_dir: str | Path) -> Path:
     return Path(output_dir) / "level1b" / "candidate_response_surface"
+
+
+def local_transition_refinement_output_dir(output_dir: str | Path) -> Path:
+    return Path(output_dir) / "level1b" / "local_transition_refinement"
 
 
 def resolve_segmentation_stack(cfg: Level1BCandidateResponseSurfaceConfig) -> tuple[Path, str]:
@@ -1027,6 +1055,170 @@ def compute_top_pair_scale_continuity_and_boundary_gate(
         "top_pair_rank1_upper_extrapolation_not_tested": rank1_at_upper_boundary,
         "top_pair_boundary_constrained": rank1_at_lower_boundary or rank1_at_upper_boundary,
     }
+
+
+def validate_step9b_local_transition_refinement(
+    step9a_gate_metadata: dict[str, Any],
+    local_scale_coordinate_values: list[Any] | tuple[Any, ...] | None,
+    source_step9a_directory: str | Path,
+) -> dict[str, Any]:
+    result = {
+        "step9b_status": None,
+        "step9b_status_reason": None,
+        "step9b_interval_id": None,
+        "source_step9a_directory": str(source_step9a_directory),
+        **{field: step9a_gate_metadata.get(field) for field in STEP9B_GATE_METADATA_FIELDS},
+        "local_scale_coordinate_values": list(local_scale_coordinate_values) if isinstance(local_scale_coordinate_values, (list, tuple)) else None,
+        "local_scale_coordinate_count": len(local_scale_coordinate_values) if isinstance(local_scale_coordinate_values, (list, tuple)) else 0,
+        "local_candidate_count": 0,
+        "local_coordinate_plan": [],
+        "step9b_no_extrapolation_beyond_interval": False,
+    }
+
+    def blocked(status: str, reason: str) -> dict[str, Any]:
+        result["step9b_status"] = status
+        result["step9b_status_reason"] = reason
+        return result
+
+    continuity_status = step9a_gate_metadata.get("top_pair_scale_continuity_status")
+    if continuity_status == "non_adjacent_top_pair_possible_bimodal_or_multimodal":
+        return blocked(
+            "step9b_blocked_non_adjacent_top_pair",
+            "Step-9a top pair is not adjacent in the explicit scale ladder",
+        )
+    if continuity_status in {
+        "cannot_determine_no_explicit_scale_coordinate",
+        "cannot_determine_scale_order_disagreement",
+        "cannot_determine_missing_top_pair",
+    }:
+        return blocked(
+            "step9b_blocked_cannot_determine_scale_continuity",
+            f"Step-9a scale continuity status is {continuity_status}",
+        )
+
+    required_text_fields = (
+        "top_pair_rank1_candidate_scale_group_id",
+        "top_pair_rank2_candidate_scale_group_id",
+        "top_pair_lower_scale_candidate_group_id",
+        "top_pair_upper_scale_candidate_group_id",
+        "top_pair_scale_coordinate_name",
+    )
+    if (
+        continuity_status != "adjacent_top_pair_confirmed"
+        or step9a_gate_metadata.get("top_pair_is_scale_adjacent") is not True
+        or any(not str(step9a_gate_metadata.get(field, "")).strip() for field in required_text_fields)
+        or "top_pair_lower_scale_coordinate_value" not in step9a_gate_metadata
+        or "top_pair_upper_scale_coordinate_value" not in step9a_gate_metadata
+    ):
+        return blocked(
+            "step9b_blocked_missing_top_pair_metadata",
+            "Step-9a adjacent top-pair status, adjacency flag, endpoint IDs, coordinate name, or interval bounds are missing",
+        )
+
+    try:
+        lower_value = float(step9a_gate_metadata["top_pair_lower_scale_coordinate_value"])
+        upper_value = float(step9a_gate_metadata["top_pair_upper_scale_coordinate_value"])
+    except (TypeError, ValueError):
+        return blocked(
+            "step9b_blocked_invalid_interval_bounds",
+            "Step-9a lower and upper scale-coordinate bounds must be numeric",
+        )
+    if not math.isfinite(lower_value) or not math.isfinite(upper_value) or lower_value >= upper_value:
+        return blocked(
+            "step9b_blocked_invalid_interval_bounds",
+            "Step-9a scale-coordinate bounds must be finite and strictly increasing",
+        )
+
+    result["step9b_interval_id"] = "step9b_interval_000"
+    if not isinstance(local_scale_coordinate_values, (list, tuple)) or not local_scale_coordinate_values:
+        return blocked(
+            "step9b_blocked_missing_explicit_local_scale_coordinates",
+            "An explicit non-empty local scale-coordinate list is required",
+        )
+
+    local_values: list[float] = []
+    for value in local_scale_coordinate_values:
+        if isinstance(value, bool):
+            return blocked(
+                "step9b_blocked_local_coordinate_not_strictly_ordered",
+                "Every local scale coordinate must be a finite numeric value",
+            )
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            return blocked(
+                "step9b_blocked_local_coordinate_not_strictly_ordered",
+                "Every local scale coordinate must be a finite numeric value",
+            )
+        if not math.isfinite(numeric_value):
+            return blocked(
+                "step9b_blocked_local_coordinate_not_strictly_ordered",
+                "Every local scale coordinate must be a finite numeric value",
+            )
+        local_values.append(numeric_value)
+
+    result["local_scale_coordinate_values"] = local_values
+    if len(set(local_values)) != len(local_values):
+        return blocked(
+            "step9b_blocked_local_coordinate_duplicate",
+            "Explicit local scale coordinates must not contain duplicates",
+        )
+    if any(left >= right for left, right in zip(local_values, local_values[1:])):
+        return blocked(
+            "step9b_blocked_local_coordinate_not_strictly_ordered",
+            "Explicit local scale coordinates must be strictly increasing",
+        )
+    if any(value < lower_value or value > upper_value for value in local_values):
+        return blocked(
+            "step9b_blocked_local_coordinate_outside_interval",
+            "Every local scale coordinate must be inside the closed confirmed Step-9a interval",
+        )
+    if local_values[0] != lower_value or local_values[-1] != upper_value:
+        return blocked(
+            "step9b_blocked_missing_explicit_local_scale_coordinates",
+            "Explicit local scale coordinates must include both confirmed interval endpoints exactly",
+        )
+
+    result["step9b_no_extrapolation_beyond_interval"] = True
+    result["local_coordinate_plan"] = [
+        {
+            "step9b_local_candidate_id": f"local_{index:03d}",
+            "step9b_interval_id": result["step9b_interval_id"],
+            "source_step9a_rank1_candidate_scale_group_id": step9a_gate_metadata.get("top_pair_rank1_candidate_scale_group_id"),
+            "source_step9a_rank2_candidate_scale_group_id": step9a_gate_metadata.get("top_pair_rank2_candidate_scale_group_id"),
+            "source_step9a_lower_candidate_scale_group_id": step9a_gate_metadata["top_pair_lower_scale_candidate_group_id"],
+            "source_step9a_upper_candidate_scale_group_id": step9a_gate_metadata["top_pair_upper_scale_candidate_group_id"],
+            "scale_coordinate_name": step9a_gate_metadata["top_pair_scale_coordinate_name"],
+            "scale_coordinate_value": value,
+        }
+        for index, value in enumerate(local_values)
+    ]
+    result["step9b_status"] = "step9b_ready_adjacent_interval"
+    result["step9b_status_reason"] = "Adjacent Step-9a interval and explicit local scale coordinates are valid"
+    return result
+
+
+def run_step9b_local_transition_refinement_preflight(
+    output_dir: str | Path,
+    source_step9a_directory: str | Path,
+    step9a_gate_metadata: dict[str, Any],
+    local_scale_coordinate_values: list[Any] | tuple[Any, ...] | None,
+) -> dict[str, Any]:
+    result = validate_step9b_local_transition_refinement(
+        step9a_gate_metadata,
+        local_scale_coordinate_values,
+        source_step9a_directory,
+    )
+    if result["step9b_status"] == "step9b_ready_adjacent_interval":
+        result["step9b_status"] = "step9b_blocked_parameter_construction_unavailable"
+        result["step9b_status_reason"] = (
+            "The current module has no deterministic explicit scale-coordinate mapping to all required "
+            "segmentation and perturbation parameters"
+        )
+
+    step9b_dir = local_transition_refinement_output_dir(output_dir)
+    _write_json(step9b_dir / STEP9B_OUTPUT_FILENAMES["preflight"], result)
+    return result
 
 
 def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConfig) -> dict[str, Any]:
