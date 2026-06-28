@@ -779,6 +779,7 @@ def compute_candidate_group_response_summary(
         "compatible_combination_count": len(compatible),
         "incompatible_combination_count": max(0, len(run_summaries) - len(compatible)),
     }
+    summary["stability_score_raw"] = stability_score_raw(summary)
     summary["stability_score"] = stability_score(summary)
     summary["candidate_outcome"] = classify_candidate_outcome(summary)
     summary["decision_reasons"] = decision_reasons(summary)
@@ -909,7 +910,14 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
             group_summaries.append(compute_candidate_group_response_summary(group_id, group_run_summaries, group_matrix_summaries, cfg))
 
     space_summary = analyze_full_candidate_space(group_summaries, run_summaries)
-    ranked = sorted(group_summaries, key=lambda item: (-float(item.get("stability_score", 0.0)), str(item["candidate_scale_group_id"])))
+    ranked = sorted(
+        group_summaries,
+        key=lambda item: (
+            -float(item["stability_score_raw"]),
+            -float(item["stability_score"]),
+            str(item["candidate_scale_group_id"]),
+        ),
+    )
     accepted = [item for item in ranked if item.get("candidate_outcome") in ("stable_representative_candidate", "stable_candidate_mode", "stable_with_warnings")]
     removed = [item for item in ranked if item.get("candidate_outcome") not in ("stable_representative_candidate", "stable_candidate_mode", "stable_with_warnings")]
 
@@ -951,7 +959,7 @@ def dominant_tail_regime(summary: dict[str, Any]) -> str:
     return max(values, key=values.get)
 
 
-def stability_score(summary: dict[str, Any]) -> float:
+def stability_score_raw(summary: dict[str, Any]) -> float:
     score = 1.0
     score -= 0.35 * float(summary.get("edge_loaded_flag", False))
     score -= 0.35 * float(summary.get("scale_jump_flag", False))
@@ -959,7 +967,12 @@ def stability_score(summary: dict[str, Any]) -> float:
     score -= 0.2 * float(summary.get("spatial_scale_jump_flag", False))
     score += 0.5 * float(summary.get("central_area_share_mean", 0.0))
     score -= 0.1 * float(summary.get("response_spread_q", 0.0))
-    return max(0.0, min(1.0, score))
+    return score
+
+
+def stability_score(summary: dict[str, Any]) -> float:
+    raw_score = float(summary["stability_score_raw"]) if "stability_score_raw" in summary else stability_score_raw(summary)
+    return max(0.0, min(1.0, raw_score))
 
 
 def classify_candidate_outcome(summary: dict[str, Any]) -> str:

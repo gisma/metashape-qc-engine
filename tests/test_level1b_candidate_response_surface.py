@@ -254,6 +254,7 @@ def test_18_legacy_hoover_archive_remains_importable() -> None:
 
 def test_19_required_outputs_are_written(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
     labels = write_raster(tmp_path / "labels.tif", np.array([[1, 1], [2, 2]], dtype=np.uint32))
     candidate_path = tmp_path / "candidates.json"
     candidate_path.write_text(json.dumps({"candidates": [{"perturbation_id": "run-a", "source_candidate_id": "cand-a", "scale_id": "scale-a", "radius_m": 1.0, "spatialr_px": 1, "minsize_px": 1, "ranger": 0.1}]}), encoding="utf-8")
@@ -264,11 +265,17 @@ def test_19_required_outputs_are_written(tmp_path: Path, monkeypatch) -> None:
         lambda config: {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(labels)}},
     )
     report = run_candidate_response_surface_step(
-        cfg(tmp_path, perturbation_candidates_json_path=candidate_path, feature_space_stack_path=feature)
+        cfg(tmp_path, perturbation_candidates_json_path=candidate_path, feature_space_stack_path=feature, valid_mask_path=mask)
     )
 
     for path in report["required_outputs"].values():
         assert Path(path).exists()
+    output_dir = rs.response_surface_output_dir(tmp_path / "out")
+    for stem in ("candidate_group_response_summary", "ranked_candidate_scales"):
+        summaries = json.loads((output_dir / f"{stem}.json").read_text(encoding="utf-8"))
+        assert "stability_score_raw" in summaries[0]
+        with (output_dir / f"{stem}.csv").open(newline="", encoding="utf-8") as file_obj:
+            assert "stability_score_raw" in next(csv.DictReader(file_obj))
 
 
 def _one_run_candidates(path: Path) -> Path:
@@ -509,3 +516,54 @@ def test_31_resume_recomputes_when_stack_source_or_candidate_id_changes(tmp_path
             candidates.write_text(json.dumps(payload), encoding="utf-8")
 
         _run_and_assert_recomputed(config, paths, monkeypatch)
+
+
+def test_32_stability_score_raw_is_exposed_and_stability_score_remains_clamped() -> None:
+    group = compute_candidate_group_response_summary(
+        "scale-a",
+        [summary("run-a", [0.9, 0.1, 0.0, 0.0, 0.0], area_weighted_q_q10=0.0, area_weighted_q_q90=100.0)],
+        [],
+        cfg(),
+    )
+
+    assert group["stability_score_raw"] < 0.0
+    assert group["stability_score"] == 0.0
+    assert rs.stability_score(
+        {
+            "stability_score_raw": 1.5,
+        }
+    ) == 1.0
+
+
+def test_33_zero_score_candidates_rank_by_raw_score_before_id(tmp_path: Path, monkeypatch) -> None:
+    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    labels = write_raster(tmp_path / "labels.tif", np.array([[1, 1], [2, 2]], dtype=np.uint32))
+    candidates = tmp_path / "candidates.json"
+    candidates.write_text(json.dumps({"candidates": [
+        {"perturbation_id": "run-alpha", "source_candidate_id": "candidate-alpha", "scale_id": "alpha", "radius_m": 1.0, "spatialr_px": 1, "minsize_px": 1, "ranger": 0.1},
+        {"perturbation_id": "run-zulu", "source_candidate_id": "candidate-zulu", "scale_id": "zulu", "radius_m": 1.0, "spatialr_px": 1, "minsize_px": 1, "ranger": 0.1},
+    ]}), encoding="utf-8")
+    raw_scores = iter([-2.0, -1.0])
+
+    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", lambda config: {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(labels)}})
+    monkeypatch.setattr(
+        rs,
+        "compute_candidate_group_response_summary",
+        lambda group_id, run_summaries, matrix_summaries, config: {
+            "candidate_scale_group_id": group_id,
+            "stability_score_raw": next(raw_scores),
+            "stability_score": 0.0,
+            "candidate_outcome": "scale_jump_detected",
+            "medoid_run_id": "",
+        },
+    )
+
+    run_candidate_response_surface_step(
+        cfg(tmp_path, perturbation_candidates_json_path=candidates, feature_space_stack_path=feature, valid_mask_path=mask)
+    )
+    ranked = json.loads(
+        (rs.response_surface_output_dir(tmp_path / "out") / "ranked_candidate_scales.json").read_text(encoding="utf-8")
+    )
+
+    assert [item["candidate_scale_group_id"] for item in ranked] == ["zulu", "alpha"]
