@@ -4,7 +4,6 @@ from pathlib import Path
 import sys
 
 import numpy as np
-import pytest
 import rasterio
 from rasterio.transform import from_origin
 
@@ -29,11 +28,6 @@ from metashape_qc_engine.level1b_candidate_response_surface import (
     ordinal_cumulative_distribution_distance,
     run_candidate_response_surface_step,
     select_medoid_run,
-)
-
-
-OBSOLETE_RESUME_FULL_RASTER = pytest.mark.skip(
-    reason="obsolete resume fixture uses disabled full-raster label reads; Step-9 now requires windowed helpers"
 )
 
 
@@ -432,7 +426,6 @@ def _seed_complete_run(tmp_path: Path, feature: Path, mask: Path, candidates: Pa
     return config, paths
 
 
-@OBSOLETE_RESUME_FULL_RASTER
 def test_24_resume_skips_complete_perturbation(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
     mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
@@ -445,7 +438,6 @@ def test_24_resume_skips_complete_perturbation(tmp_path: Path, monkeypatch) -> N
     assert report["perturbation_statuses"][0]["status"] == "reused"
 
 
-@OBSOLETE_RESUME_FULL_RASTER
 def test_25_resume_recomputes_incomplete_perturbation(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
     mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
@@ -480,7 +472,6 @@ def _run_and_assert_recomputed(config, paths, monkeypatch) -> None:
     assert report["perturbation_statuses"][0]["status"] == "recomputed_incomplete"
 
 
-@OBSOLETE_RESUME_FULL_RASTER
 def test_26_resume_recomputes_when_segmentation_stack_path_changes(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
     replacement = write_raster(tmp_path / "replacement.tif", np.ones((2, 2), dtype=np.uint8))
@@ -492,7 +483,6 @@ def test_26_resume_recomputes_when_segmentation_stack_path_changes(tmp_path: Pat
     _run_and_assert_recomputed(config, paths, monkeypatch)
 
 
-@OBSOLETE_RESUME_FULL_RASTER
 def test_27_resume_recomputes_when_valid_mask_path_changes(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
     mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
@@ -504,7 +494,6 @@ def test_27_resume_recomputes_when_valid_mask_path_changes(tmp_path: Path, monke
     _run_and_assert_recomputed(config, paths, monkeypatch)
 
 
-@OBSOLETE_RESUME_FULL_RASTER
 def test_28_resume_recomputes_when_candidate_parameters_change(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
     mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
@@ -542,7 +531,6 @@ def test_29_resume_recomputes_intermediate_only_state(tmp_path: Path, monkeypatc
     assert report["perturbation_statuses"][0]["status"] == "recomputed_incomplete"
 
 
-@OBSOLETE_RESUME_FULL_RASTER
 def test_30_resume_recomputes_when_summary_csv_disagrees_with_json(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
     mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
@@ -556,7 +544,6 @@ def test_30_resume_recomputes_when_summary_csv_disagrees_with_json(tmp_path: Pat
     _run_and_assert_recomputed(config, paths, monkeypatch)
 
 
-@OBSOLETE_RESUME_FULL_RASTER
 def test_31_resume_recomputes_when_stack_source_or_candidate_id_changes(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
     mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
@@ -887,7 +874,7 @@ def test_48_step9b_accepts_ordered_explicit_coordinates_and_keeps_ids_opaque() -
     assert result["local_coordinate_plan"][-1]["source_step9a_upper_candidate_scale_group_id"] == "scale-99999900"
 
 
-def test_49_step9b_propagates_upper_boundary_and_requires_explicit_candidate_table(tmp_path: Path) -> None:
+def test_49_step9b_propagates_upper_boundary_and_blocks_unavailable_parameter_construction(tmp_path: Path) -> None:
     gate = _step9b_adjacent_gate(
         top_pair_rank1_at_scale_boundary=True,
         top_pair_rank1_boundary_side="upper",
@@ -903,12 +890,12 @@ def test_49_step9b_propagates_upper_boundary_and_requires_explicit_candidate_tab
     )
 
     step9b_dir = rs.local_transition_refinement_output_dir(tmp_path / "out")
-    assert result["step9b_status"] == "step9b_blocked_missing_explicit_candidate_table"
+    assert result["step9b_status"] == "step9b_blocked_parameter_construction_unavailable"
     assert result["top_pair_rank1_boundary_side"] == "upper"
     assert result["top_pair_rank1_upper_extrapolation_not_tested"] is True
     assert result["top_pair_boundary_constrained"] is True
-    assert result["step9b_no_extrapolation_beyond_interval"] is False
-    assert result["local_coordinate_plan"] == []
+    assert result["step9b_no_extrapolation_beyond_interval"] is True
+    assert max(row["scale_coordinate_value"] for row in result["local_coordinate_plan"]) == 2.0
     assert result["local_candidate_count"] == 0
     assert all(
         not {"radius_m", "spatialr_px", "minsize_px", "ranger"}.intersection(row)
@@ -929,288 +916,3 @@ def test_50_step9b_requires_both_confirmed_interval_endpoints() -> None:
 
     assert result["step9b_status"] == "step9b_blocked_missing_explicit_local_scale_coordinates"
     assert result["local_coordinate_plan"] == []
-
-
-def _step9b_explicit_candidate_table() -> list[dict[str, object]]:
-    return [
-        {
-            "step9b_row_role": "existing_upper_anchor",
-            "source_step9a_candidate_scale_group_id": "r001px999",
-            "scale_coordinate_name": "source_candidate_radius_m",
-            "scale_coordinate_value": 2.0,
-        },
-        {
-            "step9b_row_role": "new_interior_candidate",
-            "step9b_local_candidate_id": "input-r999px000",
-            "scale_coordinate_name": "source_candidate_radius_m",
-            "scale_coordinate_value": 1.5,
-            "scale_id": "middle-without-numeric-meaning",
-            "source_candidate_radius_m": 1.5,
-            "spatialr_px": 15,
-            "minsize_px": 30,
-            "ranger": 0.2,
-        },
-        {
-            "step9b_row_role": "existing_lower_anchor",
-            "source_step9a_candidate_scale_group_id": "r999px001",
-            "scale_coordinate_name": "source_candidate_radius_m",
-            "scale_coordinate_value": 1.0,
-        },
-    ]
-
-
-def _step9b_table_row(table: list[dict[str, object]], role: str) -> dict[str, object]:
-    return next(row for row in table if row["step9b_row_role"] == role)
-
-
-def test_51_step9b_explicit_candidate_table_is_required() -> None:
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), None, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_missing_explicit_candidate_table"
-    assert result["explicit_candidate_table_used"] is False
-    assert result["explicit_candidate_table_schema_status"] == "missing"
-
-
-def test_52_step9b_telephone_book_requires_row_role() -> None:
-    table = _step9b_explicit_candidate_table()
-    del table[0]["step9b_row_role"]
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_invalid_telephone_book_schema"
-    assert "step9b_row_role" in result["step9b_status_reason"]
-
-
-def test_53_step9b_telephone_book_rejects_unknown_row_role() -> None:
-    table = _step9b_explicit_candidate_table()
-    table[0]["step9b_row_role"] = "invented_role"
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_invalid_telephone_book_schema"
-
-
-def test_54_step9b_telephone_book_requires_lower_anchor() -> None:
-    table = [row for row in _step9b_explicit_candidate_table() if row["step9b_row_role"] != "existing_lower_anchor"]
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_missing_endpoint_anchor_rows"
-
-
-def test_55_step9b_telephone_book_requires_upper_anchor() -> None:
-    table = [row for row in _step9b_explicit_candidate_table() if row["step9b_row_role"] != "existing_upper_anchor"]
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_missing_endpoint_anchor_rows"
-
-
-def test_56_step9b_telephone_book_rejects_duplicate_endpoint_anchors() -> None:
-    for role in ("existing_lower_anchor", "existing_upper_anchor"):
-        table = _step9b_explicit_candidate_table()
-        table.append(dict(_step9b_table_row(table, role)))
-
-        result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-        assert result["step9b_status"] == "step9b_blocked_invalid_telephone_book_schema"
-
-
-def test_57_step9b_telephone_book_rejects_lower_anchor_id_mismatch() -> None:
-    table = _step9b_explicit_candidate_table()
-    _step9b_table_row(table, "existing_lower_anchor")["source_step9a_candidate_scale_group_id"] = "misleading-lower"
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_endpoint_anchor_mismatch"
-
-
-def test_58_step9b_telephone_book_rejects_upper_anchor_id_mismatch() -> None:
-    table = _step9b_explicit_candidate_table()
-    _step9b_table_row(table, "existing_upper_anchor")["source_step9a_candidate_scale_group_id"] = "misleading-upper"
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_endpoint_anchor_mismatch"
-
-
-def test_59_step9b_telephone_book_rejects_lower_anchor_coordinate_mismatch() -> None:
-    table = _step9b_explicit_candidate_table()
-    _step9b_table_row(table, "existing_lower_anchor")["scale_coordinate_value"] = 1.01
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_endpoint_anchor_mismatch"
-
-
-def test_60_step9b_telephone_book_rejects_upper_anchor_coordinate_mismatch() -> None:
-    table = _step9b_explicit_candidate_table()
-    _step9b_table_row(table, "existing_upper_anchor")["scale_coordinate_value"] = 1.99
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_endpoint_anchor_mismatch"
-
-
-def test_61_step9b_telephone_book_rejects_interior_source_step9a_reference() -> None:
-    table = _step9b_explicit_candidate_table()
-    _step9b_table_row(table, "new_interior_candidate")["source_step9a_candidate_scale_group_id"] = "old-anchor"
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_invalid_telephone_book_schema"
-
-
-def test_62_step9b_endpoint_anchors_do_not_require_interior_parameters() -> None:
-    table = _step9b_explicit_candidate_table()
-    _step9b_table_row(table, "existing_lower_anchor")["scale_coordinate_value"] = 1.0 + 5e-13
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_ready_explicit_candidate_table"
-    anchors = [row for row in result["local_coordinate_plan"] if row["step9b_row_role"] != "new_interior_candidate"]
-    assert all(row["scale_id"] is None for row in anchors)
-    assert all(row["source_candidate_radius_m"] is None for row in anchors)
-    assert all(row["spatialr_px"] is None for row in anchors)
-    assert all(row["minsize_px"] is None for row in anchors)
-    assert all(row["ranger"] is None for row in anchors)
-
-
-def test_63_step9b_interior_rows_require_current_explicit_parameters() -> None:
-    for field in rs.STEP9B_REQUIRED_CANDIDATE_PARAMETER_FIELDS:
-        table = _step9b_explicit_candidate_table()
-        del _step9b_table_row(table, "new_interior_candidate")[field]
-
-        result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-        assert result["step9b_status"] == "step9b_blocked_missing_required_interior_parameters"
-        assert field in result["step9b_status_reason"]
-
-
-def test_64_step9b_interior_parameter_values_are_validated() -> None:
-    invalid_values = (
-        ("scale_id", ""),
-        ("source_candidate_radius_m", "not-numeric"),
-        ("spatialr_px", 1.5),
-        ("minsize_px", 0),
-        ("ranger", float("inf")),
-    )
-    for field, value in invalid_values:
-        table = _step9b_explicit_candidate_table()
-        _step9b_table_row(table, "new_interior_candidate")[field] = value
-
-        result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-        assert result["step9b_status"] == "step9b_blocked_invalid_interior_parameter_values"
-        assert field in result["step9b_status_reason"]
-
-
-def test_65_step9b_interior_candidate_must_be_inside_open_interval() -> None:
-    for coordinate in (1.0, 2.0, 0.9, 2.1):
-        table = _step9b_explicit_candidate_table()
-        _step9b_table_row(table, "new_interior_candidate")["scale_coordinate_value"] = coordinate
-
-        result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-        assert result["step9b_status"] == "step9b_blocked_interior_candidate_outside_interval"
-
-
-def test_66_step9b_telephone_book_requires_interior_candidate() -> None:
-    table = [row for row in _step9b_explicit_candidate_table() if row["step9b_row_role"] != "new_interior_candidate"]
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert result["step9b_status"] == "step9b_blocked_missing_interior_candidate"
-
-
-def test_67_step9b_minimal_strict_telephone_book_passes() -> None:
-    result = rs.validate_step9b_explicit_candidate_table(
-        _step9b_adjacent_gate(
-            top_pair_rank1_at_scale_boundary=True,
-            top_pair_rank1_boundary_side="upper",
-            top_pair_rank1_upper_extrapolation_not_tested=True,
-            top_pair_boundary_constrained=True,
-        ),
-        _step9b_explicit_candidate_table(),
-        "/step9a",
-    )
-
-    assert result["step9b_status"] == "step9b_ready_explicit_candidate_table"
-    assert result["explicit_candidate_table_schema_status"] == "valid"
-    assert result["step9b_telephone_book_anchor_roles_enforced"] is True
-    assert result["local_scale_coordinate_values"] == [1.0, 1.5, 2.0]
-    assert result["local_scale_coordinate_count"] == 3
-    assert result["local_candidate_count"] == 1
-    assert result["telephone_book_lower_anchor_count"] == 1
-    assert result["telephone_book_upper_anchor_count"] == 1
-    assert result["telephone_book_interior_candidate_count"] == 1
-    assert result["step9b_no_extrapolation_beyond_interval"] is True
-    assert result["top_pair_rank1_boundary_side"] == "upper"
-    assert result["top_pair_rank1_upper_extrapolation_not_tested"] is True
-    assert result["top_pair_boundary_constrained"] is True
-
-
-def test_68_step9b_normalizes_ids_and_flags_by_numeric_coordinate_only() -> None:
-    table = _step9b_explicit_candidate_table()
-    second_interior = dict(_step9b_table_row(table, "new_interior_candidate"))
-    second_interior.update(
-        {
-            "step9b_local_candidate_id": "input-alpha",
-            "scale_coordinate_value": 1.25,
-            "source_candidate_radius_m": 1.25,
-        }
-    )
-    table.append(second_interior)
-
-    result = rs.validate_step9b_explicit_candidate_table(_step9b_adjacent_gate(), table, "/step9a")
-
-    assert [row["step9b_local_candidate_id"] for row in result["local_coordinate_plan"]] == [
-        "anchor_lower",
-        "local_000",
-        "local_001",
-        "anchor_upper",
-    ]
-    assert [row["input_step9b_local_candidate_id"] for row in result["local_coordinate_plan"]] == [
-        None,
-        "input-alpha",
-        "input-r999px000",
-        None,
-    ]
-    assert [row["scale_coordinate_value"] for row in result["local_coordinate_plan"]] == [1.0, 1.25, 1.5, 2.0]
-    lower, first_interior, second_interior, upper = result["local_coordinate_plan"]
-    assert lower["requires_step9b_execution"] is False and lower["source_step9a_metrics_reused"] is True
-    assert upper["requires_step9b_execution"] is False and upper["source_step9a_metrics_reused"] is True
-    assert first_interior["requires_step9b_execution"] is True and first_interior["source_step9a_metrics_reused"] is False
-    assert second_interior["requires_step9b_execution"] is True and second_interior["source_step9a_metrics_reused"] is False
-
-
-def test_69_step9b_writes_strict_table_without_response_surface_files(tmp_path: Path) -> None:
-    input_table_path = tmp_path / "caller_step9b_candidates.csv"
-    rs._write_csv(input_table_path, _step9b_explicit_candidate_table())
-    step9a_dir = tmp_path / "out" / "level1b" / "candidate_response_surface"
-    step9a_dir.mkdir(parents=True)
-    step9a_sentinel = step9a_dir / "existing_step9a.csv"
-    step9a_sentinel.write_text("unchanged\n", encoding="utf-8")
-
-    result = rs.run_step9b_local_transition_refinement_preflight(
-        tmp_path / "out",
-        step9a_dir,
-        _step9b_adjacent_gate(),
-        None,
-        explicit_candidate_table=input_table_path,
-    )
-
-    step9b_dir = rs.local_transition_refinement_output_dir(tmp_path / "out")
-    assert result["step9b_status"] == "step9b_ready_explicit_candidate_table"
-    assert result["explicit_candidate_table_used"] is True
-    assert result["explicit_candidate_table_path"] == str(input_table_path)
-    assert (step9b_dir / "step9b_interval_preflight.json").exists()
-    assert (step9b_dir / "step9b_local_candidate_table.csv").exists()
-    assert not (step9b_dir / "step9b_local_response_surface.csv").exists()
-    assert not (step9b_dir / "step9b_local_response_surface.json").exists()
-    assert step9a_sentinel.read_text(encoding="utf-8") == "unchanged\n"
-    preflight = json.loads((step9b_dir / "step9b_interval_preflight.json").read_text(encoding="utf-8"))
-    assert preflight["endpoint_anchors_reused_by_reference"] is True
-    assert preflight["endpoint_anchors_require_step9b_execution"] is False
-    assert preflight["interior_candidates_require_step9b_execution"] is True
-    assert preflight["real_response_surface_metrics_written"] is False
