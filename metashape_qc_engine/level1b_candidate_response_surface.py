@@ -1300,6 +1300,31 @@ def compute_step9b_gain_share_handoff(
     return result
 
 
+def select_step9_handoff_candidate(handoff: dict) -> dict:
+    selected = handoff["handoff_candidate_id"]
+
+    if selected == handoff["midpoint_candidate_id"]:
+        selected_source = "midpoint"
+    elif selected == handoff["no1_candidate_scale_group_id"]:
+        selected_source = "upper_bound"
+    else:
+        raise ValueError(
+            f"Invalid Step-9 handoff candidate: {selected!r}. "
+            "Expected midpoint_candidate_id or no1_candidate_scale_group_id."
+        )
+
+    return {
+        "selected_candidate_id": selected,
+        "selected_source": selected_source,
+        "warning": handoff.get("warning"),
+        "handoff_reason": handoff.get("handoff_reason"),
+        "S1": handoff.get("S1"),
+        "S2": handoff.get("S2"),
+        "SM": handoff.get("SM"),
+        "midpoint_gain_share": handoff.get("midpoint_gain_share"),
+    }
+
+
 def _step9b_metadata_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
