@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 import csv
 import json
@@ -1674,6 +1675,190 @@ def run_step9b_midpoint_support_probe(
         "step9b_midpoint_probe_ready",
         "Exactly one midpoint probe family is prepared inside the confirmed adjacent interval",
     )
+
+
+def run_step9b_prepare_from_existing_step9a(
+    run_root: Path,
+    candidate_id: str,
+    perturbation_config: Level1BPerturbationConfig,
+) -> dict:
+    run_root = Path(run_root)
+    step9a_dir = run_root / "level1b" / "candidate_response_surface"
+    run_population_rows = json.loads(
+        (step9a_dir / "run_population_summary.json").read_text(encoding="utf-8")
+    )
+    candidate_group_rows = json.loads(
+        (step9a_dir / "candidate_group_response_summary.json").read_text(encoding="utf-8")
+    )
+    step9a_report = json.loads(
+        (step9a_dir / "candidate_response_surface_report.json").read_text(encoding="utf-8")
+    )
+    if not isinstance(run_population_rows, list):
+        raise ValueError("run_population_summary.json must decode to a list")
+    if not isinstance(candidate_group_rows, list):
+        raise ValueError("candidate_group_response_summary.json must decode to a list")
+    if not isinstance(step9a_report, dict):
+        raise ValueError("candidate_response_surface_report.json must decode to a dict")
+
+    ranked_candidate_rows = []
+    for source_row in candidate_group_rows:
+        row = deepcopy(source_row)
+        row["stability_score_raw"] = stability_score_raw(row)
+        row["stability_score"] = stability_score(row)
+        ranked_candidate_rows.append(row)
+    ranked_candidate_rows.sort(
+        key=lambda row: (
+            -float(row["stability_score_raw"]),
+            -float(row["stability_score"]),
+            str(row.get("candidate_scale_group_id", "")),
+        )
+    )
+
+    step9a_gate_metadata = compute_top_pair_scale_continuity_and_boundary_gate(
+        run_population_rows,
+        ranked_candidate_rows,
+    )
+    step9a_gate_report = deepcopy(step9a_report)
+    step9a_gate_report.update(step9a_gate_metadata)
+
+    step9b_prepare_inputs_dir = run_root / "level1b" / "step9b_prepare_inputs"
+    step9b_prepare_inputs_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(step9b_prepare_inputs_dir / "run_population_summary.json", run_population_rows)
+    _write_json(step9b_prepare_inputs_dir / "ranked_candidate_scales.json", ranked_candidate_rows)
+    _write_json(
+        step9b_prepare_inputs_dir / "candidate_response_surface_report.json",
+        step9a_gate_report,
+    )
+
+    step9b_result = run_step9b_midpoint_support_probe(
+        output_dir=run_root,
+        source_step9a_directory=step9b_prepare_inputs_dir,
+        step9a_gate_metadata=step9a_gate_report,
+        ranked_candidate_rows=ranked_candidate_rows,
+        run_population_rows=run_population_rows,
+        perturbation_config=perturbation_config,
+        midpoint_family_support_raw=None,
+    )
+    step9b_prepare_result_json = step9b_prepare_inputs_dir / "step9b_prepare_result.json"
+    _write_json(step9b_prepare_result_json, step9b_result)
+
+    return {
+        "status": step9b_result.get("status"),
+        "run_root": str(run_root),
+        "candidate_id": candidate_id,
+        "step9a_dir": str(step9a_dir),
+        "step9b_prepare_inputs_dir": str(step9b_prepare_inputs_dir),
+        "local_transition_refinement_dir": str(
+            Path(run_root) / "level1b" / "local_transition_refinement"
+        ),
+        "step9b_prepare_result_json": str(step9b_prepare_result_json),
+        "step9b_result": step9b_result,
+    }
+
+
+def run_step9b_midpoint_response_surface_and_handoff_from_prepare(
+    run_root: Path,
+    candidate_id: str,
+    candidate_response_surface_config: Level1BCandidateResponseSurfaceConfig,
+) -> dict:
+    run_root = Path(run_root)
+    step9b_prepare_inputs_dir = run_root / "level1b" / "step9b_prepare_inputs"
+    local_transition_refinement_dir = run_root / "level1b" / "local_transition_refinement"
+    midpoint_response_surface_output_dir = (
+        local_transition_refinement_dir / "midpoint_response_surface_eval"
+    )
+
+    ranked_candidate_rows = json.loads(
+        (step9b_prepare_inputs_dir / "ranked_candidate_scales.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    midpoint_probe_candidate = json.loads(
+        (local_transition_refinement_dir / "step9b_midpoint_probe_candidate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    midpoint_perturbation_candidates_json = (
+        local_transition_refinement_dir / "step9b_midpoint_perturbation_candidates.json"
+    )
+    json.loads(midpoint_perturbation_candidates_json.read_text(encoding="utf-8"))
+
+    midpoint_response_surface_config = deepcopy(candidate_response_surface_config)
+    midpoint_response_surface_config.output_dir = midpoint_response_surface_output_dir
+    midpoint_response_surface_config.perturbation_candidates_json_path = (
+        midpoint_perturbation_candidates_json
+    )
+    midpoint_response_surface_config.candidate_id = candidate_id
+    run_candidate_response_surface_step(midpoint_response_surface_config)
+
+    midpoint_candidate_response_surface_dir = response_surface_output_dir(
+        midpoint_response_surface_output_dir
+    )
+    midpoint_candidate_group_summary_json = (
+        midpoint_candidate_response_surface_dir / "candidate_group_response_summary.json"
+    )
+    midpoint_run_population_json = (
+        midpoint_candidate_response_surface_dir / "run_population_summary.json"
+    )
+    midpoint_candidate_group_rows = json.loads(
+        midpoint_candidate_group_summary_json.read_text(encoding="utf-8")
+    )
+    json.loads(midpoint_run_population_json.read_text(encoding="utf-8"))
+
+    probe_midpoint_id = str(midpoint_probe_candidate["candidate_scale_group_id"])
+    if len(midpoint_candidate_group_rows) == 1:
+        selected_midpoint_row = midpoint_candidate_group_rows[0]
+    else:
+        midpoint_matches = [
+            row
+            for row in midpoint_candidate_group_rows
+            if str(row["candidate_scale_group_id"]) == probe_midpoint_id
+        ]
+        if len(midpoint_matches) != 1:
+            raise ValueError(
+                "Midpoint candidate group summary must contain exactly one row matching "
+                f"candidate_scale_group_id {probe_midpoint_id!r}"
+            )
+        selected_midpoint_row = midpoint_matches[0]
+
+    no1_row = ranked_candidate_rows[0]
+    no2_row = ranked_candidate_rows[1]
+    no1_id = str(no1_row["candidate_scale_group_id"])
+    no2_id = str(no2_row["candidate_scale_group_id"])
+    midpoint_id = str(selected_midpoint_row["candidate_scale_group_id"])
+    s1 = float(no1_row["stability_score_raw"])
+    s2 = float(no2_row["stability_score_raw"])
+    sm = float(selected_midpoint_row["stability_score_raw"])
+    handoff = compute_step9b_gain_share_handoff(
+        no1_candidate_scale_group_id=no1_id,
+        no2_candidate_scale_group_id=no2_id,
+        midpoint_candidate_id=midpoint_id,
+        S1=s1,
+        S2=s2,
+        SM=sm,
+    )
+
+    step9b_midpoint_gain_share_handoff_json = (
+        local_transition_refinement_dir / "step9b_midpoint_gain_share_handoff.json"
+    )
+    _write_json(step9b_midpoint_gain_share_handoff_json, handoff)
+
+    return {
+        "status": "step9b_midpoint_response_surface_and_handoff_ready",
+        "run_root": str(run_root),
+        "candidate_id": candidate_id,
+        "midpoint_response_surface_output_dir": str(
+            midpoint_response_surface_output_dir
+        ),
+        "midpoint_candidate_group_summary_json": str(
+            midpoint_candidate_group_summary_json
+        ),
+        "midpoint_run_population_json": str(midpoint_run_population_json),
+        "step9b_midpoint_gain_share_handoff_json": str(
+            step9b_midpoint_gain_share_handoff_json
+        ),
+        "handoff": handoff,
+    }
 
 
 def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConfig) -> dict[str, Any]:

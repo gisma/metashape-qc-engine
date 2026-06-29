@@ -1252,3 +1252,293 @@ def test_58_step9b_stubbed_midpoint_support_writes_gain_share_handoff(tmp_path: 
         for value in (result["step9b_status"], result["step9b_status_reason"], handoff["status"], handoff["handoff_reason"])
     )
     assert not any(term in user_facing for term in forbidden)
+
+
+def test_step9b_prepare_from_existing_step9a_writes_true_ranked_views_and_calls_probe(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_root = tmp_path / "run"
+    step9a_dir = run_root / "level1b" / "candidate_response_surface"
+    step9a_dir.mkdir(parents=True)
+    run_population_rows = [{"run_id": "run-1", "candidate_scale_group_id": "candidate-b"}]
+    candidate_group_rows = [
+        {"candidate_scale_group_id": "candidate-b", "test_raw": 2.0, "test_clamped": 0.0},
+        {"candidate_scale_group_id": "candidate-a", "test_raw": 1.0, "test_clamped": 1.0},
+        {"candidate_scale_group_id": "zulu", "test_raw": 0.0, "test_clamped": 0.8},
+        {"candidate_scale_group_id": "alpha", "test_raw": 0.0, "test_clamped": 0.8},
+        {"candidate_scale_group_id": "candidate-c", "test_raw": 0.0, "test_clamped": 0.2},
+    ]
+    source_report = {"status": "step9a-complete"}
+    (step9a_dir / "run_population_summary.json").write_text(
+        json.dumps(run_population_rows), encoding="utf-8"
+    )
+    (step9a_dir / "candidate_group_response_summary.json").write_text(
+        json.dumps(candidate_group_rows), encoding="utf-8"
+    )
+    (step9a_dir / "candidate_response_surface_report.json").write_text(
+        json.dumps(source_report), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(rs, "stability_score_raw", lambda row: row["test_raw"])
+    monkeypatch.setattr(rs, "stability_score", lambda row: row["test_clamped"])
+    captured: dict[str, object] = {}
+
+    def fake_gate(run_rows, ranked_rows):
+        captured["gate_run_rows"] = run_rows
+        captured["gate_ranked_rows"] = ranked_rows
+        return {"top_pair_scale_continuity_status": "adjacent_top_pair_confirmed"}
+
+    def fake_probe(**kwargs):
+        captured["probe"] = kwargs
+        (Path(kwargs["output_dir"]) / "level1b" / "local_transition_refinement").mkdir(
+            parents=True
+        )
+        return {"status": "step9b-probe-ready", "step9b_status": "step9b_midpoint_probe_ready"}
+
+    monkeypatch.setattr(rs, "compute_top_pair_scale_continuity_and_boundary_gate", fake_gate)
+    monkeypatch.setattr(rs, "run_step9b_midpoint_support_probe", fake_probe)
+    perturbation_config = _step9b_perturbation_config(tmp_path)
+
+    result = rs.run_step9b_prepare_from_existing_step9a(
+        run_root,
+        "opaque-candidate-id",
+        perturbation_config,
+    )
+
+    prepare_dir = run_root / "level1b" / "step9b_prepare_inputs"
+    assert sorted(path.name for path in prepare_dir.iterdir()) == [
+        "candidate_response_surface_report.json",
+        "ranked_candidate_scales.json",
+        "run_population_summary.json",
+        "step9b_prepare_result.json",
+    ]
+    ranked = json.loads((prepare_dir / "ranked_candidate_scales.json").read_text(encoding="utf-8"))
+    assert [row["candidate_scale_group_id"] for row in ranked] == [
+        "candidate-b",
+        "candidate-a",
+        "alpha",
+        "zulu",
+        "candidate-c",
+    ]
+    assert json.loads((prepare_dir / "run_population_summary.json").read_text(encoding="utf-8")) == run_population_rows
+    prepared_report = json.loads(
+        (prepare_dir / "candidate_response_surface_report.json").read_text(encoding="utf-8")
+    )
+    assert prepared_report == {
+        "status": "step9a-complete",
+        "top_pair_scale_continuity_status": "adjacent_top_pair_confirmed",
+    }
+    assert json.loads((prepare_dir / "step9b_prepare_result.json").read_text(encoding="utf-8")) == result[
+        "step9b_result"
+    ]
+    probe = captured["probe"]
+    assert probe["output_dir"] == run_root
+    assert probe["source_step9a_directory"] == prepare_dir
+    assert probe["step9a_gate_metadata"] == prepared_report
+    assert probe["ranked_candidate_rows"] == ranked
+    assert probe["run_population_rows"] == run_population_rows
+    assert probe["perturbation_config"] is perturbation_config
+    assert probe["midpoint_family_support_raw"] is None
+    assert set(result) == {
+        "status",
+        "run_root",
+        "candidate_id",
+        "step9a_dir",
+        "step9b_prepare_inputs_dir",
+        "local_transition_refinement_dir",
+        "step9b_prepare_result_json",
+        "step9b_result",
+    }
+    assert result["status"] == "step9b-probe-ready"
+    assert result["candidate_id"] == "opaque-candidate-id"
+    assert result["local_transition_refinement_dir"] == str(
+        run_root / "level1b" / "local_transition_refinement"
+    )
+
+
+def test_step9b_prepare_from_existing_step9a_does_not_search_for_missing_inputs(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    alternate_dir = run_root / "alternate"
+    alternate_dir.mkdir(parents=True)
+    for filename, payload in (
+        ("run_population_summary.json", []),
+        ("candidate_group_response_summary.json", []),
+        ("candidate_response_surface_report.json", {}),
+    ):
+        (alternate_dir / filename).write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError):
+        rs.run_step9b_prepare_from_existing_step9a(
+            run_root,
+            "opaque-candidate-id",
+            _step9b_perturbation_config(tmp_path),
+        )
+
+
+def test_midpoint_response_surface_and_handoff_from_prepare_runs_nested_surface_once(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_root = tmp_path / "run"
+    prepare_dir = run_root / "level1b" / "step9b_prepare_inputs"
+    step9b_dir = run_root / "level1b" / "local_transition_refinement"
+    prepare_dir.mkdir(parents=True)
+    step9b_dir.mkdir(parents=True)
+    ranked_rows = [
+        {"candidate_scale_group_id": "opaque-no1", "stability_score_raw": 1.0},
+        {"candidate_scale_group_id": "opaque-no2", "stability_score_raw": 0.0},
+    ]
+    (prepare_dir / "ranked_candidate_scales.json").write_text(
+        json.dumps(ranked_rows), encoding="utf-8"
+    )
+    (step9b_dir / "step9b_midpoint_probe_candidate.json").write_text(
+        json.dumps({"candidate_scale_group_id": "opaque-midpoint"}), encoding="utf-8"
+    )
+    (step9b_dir / "step9b_midpoint_perturbation_candidates.json").write_text(
+        json.dumps([{"candidate_scale_group_id": "opaque-midpoint"}]), encoding="utf-8"
+    )
+
+    original_config = Level1BCandidateResponseSurfaceConfig(
+        candidate_id="original-candidate",
+        output_dir=tmp_path / "original-output",
+        perturbation_candidates_json_path=tmp_path / "original-candidates.json",
+        feature_space_stack_path=tmp_path / "features.tif",
+        valid_mask_path=tmp_path / "mask.tif",
+        segmentation_stack_path=tmp_path / "segmentation-stack.tif",
+        segmentation_stack_source="explicit-test-stack",
+        otb_bin_dir="/otb/bin",
+        ram_mb=1234,
+        overwrite=True,
+        dry_run=True,
+    )
+    original_values = vars(original_config).copy()
+    calls = []
+
+    def fake_run_candidate_response_surface_step(config):
+        calls.append(config)
+        nested_dir = rs.response_surface_output_dir(config.output_dir)
+        nested_dir.mkdir(parents=True)
+        (nested_dir / "candidate_group_response_summary.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "candidate_scale_group_id": "opaque-midpoint",
+                        "stability_score_raw": 0.75,
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (nested_dir / "run_population_summary.json").write_text(
+            json.dumps([{"candidate_scale_group_id": "opaque-midpoint", "run_id": "run-1"}]),
+            encoding="utf-8",
+        )
+        return {"status": "ok"}
+
+    monkeypatch.setattr(
+        rs,
+        "run_candidate_response_surface_step",
+        fake_run_candidate_response_surface_step,
+    )
+
+    result = rs.run_step9b_midpoint_response_surface_and_handoff_from_prepare(
+        run_root,
+        "requested-candidate",
+        original_config,
+    )
+
+    assert len(calls) == 1
+    nested_config = calls[0]
+    expected_output_dir = step9b_dir / "midpoint_response_surface_eval"
+    assert nested_config.output_dir == expected_output_dir
+    assert nested_config.perturbation_candidates_json_path == (
+        step9b_dir / "step9b_midpoint_perturbation_candidates.json"
+    )
+    assert nested_config.candidate_id == "requested-candidate"
+    for field, value in original_values.items():
+        if field not in {"output_dir", "perturbation_candidates_json_path", "candidate_id"}:
+            assert getattr(nested_config, field) == value
+    assert vars(original_config) == original_values
+
+    nested_summary_dir = rs.response_surface_output_dir(expected_output_dir)
+    assert result["midpoint_candidate_group_summary_json"] == str(
+        nested_summary_dir / "candidate_group_response_summary.json"
+    )
+    assert result["midpoint_run_population_json"] == str(
+        nested_summary_dir / "run_population_summary.json"
+    )
+    handoff = result["handoff"]
+    assert handoff["no1_candidate_scale_group_id"] == "opaque-no1"
+    assert handoff["no2_candidate_scale_group_id"] == "opaque-no2"
+    assert handoff["midpoint_candidate_id"] == "opaque-midpoint"
+    assert handoff["S1"] == 1.0
+    assert handoff["S2"] == 0.0
+    assert handoff["SM"] == 0.75
+    assert handoff["handoff_candidate_id"] == "opaque-midpoint"
+    handoff_path = step9b_dir / "step9b_midpoint_gain_share_handoff.json"
+    assert json.loads(handoff_path.read_text(encoding="utf-8")) == handoff
+    assert result["step9b_midpoint_gain_share_handoff_json"] == str(handoff_path)
+
+
+def test_midpoint_response_surface_and_handoff_from_prepare_rejects_unmatched_multiple_rows(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_root = tmp_path / "run"
+    prepare_dir = run_root / "level1b" / "step9b_prepare_inputs"
+    step9b_dir = run_root / "level1b" / "local_transition_refinement"
+    prepare_dir.mkdir(parents=True)
+    step9b_dir.mkdir(parents=True)
+    (prepare_dir / "ranked_candidate_scales.json").write_text(
+        json.dumps(
+            [
+                {"candidate_scale_group_id": "no1", "stability_score_raw": 1.0},
+                {"candidate_scale_group_id": "no2", "stability_score_raw": 0.0},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (step9b_dir / "step9b_midpoint_probe_candidate.json").write_text(
+        json.dumps({"candidate_scale_group_id": "expected-midpoint"}), encoding="utf-8"
+    )
+    (step9b_dir / "step9b_midpoint_perturbation_candidates.json").write_text(
+        json.dumps([]), encoding="utf-8"
+    )
+
+    def fake_run_candidate_response_surface_step(config):
+        nested_dir = rs.response_surface_output_dir(config.output_dir)
+        nested_dir.mkdir(parents=True)
+        (nested_dir / "candidate_group_response_summary.json").write_text(
+            json.dumps(
+                [
+                    {"candidate_scale_group_id": "other-a", "stability_score_raw": 0.7},
+                    {"candidate_scale_group_id": "other-b", "stability_score_raw": 0.6},
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (nested_dir / "run_population_summary.json").write_text(
+            json.dumps([]), encoding="utf-8"
+        )
+        return {"status": "ok"}
+
+    monkeypatch.setattr(
+        rs,
+        "run_candidate_response_surface_step",
+        fake_run_candidate_response_surface_step,
+    )
+    config = Level1BCandidateResponseSurfaceConfig(
+        candidate_id="original",
+        output_dir=tmp_path / "original-output",
+        perturbation_candidates_json_path=tmp_path / "original-candidates.json",
+    )
+
+    with pytest.raises(ValueError, match="exactly one row matching"):
+        rs.run_step9b_midpoint_response_surface_and_handoff_from_prepare(
+            run_root,
+            "requested-candidate",
+            config,
+        )
