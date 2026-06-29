@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
+import re
 from collections.abc import Sequence
 import sys
 from typing import Any
@@ -55,9 +55,13 @@ from metashape_qc_engine.level1b_valid_mask import (
 FEATURE_BAND_COUNT = 5
 
 
+def _filename_token(value: object) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]", "_", str(value))
+
+
 def _candidate_id(rgb_ortho: Path) -> str:
-    opaque_source = str(Path(rgb_ortho).absolute()).encode("utf-8")
-    return "level1b_" + hashlib.sha256(opaque_source).hexdigest()[:16]
+    sanitized_ortho_stem = _filename_token(Path(rgb_ortho).stem)
+    return sanitized_ortho_stem + "__structure_scales"
 
 
 def _raise_on_failed_status(step_name: str, result: object) -> None:
@@ -247,29 +251,26 @@ def run_level1b_dumb_chain(
     _require_artifacts("step9b_prepare", step9b_prepare_artifacts)
     step_results["step9b_prepare"] = step9b_prepare_result
 
-    prepare_result = json.loads(
-        step9b_prepare_artifacts[-1].read_text(encoding="utf-8")
-    )
-    prepare_status = prepare_result.get("step9b_status")
-    if prepare_status == "step9b_user_choice_required_bimodal_or_multimodal":
-        _require_artifacts("step9b_non_adjacent", (supported_alternatives,))
-        return {
-            "status": "step9b_non_adjacent_choice_required",
-            "candidate_id": candidate_id,
-            "output_dir": str(output_dir),
-            "branch": "non_adjacent",
-            "supported_scale_alternatives_json": str(supported_alternatives),
-            "step_results": step_results,
-        }
-    if prepare_status != "step9b_midpoint_probe_ready":
+    if not (midpoint_probe.exists() and midpoint_perturbations.exists()):
+        if supported_alternatives.exists():
+            return {
+                "status": "step9b_non_adjacent_choice_required",
+                "candidate_id": candidate_id,
+                "output_dir": str(output_dir),
+                "branch": "non_adjacent",
+                "supported_scale_alternatives_json": str(supported_alternatives),
+                "step_results": step_results,
+            }
+        missing = [
+            str(path)
+            for path in (midpoint_probe, midpoint_perturbations)
+            if not path.exists()
+        ]
         raise RuntimeError(
-            "step9b_prepare: expected step9b_midpoint_probe_ready or "
-            "step9b_user_choice_required_bimodal_or_multimodal, "
-            f"got {prepare_status!r}"
+            "step9b_branch: expected midpoint artifacts missing: "
+            + ", ".join(missing)
+            + f"; supported alternatives missing: {supported_alternatives}"
         )
-    _require_artifacts(
-        "step9b_midpoint_probe", (midpoint_probe, midpoint_perturbations)
-    )
 
     step9b_midpoint_handoff_result = (
         run_step9b_midpoint_response_surface_and_handoff_from_prepare(

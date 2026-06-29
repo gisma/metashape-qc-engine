@@ -29,7 +29,6 @@ def _install_stubs(
     *,
     branch: str = "adjacent",
     omit_step: str | None = None,
-    create_stale_opposite_branch: bool = False,
 ) -> tuple[list[str], dict[str, object]]:
     calls: list[str] = []
     captured: dict[str, object] = {}
@@ -118,13 +117,8 @@ def _install_stubs(
         if branch == "adjacent":
             _write(local / "step9b_midpoint_probe_candidate.json")
             _write(local / "step9b_midpoint_perturbation_candidates.json", [])
-            if create_stale_opposite_branch:
-                _write(local / "step9b_supported_scale_alternatives.json", [])
         elif branch == "non_adjacent":
             _write(local / "step9b_supported_scale_alternatives.json", [])
-            if create_stale_opposite_branch:
-                _write(local / "step9b_midpoint_probe_candidate.json")
-                _write(local / "step9b_midpoint_perturbation_candidates.json", [])
         return {"status": None, "step9b_result": {"step9b_status": status}}
 
     def midpoint_handoff(
@@ -241,26 +235,18 @@ def _install_stubs(
     return calls, captured
 
 
-def test_candidate_id_is_deterministic_and_opaque() -> None:
+def test_candidate_id_is_deterministic_and_human_readable() -> None:
     first = runner._candidate_id(Path("/tmp/My Ortho.tif"))
     second = runner._candidate_id(Path("/tmp/My Ortho.tif"))
     assert first == second
-    assert first.startswith("level1b_")
-    assert len(first) == len("level1b_") + 16
-    assert "My" not in first
-    assert "Ortho" not in first
+    assert first == "My_Ortho__structure_scales"
 
 
 def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     output_dir = tmp_path / "run"
-    calls, captured = _install_stubs(
-        monkeypatch,
-        output_dir,
-        branch="adjacent",
-        create_stale_opposite_branch=True,
-    )
+    calls, captured = _install_stubs(monkeypatch, output_dir, branch="adjacent")
 
     result = runner.run_level1b_dumb_chain(Path("/tmp/ortho.tif"), output_dir)
 
@@ -306,16 +292,11 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert result["status"] == "level1b_dumb_chain_complete"
 
 
-def test_non_adjacent_status_wins_over_stale_midpoint_files(
+def test_non_adjacent_artifact_branch_stops_before_midpoint_and_step10(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     output_dir = tmp_path / "run"
-    calls, _ = _install_stubs(
-        monkeypatch,
-        output_dir,
-        branch="non_adjacent",
-        create_stale_opposite_branch=True,
-    )
+    calls, _ = _install_stubs(monkeypatch, output_dir, branch="non_adjacent")
 
     result = runner.run_level1b_dumb_chain(Path("/tmp/ortho.tif"), output_dir)
 
@@ -328,13 +309,13 @@ def test_non_adjacent_status_wins_over_stale_midpoint_files(
     assert not any(call.startswith("step10_") for call in calls)
 
 
-def test_blocked_prepare_status_fails_without_artifact_guessing(
+def test_missing_step9b_branch_artifacts_fail_fast(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     output_dir = tmp_path / "run"
     _install_stubs(monkeypatch, output_dir, branch="blocked")
 
-    with pytest.raises(RuntimeError, match="step9b_blocked_cannot_determine"):
+    with pytest.raises(RuntimeError, match="step9b_branch"):
         runner.run_level1b_dumb_chain(Path("/tmp/ortho.tif"), output_dir)
 
 
