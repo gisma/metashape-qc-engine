@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import shutil
 import statistics
+import subprocess
 
 
 def run_level1b_step10_collect_finalist_evidence(
@@ -837,4 +838,169 @@ def run_level1b_step10_materialize_selected_segments(
         "selected_candidate_id": selected_row["candidate_scale_group_id"],
         "selected_source": selected_row["step10_selected_role"],
         "selected_representative_id": selected_row["run_id"],
+    }
+
+
+def run_level1b_step10_compute_exactextractr_segment_stats_and_quality_info(
+    output_dir: str | Path,
+) -> dict:
+    output_root = Path(output_dir)
+    step10_dir = output_root / "level1b" / "step10_materialization"
+    final_segments_dir = step10_dir / "final_segments"
+    decision_evidence_dir = step10_dir / "decision_evidence"
+    selected_labels_tif = final_segments_dir / "selected_labels.tif"
+    selected_segments_gpkg = final_segments_dir / "selected_segments.gpkg"
+    selected_segments_manifest_json = (
+        final_segments_dir / "selected_segments_manifest.json"
+    )
+    finalist_perturbation_runs_json = (
+        decision_evidence_dir / "finalist_perturbation_runs.json"
+    )
+    finalist_group_aggregation_json = (
+        decision_evidence_dir / "finalist_group_aggregation.json"
+    )
+    finalist_numeric_distribution_summary_json = (
+        decision_evidence_dir / "finalist_numeric_distribution_summary.json"
+    )
+
+    json.loads(selected_segments_manifest_json.read_text(encoding="utf-8"))
+    perturbation_run_rows = json.loads(
+        finalist_perturbation_runs_json.read_text(encoding="utf-8")
+    )
+    group_aggregation_rows = json.loads(
+        finalist_group_aggregation_json.read_text(encoding="utf-8")
+    )
+    json.loads(
+        finalist_numeric_distribution_summary_json.read_text(encoding="utf-8")
+    )
+
+    [selected_row] = [
+        row
+        for row in perturbation_run_rows
+        if row["step10_selected_candidate"] is True
+        and row["original_row_metadata"]["is_baseline"] is True
+    ]
+    [selected_group_aggregation_row] = [
+        row
+        for row in group_aggregation_rows
+        if row["step10_selected_candidate"] is True
+    ]
+    selected_candidate_id = selected_row["candidate_scale_group_id"]
+    selected_source = selected_row["step10_selected_role"]
+    selected_representative_id = selected_row["run_id"]
+    value_raster = Path(selected_row["masked_segmentation_stack_path"])
+    valid_mask_path = Path(selected_row["valid_mask_path"])
+
+    segment_stats_dir = step10_dir / "segment_stats"
+    quality_dir = step10_dir / "quality"
+    segment_stats_dir.mkdir(parents=True, exist_ok=True)
+    quality_dir.mkdir(parents=True, exist_ok=True)
+    stats_csv = segment_stats_dir / "selected_segment_exactextractr_stats.csv"
+    summary_json = (
+        segment_stats_dir / "selected_segment_exactextractr_summary.json"
+    )
+    quality_info_json = quality_dir / "ortho_segmentation_quality_info.json"
+    r_script = (
+        Path(__file__).resolve().parents[1]
+        / "R"
+        / "level1b_step10_exactextractr_segment_stats.R"
+    )
+
+    subprocess.run(
+        [
+            "Rscript",
+            str(r_script),
+            str(selected_segments_gpkg),
+            str(value_raster),
+            str(valid_mask_path),
+            str(stats_csv),
+            str(summary_json),
+            selected_candidate_id,
+            selected_source,
+            selected_representative_id,
+        ],
+        check=True,
+    )
+    segment_stats_summary = json.loads(summary_json.read_text(encoding="utf-8"))
+
+    selected_run_field_names = [
+        "run_id",
+        "candidate_scale_group_id",
+        "segment_count",
+        "segment_density_per_ha",
+        "total_labelled_area_m2",
+        "mean_area_m2",
+        "median_area_m2",
+        "q10_area_m2",
+        "q25_area_m2",
+        "q50_area_m2",
+        "q75_area_m2",
+        "q90_area_m2",
+        "q95_area_m2",
+        "central_area_share",
+        "upper_tail_area_share",
+        "lower_tail_area_share",
+        "in_scale_area_share",
+        "large_area_share",
+        "oversize_area_share",
+    ]
+    quality_info = {
+        "status": "step10_part5_quality_info_ready",
+        "quality_signal_status": "evidence_ready",
+        "quality_signal_scope": "ortho_segmentation_run",
+        "quality_signal_reason": (
+            "Step-10 evidence, selected segment products, and exactextractr "
+            "segment statistics are available; no thresholded quality class "
+            "is assigned."
+        ),
+        "selected_candidate_id": selected_candidate_id,
+        "selected_source": selected_source,
+        "selected_representative_id": selected_representative_id,
+        "source_files": {
+            "selected_labels_tif": str(selected_labels_tif),
+            "selected_segments_gpkg": str(selected_segments_gpkg),
+            "selected_segments_manifest_json": str(
+                selected_segments_manifest_json
+            ),
+            "finalist_perturbation_runs_json": str(
+                finalist_perturbation_runs_json
+            ),
+            "finalist_group_aggregation_json": str(
+                finalist_group_aggregation_json
+            ),
+            "finalist_numeric_distribution_summary_json": str(
+                finalist_numeric_distribution_summary_json
+            ),
+            "selected_segment_exactextractr_stats_csv": str(stats_csv),
+            "selected_segment_exactextractr_summary_json": str(summary_json),
+        },
+        "value_raster_used": str(value_raster),
+        "valid_mask_path": str(valid_mask_path),
+        "selected_run_fields": {
+            field: selected_row[field]
+            for field in selected_run_field_names
+            if field in selected_row
+        },
+        "selected_group_aggregation_row": selected_group_aggregation_row,
+        "segment_stats_summary": segment_stats_summary,
+    }
+    quality_info_json.write_text(
+        json.dumps(quality_info, indent=2), encoding="utf-8"
+    )
+
+    return {
+        "status": (
+            "step10_part5_exactextractr_segment_stats_and_quality_info_ready"
+        ),
+        "output_dir": str(output_dir),
+        "segment_stats_dir": str(segment_stats_dir),
+        "quality_dir": str(quality_dir),
+        "selected_segment_exactextractr_stats_csv": str(stats_csv),
+        "selected_segment_exactextractr_summary_json": str(summary_json),
+        "ortho_segmentation_quality_info_json": str(quality_info_json),
+        "selected_candidate_id": selected_candidate_id,
+        "selected_source": selected_source,
+        "selected_representative_id": selected_representative_id,
+        "value_raster_used": str(value_raster),
+        "valid_mask_path": str(valid_mask_path),
     }
