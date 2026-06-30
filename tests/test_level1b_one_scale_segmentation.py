@@ -42,6 +42,22 @@ def write_mask(path: Path) -> Path:
     return path
 
 
+def test_read_perturbation_candidates_accepts_midpoint_list_payload(tmp_path: Path) -> None:
+    path = tmp_path / "step9b_midpoint_perturbation_candidates.json"
+    rows = [
+        {
+            "perturbation_id": "local_midpoint__baseline",
+            "scale_id": "local_midpoint",
+            "spatialr_px": 61,
+            "minsize_px": 12327,
+            "ranger": 0.7,
+        }
+    ]
+    path.write_text(json.dumps(rows), encoding="utf-8")
+
+    assert one.read_perturbation_candidates(path) == rows
+
+
 def test_matrix_zero_mask_expression_is_accepted_by_otb_when_available(tmp_path: Path) -> None:
     otb = shutil.which("otbcli_BandMathX")
     if otb is None:

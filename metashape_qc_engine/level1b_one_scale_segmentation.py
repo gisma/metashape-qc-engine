@@ -211,11 +211,15 @@ def read_perturbation_candidates(json_path) -> list[dict[str, object]]:
     with Path(json_path).open(encoding="utf-8") as file_obj:
         payload = json.load(file_obj)
 
-    if "candidates" not in payload:
+    if isinstance(payload, list):
+        candidates = payload
+    elif isinstance(payload, dict) and "candidates" in payload:
+        candidates = payload["candidates"]
+    else:
         raise ValueError("candidates key is missing")
-    if not payload["candidates"]:
+    if not candidates:
         raise ValueError("candidates is empty")
-    return list(payload["candidates"])
+    return list(candidates)
 
 
 def select_one_perturbation_candidate(candidates, perturbation_id) -> dict[str, object]:
