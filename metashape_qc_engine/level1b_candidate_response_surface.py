@@ -2682,7 +2682,32 @@ def _apply_shadow_retention_cleanup(
         _write_json_atomic(result_path, result)
         return result
 
+    try:
+        existing_result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        existing_result = None
+    all_transients_absent = all(
+        not (
+            run_dir / OUTPUT_ARTIFACT_FILENAMES[artifact_key]
+        ).exists()
+        for artifact_key in SHADOW_TRANSIENT_ARTIFACT_KEYS
+    )
+    if (
+        isinstance(existing_result, dict)
+        and existing_result.get("status") == "retention_cleanup_complete"
+        and all_transients_absent
+    ):
+        return existing_result
+
     if step9_run_status not in RETENTION_CLEANUP_EXECUTION_STATUSES:
+        if isinstance(existing_result, dict):
+            return {
+                **base_result,
+                "status": "retention_cleanup_skipped_reused_or_unclassified_run",
+                "reason": "cleanup_is_limited_to_newly_computed_or_recomputed_runs",
+                "cleanup_result_file_preserved": True,
+                "prior_cleanup_status": existing_result.get("status"),
+            }
         return finish(
             "retention_cleanup_skipped_reused_or_unclassified_run",
             "cleanup_is_limited_to_newly_computed_or_recomputed_runs",

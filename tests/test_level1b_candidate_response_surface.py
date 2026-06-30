@@ -813,15 +813,20 @@ def test_shadow_retention_audit_proposes_only_resume_safe_transients(
         "deleted_paths"
     ]
     assert rs._is_complete_run(paths, expected, "scale-a") is True
+    cleanup_result_path = (
+        paths["labels"].parent / rs.RETENTION_CLEANUP_RESULT_FILENAME
+    )
+    cleanup_result_before_resume = cleanup_result_path.read_bytes()
 
     repeated = rs._apply_shadow_retention_cleanup(
         out_dir, config, "scale-a", row, "run-a", "computed"
     )
     assert repeated["status"] == "retention_cleanup_complete"
-    assert repeated["bytes_reclaimed"] == 0
+    assert repeated["bytes_reclaimed"] == cleanup["bytes_reclaimed"]
     assert {
         item["status"] for item in repeated["artifact_results"]
-    } == {"already_absent"}
+    } == {"deleted"}
+    assert cleanup_result_path.read_bytes() == cleanup_result_before_resume
 
     for artifact_key in rs.SHADOW_TRANSIENT_ARTIFACT_KEYS:
         (paths["labels"].parent / rs.OUTPUT_ARTIFACT_FILENAMES[artifact_key]).write_bytes(
@@ -833,6 +838,9 @@ def test_shadow_retention_audit_proposes_only_resume_safe_transients(
     assert reused["status"] == (
         "retention_cleanup_skipped_reused_or_unclassified_run"
     )
+    assert reused["cleanup_result_file_preserved"] is True
+    assert reused["prior_cleanup_status"] == "retention_cleanup_complete"
+    assert cleanup_result_path.read_bytes() == cleanup_result_before_resume
     assert all(
         (paths["labels"].parent / rs.OUTPUT_ARTIFACT_FILENAMES[key]).exists()
         for key in rs.SHADOW_TRANSIENT_ARTIFACT_KEYS
