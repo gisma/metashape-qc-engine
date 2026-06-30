@@ -302,6 +302,10 @@ def test_19_required_outputs_are_written(tmp_path: Path, monkeypatch) -> None:
         "candidate_scale_group_id",
         "status",
         "report_path",
+        "retention_shadow_audit_path",
+        "retention_shadow_audit_status",
+        "retention_cleanup_result_path",
+        "retention_cleanup_status",
     }
     assert report["perturbation_statuses"][0]["report_path"].endswith(
         "one_scale_segmentation_report.json"
@@ -518,6 +522,109 @@ def test_23_per_run_statistics_survive_a_later_run_failure(tmp_path: Path, monke
     assert audit["deleted_paths"] == []
 
 
+def test_retention_cleanup_runs_only_after_analysis_matrix_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feature = write_raster(
+        tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8)
+    )
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    labels = write_raster(
+        tmp_path / "labels.tif", np.array([[1, 1], [2, 2]], dtype=np.uint32)
+    )
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    monkeypatch.setattr(
+        rs,
+        "run_one_scale_segmentation_smoke",
+        lambda config: {
+            "status": "ok",
+            "failure_reasons": [],
+            "output_artifacts": {"merged_labels": str(labels)},
+        },
+    )
+    events: list[str] = []
+    real_matrix = rs.aggregate_analysis_matrix_from_raster
+
+    def matrix(*args, **kwargs):
+        result = real_matrix(*args, **kwargs)
+        events.append("analysis_matrix_complete")
+        return result
+
+    def shadow(*args, **kwargs):
+        events.append("shadow_audit")
+        return {"status": "shadow_retention_audit_ready"}
+
+    def cleanup(*args, **kwargs):
+        events.append("cleanup")
+        return {"status": "retention_cleanup_complete"}
+
+    monkeypatch.setattr(rs, "aggregate_analysis_matrix_from_raster", matrix)
+    monkeypatch.setattr(rs, "_write_shadow_retention_audit", shadow)
+    monkeypatch.setattr(rs, "_apply_shadow_retention_cleanup", cleanup)
+
+    run_candidate_response_surface_step(
+        cfg(
+            tmp_path,
+            perturbation_candidates_json_path=candidates,
+            feature_space_stack_path=feature,
+            valid_mask_path=mask,
+        )
+    )
+
+    assert events == ["analysis_matrix_complete", "shadow_audit", "cleanup"]
+
+
+def test_retention_cleanup_is_not_called_after_analysis_matrix_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feature = write_raster(
+        tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8)
+    )
+    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
+    labels = write_raster(
+        tmp_path / "labels.tif", np.array([[1, 1], [2, 2]], dtype=np.uint32)
+    )
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    monkeypatch.setattr(
+        rs,
+        "run_one_scale_segmentation_smoke",
+        lambda config: {
+            "status": "ok",
+            "failure_reasons": [],
+            "output_artifacts": {"merged_labels": str(labels)},
+        },
+    )
+    monkeypatch.setattr(
+        rs,
+        "aggregate_analysis_matrix_from_raster",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("synthetic matrix failure")
+        ),
+    )
+    monkeypatch.setattr(
+        rs,
+        "_write_shadow_retention_audit",
+        lambda *args, **kwargs: pytest.fail("shadow audit must not run"),
+    )
+    monkeypatch.setattr(
+        rs,
+        "_apply_shadow_retention_cleanup",
+        lambda *args, **kwargs: pytest.fail("cleanup must not run"),
+    )
+
+    report = run_candidate_response_surface_step(
+        cfg(
+            tmp_path,
+            perturbation_candidates_json_path=candidates,
+            feature_space_stack_path=feature,
+            valid_mask_path=mask,
+        )
+    )
+
+    assert report["number_of_failed_runs"] == 1
+    assert "synthetic matrix failure" in report["failed_runs"][0]["reason"]
+
+
 def test_29_resume_recomputes_intermediate_only_state(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
     mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
@@ -603,6 +710,7 @@ def test_resume_accepts_existing_full_report_without_reading_label_raster(
 
 def test_shadow_retention_audit_proposes_only_resume_safe_transients(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     candidates = _one_run_candidates(tmp_path / "candidates.json")
     config = cfg(tmp_path, perturbation_candidates_json_path=candidates)
@@ -688,8 +796,70 @@ def test_shadow_retention_audit_proposes_only_resume_safe_transients(
         paths["labels"].parent / rs.SHADOW_RETENTION_AUDIT_FILENAME
     ).exists()
 
-    for item in audit["would_delete"]:
-        Path(item["path"]).unlink()
+    report_before_cleanup = paths["report"].read_bytes()
+    cleanup = rs._apply_shadow_retention_cleanup(
+        out_dir, config, "scale-a", row, "run-a", "computed"
+    )
+    assert cleanup["status"] == "retention_cleanup_complete"
+    assert cleanup["execution_report_preserved_unchanged"] is True
+    assert cleanup["scientific_run_status_unchanged"] is True
+    assert cleanup["bytes_reclaimed"] == sum(
+        len(artifact_key.encode("utf-8"))
+        for artifact_key in rs.SHADOW_TRANSIENT_ARTIFACT_KEYS
+    )
+    assert paths["report"].read_bytes() == report_before_cleanup
+    assert all(not Path(item["path"]).exists() for item in audit["would_delete"])
+    assert retained["masked_segmentation_stack"]["path"] not in cleanup[
+        "deleted_paths"
+    ]
+    assert rs._is_complete_run(paths, expected, "scale-a") is True
+
+    repeated = rs._apply_shadow_retention_cleanup(
+        out_dir, config, "scale-a", row, "run-a", "computed"
+    )
+    assert repeated["status"] == "retention_cleanup_complete"
+    assert repeated["bytes_reclaimed"] == 0
+    assert {
+        item["status"] for item in repeated["artifact_results"]
+    } == {"already_absent"}
+
+    for artifact_key in rs.SHADOW_TRANSIENT_ARTIFACT_KEYS:
+        (paths["labels"].parent / rs.OUTPUT_ARTIFACT_FILENAMES[artifact_key]).write_bytes(
+            b"reused"
+        )
+    reused = rs._apply_shadow_retention_cleanup(
+        out_dir, config, "scale-a", row, "run-a", "reused"
+    )
+    assert reused["status"] == (
+        "retention_cleanup_skipped_reused_or_unclassified_run"
+    )
+    assert all(
+        (paths["labels"].parent / rs.OUTPUT_ARTIFACT_FILENAMES[key]).exists()
+        for key in rs.SHADOW_TRANSIENT_ARTIFACT_KEYS
+    )
+
+    failed_path = (
+        paths["labels"].parent
+        / rs.OUTPUT_ARTIFACT_FILENAMES["meanshift_position"]
+    )
+    real_unlink = Path.unlink
+
+    def fail_one_unlink(path: Path, *args, **kwargs):
+        if path == failed_path:
+            raise PermissionError("synthetic cleanup denial")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_one_unlink)
+    partial = rs._apply_shadow_retention_cleanup(
+        out_dir, config, "scale-a", row, "run-a", "computed"
+    )
+    assert partial["status"] == "retention_cleanup_partial"
+    assert failed_path.exists()
+    assert any(
+        item["status"] == "delete_failed"
+        and item["artifact_key"] == "meanshift_position"
+        for item in partial["artifact_results"]
+    )
     assert rs._is_complete_run(paths, expected, "scale-a") is True
 
 
@@ -715,6 +885,10 @@ def test_shadow_retention_audit_never_proposes_deletion_for_incomplete_run(
     assert audit["status"] == "shadow_retention_audit_not_ready"
     assert audit["would_delete"] == []
     assert audit["deletion_performed"] is False
+    cleanup = rs._apply_shadow_retention_cleanup(
+        out_dir, config, "scale-a", row, "run-a", "computed"
+    )
+    assert cleanup["status"] == "retention_cleanup_skipped_shadow_not_ready"
     assert transient.read_bytes() == b"interrupted"
 
 

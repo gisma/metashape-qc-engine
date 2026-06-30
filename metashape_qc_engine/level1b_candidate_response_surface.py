@@ -74,6 +74,7 @@ STEP9B_OUTPUT_FILENAMES = {
 }
 
 SHADOW_RETENTION_AUDIT_FILENAME = "retention_shadow_audit.json"
+RETENTION_CLEANUP_RESULT_FILENAME = "retention_cleanup_result.json"
 SHADOW_TRANSIENT_ARTIFACT_KEYS = (
     "meanshift_smoothed",
     "meanshift_position",
@@ -81,6 +82,10 @@ SHADOW_TRANSIENT_ARTIFACT_KEYS = (
     "meanshift_position_masked",
     "lsms_labels",
     "merged_labels_unmasked",
+)
+RETENTION_CLEANUP_EXECUTION_STATUSES = (
+    "computed",
+    "recomputed_incomplete",
 )
 DOWNSTREAM_RETAINED_ARTIFACT_CONSUMERS = {
     "merged_labels": ("step9_resume", "step10_materialize_selected_segments"),
@@ -2099,9 +2104,51 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
                 matrix_summary = dict(matrix["summary"], analysis_cell_size_m=matrix["cell_size_m"], analysis_cell_size_px=matrix["cell_size_px"])
                 matrix_summaries.append(matrix_summary)
                 group_matrix_summaries.append(matrix_summary)
-                _write_shadow_retention_audit(
-                    out_dir, cfg, group_id, row, run_id
-                )
+                try:
+                    shadow_audit = _write_shadow_retention_audit(
+                        out_dir, cfg, group_id, row, run_id
+                    )
+                    cleanup_result = _apply_shadow_retention_cleanup(
+                        out_dir,
+                        cfg,
+                        group_id,
+                        row,
+                        run_id,
+                        str(
+                            segmentation_report.get(
+                                "step9_run_status", "unclassified"
+                            )
+                        ),
+                    )
+                    segmentation_reports[-1].update(
+                        {
+                            "retention_shadow_audit_path": str(
+                                _run_artifact_paths(
+                                    out_dir, group_id, run_id
+                                )["labels"].parent
+                                / SHADOW_RETENTION_AUDIT_FILENAME
+                            ),
+                            "retention_shadow_audit_status": shadow_audit[
+                                "status"
+                            ],
+                            "retention_cleanup_result_path": str(
+                                _run_artifact_paths(
+                                    out_dir, group_id, run_id
+                                )["labels"].parent
+                                / RETENTION_CLEANUP_RESULT_FILENAME
+                            ),
+                            "retention_cleanup_status": cleanup_result[
+                                "status"
+                            ],
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001 - retention must not invalidate scientific results.
+                    segmentation_reports[-1].update(
+                        {
+                            "retention_cleanup_status": "retention_cleanup_reporting_failed",
+                            "retention_cleanup_error": str(exc),
+                        }
+                    )
             except Exception as exc:  # noqa: BLE001 - every failed planned run is reported.
                 failed_runs.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": "failed", "reason": str(exc), "row": row})
                 if status_recorded:
@@ -2587,6 +2634,193 @@ def _write_shadow_retention_audit(
     }
     _write_json(run_dir / SHADOW_RETENTION_AUDIT_FILENAME, audit)
     return audit
+
+
+def _write_json_atomic(path: Path, value: Any) -> None:
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    try:
+        temporary_path.write_text(
+            json.dumps(value, indent=2, allow_nan=True), encoding="utf-8"
+        )
+        temporary_path.replace(path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+
+
+def _apply_shadow_retention_cleanup(
+    out_dir: Path,
+    cfg: Level1BCandidateResponseSurfaceConfig,
+    group_id: str,
+    row: dict[str, Any],
+    run_id: str,
+    step9_run_status: str,
+) -> dict[str, Any]:
+    paths = _run_artifact_paths(out_dir, group_id, run_id)
+    run_dir = paths["labels"].parent
+    audit_path = run_dir / SHADOW_RETENTION_AUDIT_FILENAME
+    result_path = run_dir / RETENTION_CLEANUP_RESULT_FILENAME
+    base_result = {
+        "schema": "level1b_retention_cleanup_result",
+        "schema_version": 1,
+        "candidate_scale_group_id": str(group_id),
+        "run_id": str(run_id),
+        "step9_run_status": str(step9_run_status),
+        "source_shadow_audit_path": str(audit_path),
+        "execution_report_path": str(paths["report"]),
+        "execution_report_artifact_state_scope": "at_segmentation_completion",
+        "execution_report_preserved_unchanged": True,
+        "scientific_run_status_unchanged": True,
+        "cleanup_result_path": str(result_path),
+        "deleted_paths": [],
+        "bytes_reclaimed": 0,
+        "artifact_results": [],
+    }
+
+    def finish(status: str, reason: str) -> dict[str, Any]:
+        result = {**base_result, "status": status, "reason": reason}
+        _write_json_atomic(result_path, result)
+        return result
+
+    if step9_run_status not in RETENTION_CLEANUP_EXECUTION_STATUSES:
+        return finish(
+            "retention_cleanup_skipped_reused_or_unclassified_run",
+            "cleanup_is_limited_to_newly_computed_or_recomputed_runs",
+        )
+
+    try:
+        audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return finish(
+            "retention_cleanup_skipped_invalid_shadow_audit",
+            "shadow_retention_audit_is_missing_or_invalid",
+        )
+    if audit.get("status") != "shadow_retention_audit_ready":
+        return finish(
+            "retention_cleanup_skipped_shadow_not_ready",
+            "shadow_retention_audit_did_not_pass_all_checks",
+        )
+
+    inventory = audit.get("artifact_inventory")
+    if not isinstance(inventory, list):
+        return finish(
+            "retention_cleanup_skipped_invalid_shadow_inventory",
+            "artifact_inventory_is_not_a_list",
+        )
+    inventory_by_key = {
+        item.get("artifact_key"): item
+        for item in inventory
+        if isinstance(item, dict)
+    }
+    if set(inventory_by_key) != set(SHADOW_TRANSIENT_ARTIFACT_KEYS):
+        return finish(
+            "retention_cleanup_skipped_invalid_shadow_inventory",
+            "artifact_inventory_does_not_match_the_exact_transient_allowlist",
+        )
+    for artifact_key in SHADOW_TRANSIENT_ARTIFACT_KEYS:
+        expected_path = run_dir / OUTPUT_ARTIFACT_FILENAMES[artifact_key]
+        if Path(str(inventory_by_key[artifact_key].get("path", ""))) != expected_path:
+            return finish(
+                "retention_cleanup_skipped_invalid_shadow_inventory",
+                f"shadow_path_mismatch_for_{artifact_key}",
+            )
+
+    expected_metadata = _expected_run_metadata(cfg, paths, group_id, row, run_id)
+    if not _is_complete_run(paths, expected_metadata, group_id):
+        return finish(
+            "retention_cleanup_skipped_resume_incomplete",
+            "current_resume_contract_is_not_complete",
+        )
+
+    retained_paths = {
+        "masked_segmentation_stack": run_dir
+        / OUTPUT_ARTIFACT_FILENAMES["masked_segmentation_stack"],
+        "merged_labels": paths["labels"],
+        "one_scale_segmentation_report": paths["report"],
+        "run_q_segments": paths["segments_csv"],
+        "run_q_summary_json": paths["summary_json"],
+        "run_q_summary_csv": paths["summary_csv"],
+    }
+    retained_before = {
+        key: _artifact_state(path) for key, path in retained_paths.items()
+    }
+    base_result["retained_artifacts_before_cleanup"] = retained_before
+    if not all(
+        state["exists"] and state["non_empty"]
+        for state in retained_before.values()
+    ):
+        return finish(
+            "retention_cleanup_skipped_retained_artifact_missing",
+            "one_or_more_retained_artifacts_are_missing_or_empty",
+        )
+
+    artifact_results: list[dict[str, Any]] = []
+    deleted_paths: list[str] = []
+    bytes_reclaimed = 0
+    for artifact_key in SHADOW_TRANSIENT_ARTIFACT_KEYS:
+        artifact_path = run_dir / OUTPUT_ARTIFACT_FILENAMES[artifact_key]
+        size_before = artifact_path.stat().st_size if artifact_path.is_file() else 0
+        if not artifact_path.exists():
+            artifact_results.append(
+                {
+                    "artifact_key": artifact_key,
+                    "path": str(artifact_path),
+                    "status": "already_absent",
+                    "size_bytes_before": 0,
+                }
+            )
+            continue
+        try:
+            artifact_path.unlink()
+        except OSError as exc:
+            artifact_results.append(
+                {
+                    "artifact_key": artifact_key,
+                    "path": str(artifact_path),
+                    "status": "delete_failed",
+                    "size_bytes_before": size_before,
+                    "error": str(exc),
+                }
+            )
+        else:
+            deleted_paths.append(str(artifact_path))
+            bytes_reclaimed += size_before
+            artifact_results.append(
+                {
+                    "artifact_key": artifact_key,
+                    "path": str(artifact_path),
+                    "status": "deleted",
+                    "size_bytes_before": size_before,
+                }
+            )
+
+    retained_after = {
+        key: _artifact_state(path) for key, path in retained_paths.items()
+    }
+    base_result.update(
+        {
+            "deleted_paths": deleted_paths,
+            "bytes_reclaimed": bytes_reclaimed,
+            "artifact_results": artifact_results,
+            "retained_artifacts_after_cleanup": retained_after,
+        }
+    )
+    delete_failed = any(
+        item["status"] == "delete_failed" for item in artifact_results
+    )
+    retained_missing = not all(
+        state["exists"] and state["non_empty"]
+        for state in retained_after.values()
+    )
+    if delete_failed or retained_missing:
+        return finish(
+            "retention_cleanup_partial",
+            "one_or_more_transients_were_not_deleted_or_a_retained_artifact_changed",
+        )
+    return finish(
+        "retention_cleanup_complete",
+        "exact_allowlisted_transients_are_absent_and_retained_artifacts_are_intact",
+    )
 
 
 def label_classes_from_counts(
