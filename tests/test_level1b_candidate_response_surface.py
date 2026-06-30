@@ -107,6 +107,28 @@ def test_01_groups_step8_rows_into_candidate_scale_groups() -> None:
     assert [row["perturbation_id"] for row in groups[0]["rows"]] == ["a1", "a2"]
 
 
+def test_step8_reader_accepts_direct_candidate_list(tmp_path: Path) -> None:
+    candidate_rows = rows()
+    path = tmp_path / "midpoint_perturbation_candidates.json"
+    path.write_text(json.dumps(candidate_rows), encoding="utf-8")
+
+    assert rs.read_step8_local_parameter_combinations(path) == candidate_rows
+
+
+def test_step9_input_validation_failure_reports_failed_status(tmp_path: Path) -> None:
+    path = tmp_path / "empty_candidates.json"
+    path.write_text("[]", encoding="utf-8")
+
+    report = run_candidate_response_surface_step(
+        cfg(tmp_path, perturbation_candidates_json_path=path)
+    )
+
+    assert report["status"] == "failed"
+    assert report["number_of_failed_runs"] == 1
+    assert report["failed_runs"][0]["status"] == "failed"
+    assert "empty or missing" in report["failed_runs"][0]["reason"]
+
+
 def test_02_counts_segments_without_dense_label_assumption() -> None:
     labels = np.array([[0, 5, 5], [1000, 1000, 0]], dtype=np.int32)
     counts = count_segment_sizes(labels, 2.0)
@@ -1540,5 +1562,50 @@ def test_midpoint_response_surface_and_handoff_from_prepare_rejects_unmatched_mu
         rs.run_step9b_midpoint_response_surface_and_handoff_from_prepare(
             run_root,
             "requested-candidate",
+            config,
+        )
+
+
+def test_midpoint_connector_stops_on_failed_nested_response_surface(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_root = tmp_path / "run"
+    prepare_dir = run_root / "level1b" / "step9b_prepare_inputs"
+    step9b_dir = run_root / "level1b" / "local_transition_refinement"
+    prepare_dir.mkdir(parents=True)
+    step9b_dir.mkdir(parents=True)
+    (prepare_dir / "ranked_candidate_scales.json").write_text(
+        json.dumps(
+            [
+                {"candidate_scale_group_id": "no1", "stability_score_raw": 1.0},
+                {"candidate_scale_group_id": "no2", "stability_score_raw": 0.0},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (step9b_dir / "step9b_midpoint_probe_candidate.json").write_text(
+        json.dumps({"candidate_scale_group_id": "midpoint"}), encoding="utf-8"
+    )
+    (step9b_dir / "step9b_midpoint_perturbation_candidates.json").write_text(
+        json.dumps([{"candidate_scale_group_id": "midpoint"}]), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        rs,
+        "run_candidate_response_surface_step",
+        lambda config: {"status": "failed"},
+    )
+    config = Level1BCandidateResponseSurfaceConfig(
+        candidate_id="candidate",
+        output_dir=tmp_path / "unused",
+        perturbation_candidates_json_path=tmp_path / "unused.json",
+    )
+
+    with pytest.raises(
+        RuntimeError, match="Midpoint response surface failed with status 'failed'"
+    ):
+        rs.run_step9b_midpoint_response_surface_and_handoff_from_prepare(
+            run_root,
+            "candidate",
             config,
         )

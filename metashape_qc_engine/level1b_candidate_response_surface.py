@@ -162,7 +162,7 @@ def resolve_valid_mask_path(cfg: Level1BCandidateResponseSurfaceConfig) -> Path:
 def read_step8_local_parameter_combinations(json_path: str | Path) -> list[dict[str, Any]]:
     with Path(json_path).open(encoding="utf-8") as file_obj:
         payload = json.load(file_obj)
-    rows = payload.get("candidates", payload if isinstance(payload, list) else None)
+    rows = payload if isinstance(payload, list) else payload.get("candidates")
     if not isinstance(rows, list) or not rows:
         raise ValueError("Step-8 perturbation candidate table is empty or missing")
     return [dict(row) for row in rows]
@@ -1789,7 +1789,14 @@ def run_step9b_midpoint_response_surface_and_handoff_from_prepare(
         midpoint_perturbation_candidates_json
     )
     midpoint_response_surface_config.candidate_id = candidate_id
-    run_candidate_response_surface_step(midpoint_response_surface_config)
+    midpoint_response_surface_result = run_candidate_response_surface_step(
+        midpoint_response_surface_config
+    )
+    if midpoint_response_surface_result.get("status") != "ok":
+        raise RuntimeError(
+            "Midpoint response surface failed with status "
+            f"{midpoint_response_surface_result.get('status')!r}"
+        )
 
     midpoint_candidate_response_surface_dir = response_surface_output_dir(
         midpoint_response_surface_output_dir
@@ -1871,7 +1878,19 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
         rows = read_step8_local_parameter_combinations(cfg.perturbation_candidates_json_path)
         groups = group_rows_by_candidate_scale(rows)
     except Exception as exc:  # noqa: BLE001 - top-level report must capture validation failures.
-        report = _top_report(cfg, out_dir, [], [], [], [], [], [{"reason": str(exc)}], [], started)
+        report = _top_report(
+            cfg,
+            out_dir,
+            [],
+            [],
+            [],
+            [],
+            [],
+            [{"status": "failed", "reason": str(exc)}],
+            [],
+            started,
+        )
+        report["status"] = "failed"
         _write_json(out_dir / OUTPUT_FILENAMES["report"], report)
         return report
 
