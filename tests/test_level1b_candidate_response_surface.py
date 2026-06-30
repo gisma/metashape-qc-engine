@@ -33,6 +33,35 @@ from metashape_qc_engine.level1b_candidate_response_surface import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _stub_canonical_masked_stack(monkeypatch: pytest.MonkeyPatch):
+    def prepare(
+        segmentation_stack_path,
+        valid_mask_path,
+        output_path,
+        *,
+        segmentation_nodata_value=0.0,
+        overwrite=False,
+    ):
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"canonical-masked-stack")
+        report = {
+            "status": "ok",
+            "preparation_status": "computed",
+            "segmentation_stack_path": str(segmentation_stack_path),
+            "valid_mask_path": str(valid_mask_path),
+            "segmentation_nodata_value": float(segmentation_nodata_value),
+            "masked_segmentation_stack_path": str(output_path),
+        }
+        output_path.with_name("masked_segmentation_stack_report.json").write_text(
+            json.dumps(report), encoding="utf-8"
+        )
+        return report
+
+    monkeypatch.setattr(rs, "prepare_canonical_masked_segmentation_stack", prepare)
+
+
 def cfg(tmp_path: Path | None = None, **overrides) -> Level1BCandidateResponseSurfaceConfig:
     root = tmp_path or Path("/tmp")
     values = {
@@ -449,9 +478,22 @@ def test_20_proxy_stack_is_default_and_mask_is_forwarded(tmp_path: Path, monkeyp
     assert captured[0].segmentation_stack_path == proxy
     assert captured[0].segmentation_stack_source == "proxy_stack"
     assert captured[0].valid_mask_path == mask
+    assert captured[0].masked_segmentation_stack_path == (
+        output
+        / "level1b"
+        / "candidate_response_surface"
+        / "masked_segmentation_stack.tif"
+    )
+    assert captured[0].masked_segmentation_stack_scope == (
+        "response_surface_canonical"
+    )
+    assert captured[0].run_contract_version == 2
     assert captured[0].debug_command_output is True
     assert report["segmentation_stack_path"] == str(proxy)
     assert report["segmentation_stack_source"] == "proxy_stack"
+    assert report["canonical_masked_segmentation_stack_path"] == str(
+        captured[0].masked_segmentation_stack_path
+    )
 
 
 def test_21_pca_is_used_only_when_explicitly_configured(tmp_path: Path) -> None:
@@ -487,6 +529,18 @@ def test_22_invalid_support_is_zero_and_excluded_from_run_statistics(tmp_path: P
     assert summary_json["segmentation_stack_path"] == str(feature)
     assert summary_json["segmentation_stack_source"] == "explicit_feature_space_stack_compat"
     assert summary_json["valid_mask_path"] == str(mask)
+    assert summary_json["masked_segmentation_stack_path"] == str(
+        tmp_path
+        / "out"
+        / "level1b"
+        / "candidate_response_surface"
+        / "masked_segmentation_stack.tif"
+    )
+    assert summary_json["masked_segmentation_stack_scope"] == (
+        "response_surface_canonical"
+    )
+    assert summary_json["run_contract_version"] == 2
+    assert summary_json["merged_labels_path"].endswith("merged_labels.tif")
     assert {"scale_id", "candidate_id", "perturbation_id", "radius_m", "spatialr_px", "minsize_px", "ranger", "n_segments", "q_p10", "q_p25", "q_median", "q_p75", "q_p90"}.issubset(summary_json)
     assert {f"{size}_frac_{weight}" for size in rs.SIZE_CLASSES for weight in ("n", "area")}.issubset(summary_json)
     assert {"area_m2", "req_m", "q", "q_class"}.issubset(segment_rows[0])
@@ -649,6 +703,7 @@ def test_29_resume_recomputes_intermediate_only_state(tmp_path: Path, monkeypatc
 
 def test_resume_accepts_existing_full_report_without_reading_label_raster(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     feature = write_raster(
         tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8)
@@ -667,9 +722,26 @@ def test_resume_accepts_existing_full_report_without_reading_label_raster(
     paths["labels"].parent.mkdir(parents=True, exist_ok=True)
     paths["labels"].write_bytes(b"existing-label-product")
     row = json.loads(candidates.read_text(encoding="utf-8"))["candidates"][0]
-    expected = rs._expected_run_metadata(config, paths, "scale-a", row, "run-a")
+    canonical_expected = rs._expected_run_metadata(
+        config, paths, "scale-a", row, "run-a"
+    )
+    legacy_expected = {
+        key: value
+        for key, value in canonical_expected.items()
+        if key
+        not in {
+            "masked_segmentation_stack_scope",
+            "run_contract_version",
+            "merged_labels_path",
+        }
+    }
+    legacy_masked_stack = paths["labels"].parent / "masked_segmentation_stack.tif"
+    legacy_masked_stack.write_bytes(b"legacy-masked-stack")
+    legacy_expected["masked_segmentation_stack_path"] = str(
+        legacy_masked_stack
+    )
     old_full_report = {
-        **expected,
+        **legacy_expected,
         "status": "ok",
         "output_artifacts": {"merged_labels": str(paths["labels"])},
         "command_results": [
@@ -683,7 +755,7 @@ def test_resume_accepts_existing_full_report_without_reading_label_raster(
     }
     paths["report"].write_text(json.dumps(old_full_report), encoding="utf-8")
     summary_row = {
-        **expected,
+        **legacy_expected,
         "run_id": "run-a",
         "candidate_scale_group_id": "scale-a",
         "n_segments": 1,
@@ -705,7 +777,21 @@ def test_resume_accepts_existing_full_report_without_reading_label_raster(
         ],
     )
 
-    assert rs._is_complete_run(paths, expected, "scale-a") is True
+    assert (
+        rs._is_complete_legacy_run(
+            paths, canonical_expected, "scale-a"
+        )
+        is True
+    )
+    monkeypatch.setattr(
+        rs,
+        "run_one_scale_segmentation_smoke",
+        lambda config: pytest.fail("legacy complete run must be reused"),
+    )
+    reused = rs._run_or_reuse_segmentation(
+        config, out_dir, "scale-a", row, "run-a"
+    )
+    assert reused["step9_run_status"] == "reused"
 
 
 def test_shadow_retention_audit_proposes_only_resume_safe_transients(
@@ -750,13 +836,13 @@ def test_shadow_retention_audit_proposes_only_resume_safe_transients(
             }
         ],
     )
-    for artifact_key in (
-        *rs.SHADOW_TRANSIENT_ARTIFACT_KEYS,
-        "masked_segmentation_stack",
-    ):
+    for artifact_key in rs.SHADOW_TRANSIENT_ARTIFACT_KEYS:
         (paths["labels"].parent / rs.OUTPUT_ARTIFACT_FILENAMES[artifact_key]).write_bytes(
             artifact_key.encode("utf-8")
         )
+    canonical_masked_stack = Path(expected["masked_segmentation_stack_path"])
+    canonical_masked_stack.parent.mkdir(parents=True, exist_ok=True)
+    canonical_masked_stack.write_bytes(b"masked_segmentation_stack")
 
     audit = rs._write_shadow_retention_audit(
         out_dir, config, "scale-a", row, "run-a"

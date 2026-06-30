@@ -15,6 +15,7 @@ import numpy as np
 from metashape_qc_engine.level1b_one_scale_segmentation import (
     Level1BOneScaleSegmentationConfig,
     OUTPUT_ARTIFACT_FILENAMES,
+    prepare_canonical_masked_segmentation_stack,
     run_one_scale_segmentation_smoke,
 )
 from metashape_qc_engine.level1b_perturbations import (
@@ -50,7 +51,12 @@ OUTPUT_FILENAMES = {
     "accepted": "accepted_scale_candidates.json",
     "removed": "removed_scale_candidates.json",
     "failed": "failed_runs.json",
+    "canonical_masked_stack": "masked_segmentation_stack.tif",
+    "canonical_masked_stack_report": "masked_segmentation_stack_report.json",
 }
+
+RUN_CONTRACT_VERSION = 2
+CANONICAL_MASKED_STACK_SCOPE = "response_surface_canonical"
 
 SCALE_COORDINATE_FIELDS = (
     "source_candidate_radius_m",
@@ -2026,6 +2032,51 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
     segmentation_stack_path, segmentation_stack_source = resolve_segmentation_stack(cfg)
     valid_mask_path = resolve_valid_mask_path(cfg)
     pixel_size = _pixel_size_m(segmentation_stack_path)
+    canonical_masked_stack_path = out_dir / OUTPUT_FILENAMES[
+        "canonical_masked_stack"
+    ]
+    canonical_masked_stack_report: dict[str, Any] | None = None
+    if not cfg.dry_run:
+        canonical_masked_stack_report = prepare_canonical_masked_segmentation_stack(
+            segmentation_stack_path,
+            valid_mask_path,
+            canonical_masked_stack_path,
+            overwrite=cfg.overwrite,
+        )
+        if canonical_masked_stack_report.get("status") != "ok":
+            failed_runs.append(
+                {
+                    "status": "failed",
+                    "reason": "canonical masked segmentation stack preparation failed: "
+                    + "; ".join(
+                        canonical_masked_stack_report.get("failure_reasons", [])
+                    ),
+                }
+            )
+            report = _top_report(
+                cfg,
+                out_dir,
+                rows,
+                groups,
+                [],
+                [],
+                [],
+                failed_runs,
+                omitted_runs,
+                started,
+                planned_group_count=planned_group_count,
+            )
+            report["canonical_masked_segmentation_stack_path"] = str(
+                canonical_masked_stack_path
+            )
+            report["canonical_masked_segmentation_stack_report"] = (
+                canonical_masked_stack_report
+            )
+            _write_json(out_dir / OUTPUT_FILENAMES["report"], report)
+            _write_candidate_response_surface_manifest(
+                cfg, out_dir, str(report["status"])
+            )
+            return report
     for group in groups:
         group_id = group["candidate_scale_group_id"]
         rows_for_group = list(group["rows"])
@@ -2225,6 +2276,12 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
     report["segmentation_stack_source"] = segmentation_stack_source
     report["valid_mask_path"] = str(valid_mask_path)
     report["invalid_support_excluded_from_q_statistics"] = True
+    report["canonical_masked_segmentation_stack_path"] = str(
+        canonical_masked_stack_path
+    )
+    report["canonical_masked_segmentation_stack_report"] = (
+        canonical_masked_stack_report
+    )
     report["perturbation_statuses"] = segmentation_reports
     report.update(scale_gate)
     _write_json(out_dir / OUTPUT_FILENAMES["report"], report)
@@ -2337,7 +2394,12 @@ def _run_or_reuse_segmentation(
     artifact_paths = _run_artifact_paths(out_dir, group_id, run_id)
     expected_metadata = _expected_run_metadata(cfg, artifact_paths, group_id, row, run_id)
     run_artifacts_exist = _run_has_any_artifacts(artifact_paths)
-    if not cfg.overwrite and _is_complete_run(artifact_paths, expected_metadata, group_id):
+    if not cfg.overwrite and (
+        _is_complete_run(artifact_paths, expected_metadata, group_id)
+        or _is_complete_legacy_run(
+            artifact_paths, expected_metadata, group_id
+        )
+    ):
         report = json.loads(artifact_paths["report"].read_text(encoding="utf-8"))
         report["step9_run_status"] = "reused"
         return report
@@ -2348,6 +2410,12 @@ def _run_or_reuse_segmentation(
         feature_space_stack_path=segmentation_stack_path,
         segmentation_stack_path=segmentation_stack_path,
         segmentation_stack_source=segmentation_stack_source,
+        masked_segmentation_stack_path=(
+            response_surface_output_dir(cfg.output_dir)
+            / OUTPUT_FILENAMES["canonical_masked_stack"]
+        ),
+        masked_segmentation_stack_scope=CANONICAL_MASKED_STACK_SCOPE,
+        run_contract_version=RUN_CONTRACT_VERSION,
         valid_mask_path=resolve_valid_mask_path(cfg),
         perturbation_candidates_json_path=cfg.perturbation_candidates_json_path,
         perturbation_id=run_id,
@@ -2400,7 +2468,13 @@ def _expected_run_metadata(
         "segmentation_stack_path": str(stack_path),
         "segmentation_stack_source": stack_source,
         "valid_mask_path": str(resolve_valid_mask_path(cfg)),
-        "masked_segmentation_stack_path": str(paths["labels"].parent / "masked_segmentation_stack.tif"),
+        "masked_segmentation_stack_path": str(
+            response_surface_output_dir(cfg.output_dir)
+            / OUTPUT_FILENAMES["canonical_masked_stack"]
+        ),
+        "masked_segmentation_stack_scope": CANONICAL_MASKED_STACK_SCOPE,
+        "run_contract_version": RUN_CONTRACT_VERSION,
+        "merged_labels_path": str(paths["labels"]),
         "pre_lsms_mask_applied": True,
         "post_mask_applied": True,
     }
@@ -2484,6 +2558,39 @@ def _is_complete_run(paths: dict[str, Path], expected_metadata: dict[str, Any], 
         and all(item.get("perturbation_id") == run_id for item in segment_rows)
         and str(report.get("output_artifacts", {}).get("merged_labels", "")) == str(paths["labels"])
     )
+
+
+def _is_complete_legacy_run(
+    paths: dict[str, Path],
+    canonical_expected_metadata: dict[str, Any],
+    group_id: str,
+) -> bool:
+    legacy_masked_stack = paths["labels"].parent / "masked_segmentation_stack.tif"
+    if not legacy_masked_stack.is_file() or legacy_masked_stack.stat().st_size == 0:
+        return False
+    try:
+        report = json.loads(paths["report"].read_text(encoding="utf-8"))
+        summary = json.loads(paths["summary_json"].read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    for item in (report, summary):
+        version = item.get("run_contract_version")
+        if version not in (None, 1):
+            return False
+    legacy_expected_metadata = {
+        key: value
+        for key, value in canonical_expected_metadata.items()
+        if key
+        not in {
+            "masked_segmentation_stack_scope",
+            "run_contract_version",
+            "merged_labels_path",
+        }
+    }
+    legacy_expected_metadata["masked_segmentation_stack_path"] = str(
+        legacy_masked_stack
+    )
+    return _is_complete_run(paths, legacy_expected_metadata, group_id)
 
 
 def _artifact_state(path: Path) -> dict[str, Any]:
@@ -2576,8 +2683,7 @@ def _write_shadow_retention_audit(
         {
             "artifact_key": "masked_segmentation_stack",
             **_artifact_state(
-                run_dir
-                / OUTPUT_ARTIFACT_FILENAMES["masked_segmentation_stack"]
+                Path(expected_metadata["masked_segmentation_stack_path"])
             ),
             "reason": "required_by_step10_exactextractr_segment_stats",
             "consumers": list(
@@ -2758,8 +2864,9 @@ def _apply_shadow_retention_cleanup(
         )
 
     retained_paths = {
-        "masked_segmentation_stack": run_dir
-        / OUTPUT_ARTIFACT_FILENAMES["masked_segmentation_stack"],
+        "masked_segmentation_stack": Path(
+            expected_metadata["masked_segmentation_stack_path"]
+        ),
         "merged_labels": paths["labels"],
         "one_scale_segmentation_report": paths["report"],
         "run_q_segments": paths["segments_csv"],
@@ -2932,6 +3039,11 @@ def _write_incremental_run_q_statistics_from_counts(
             "segmentation_stack_path": expected_metadata["segmentation_stack_path"],
             "segmentation_stack_source": expected_metadata["segmentation_stack_source"],
             "masked_segmentation_stack_path": expected_metadata["masked_segmentation_stack_path"],
+            "masked_segmentation_stack_scope": expected_metadata[
+                "masked_segmentation_stack_scope"
+            ],
+            "run_contract_version": expected_metadata["run_contract_version"],
+            "merged_labels_path": expected_metadata["merged_labels_path"],
             "pre_lsms_mask_applied": True,
             "post_mask_applied": True,
             "label_invalid_support_value": 0,

@@ -37,6 +37,9 @@ REPORT_KEYS = (
     "segmentation_stack_source",
     "valid_mask_path",
     "masked_segmentation_stack_path",
+    "masked_segmentation_stack_scope",
+    "run_contract_version",
+    "merged_labels_path",
     "meanshift_smoothed_path",
     "meanshift_position_path",
     "meanshift_smoothed_masked_path",
@@ -103,6 +106,9 @@ CHECK_KEYS = (
     "otb_small_regions_merging_discoverable",
     "otb_bandmathx_discoverable",
     "gdal_edit_discoverable",
+    "prebuilt_masked_segmentation_stack_exists_if_provided",
+    "prebuilt_masked_segmentation_stack_non_empty_if_provided",
+    "prebuilt_masked_segmentation_stack_suffix_raster_like_if_provided",
 )
 
 
@@ -116,6 +122,9 @@ class Level1BOneScaleSegmentationConfig:
     valid_mask_path: str | Path | None = None
     segmentation_stack_path: str | Path | None = None
     segmentation_stack_source: str = "proxy_stack"
+    masked_segmentation_stack_path: str | Path | None = None
+    masked_segmentation_stack_scope: str = "per_run_generated"
+    run_contract_version: int = 1
     segmentation_nodata_value: float = 0.0
     tilesizex: int = 512
     tilesizey: int = 512
@@ -143,12 +152,23 @@ def _segmentation_stack_path(config) -> Path:
     return Path(config.segmentation_stack_path or config.feature_space_stack_path)
 
 
+def _masked_segmentation_stack_path(config, layout) -> Path:
+    if config.masked_segmentation_stack_path is not None:
+        return Path(config.masked_segmentation_stack_path)
+    return layout["smoke_dir"] / "masked_segmentation_stack.tif"
+
+
 def validate_one_scale_segmentation_config(config, layout, apps) -> tuple[dict[str, bool], list[str]]:
     checks = {key: True for key in CHECK_KEYS}
     failure_reasons: list[str] = []
     feature_space_stack_path = _segmentation_stack_path(config)
     valid_mask_path = Path(config.valid_mask_path) if config.valid_mask_path is not None else None
     perturbation_candidates_json_path = Path(config.perturbation_candidates_json_path)
+    prebuilt_masked_stack = (
+        Path(config.masked_segmentation_stack_path)
+        if config.masked_segmentation_stack_path is not None
+        else None
+    )
 
     if not str(config.candidate_id).strip():
         checks["candidate_id_non_empty"] = False
@@ -186,8 +206,35 @@ def validate_one_scale_segmentation_config(config, layout, apps) -> tuple[dict[s
     if not isinstance(config.cleanup, bool):
         checks["cleanup_is_bool"] = False
         failure_reasons.append("cleanup must be bool")
+    if prebuilt_masked_stack is not None:
+        if not prebuilt_masked_stack.exists():
+            checks["prebuilt_masked_segmentation_stack_exists_if_provided"] = False
+            failure_reasons.append(
+                "prebuilt masked_segmentation_stack_path does not exist"
+            )
+        if not prebuilt_masked_stack.exists() or prebuilt_masked_stack.stat().st_size == 0:
+            checks[
+                "prebuilt_masked_segmentation_stack_non_empty_if_provided"
+            ] = False
+            failure_reasons.append(
+                "prebuilt masked_segmentation_stack_path is empty"
+            )
+        if prebuilt_masked_stack.suffix.lower() not in RASTER_SUFFIXES:
+            checks[
+                "prebuilt_masked_segmentation_stack_suffix_raster_like_if_provided"
+            ] = False
+            failure_reasons.append(
+                "prebuilt masked_segmentation_stack_path suffix must be raster-like"
+            )
     if not config.overwrite:
-        existing_outputs = [layout["smoke_dir"] / filename for filename in OUTPUT_ARTIFACT_FILENAMES.values()]
+        existing_outputs = [
+            layout["smoke_dir"] / filename
+            for key, filename in OUTPUT_ARTIFACT_FILENAMES.items()
+            if not (
+                key == "masked_segmentation_stack"
+                and prebuilt_masked_stack is not None
+            )
+        ]
         blocked_outputs = [path.name for path in existing_outputs if path.exists()]
         if blocked_outputs:
             checks["output_artifacts_available"] = False
@@ -202,7 +249,7 @@ def validate_one_scale_segmentation_config(config, layout, apps) -> tuple[dict[s
         if not apps.get(app_name):
             checks[check_key] = False
             failure_reasons.append(f"no OTB {app_name} app discoverable")
-    if not apps.get("gdal_edit"):
+    if prebuilt_masked_stack is None and not apps.get("gdal_edit"):
         checks["gdal_edit_discoverable"] = False
         failure_reasons.append("no GDAL gdal_edit.py discoverable")
 
@@ -293,7 +340,7 @@ def build_meanshift_smoothing_command(config, apps, layout, selected_candidate) 
     return [
         OTB_APP_CLI_NAMES["MeanShiftSmoothing"],
         "-in",
-        str(layout["smoke_dir"] / "masked_segmentation_stack.tif"),
+        str(_masked_segmentation_stack_path(config, layout)),
         "-fout",
         str(layout["smoke_dir"] / "meanshift_smoothed.tif"),
         "float",
@@ -340,7 +387,7 @@ def build_small_regions_merging_command(config, apps, layout, selected_candidate
     return [
         OTB_APP_CLI_NAMES["SmallRegionsMerging"],
         "-in",
-        str(layout["smoke_dir"] / "masked_segmentation_stack.tif"),
+        str(_masked_segmentation_stack_path(config, layout)),
         "-inseg",
         str(layout["smoke_dir"] / "lsms_labels.tif"),
         "-out",
@@ -374,6 +421,117 @@ def build_set_nodata_command(config, layout) -> list[str]:
         f"{float(config.segmentation_nodata_value):.17g}",
         str(layout["smoke_dir"] / "masked_segmentation_stack.tif"),
     ]
+
+
+def prepare_canonical_masked_segmentation_stack(
+    segmentation_stack_path: str | Path,
+    valid_mask_path: str | Path,
+    output_path: str | Path,
+    *,
+    segmentation_nodata_value: float = 0.0,
+    overwrite: bool = False,
+) -> dict[str, object]:
+    segmentation_stack_path = Path(segmentation_stack_path)
+    valid_mask_path = Path(valid_mask_path)
+    output_path = Path(output_path)
+    report_path = output_path.with_name("masked_segmentation_stack_report.json")
+    expected_provenance = {
+        "segmentation_stack_path": str(segmentation_stack_path),
+        "valid_mask_path": str(valid_mask_path),
+        "segmentation_nodata_value": float(segmentation_nodata_value),
+        "masked_segmentation_stack_path": str(output_path),
+    }
+    if not overwrite and output_path.is_file() and output_path.stat().st_size > 0:
+        try:
+            existing_report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            existing_report = None
+        if isinstance(existing_report, dict) and all(
+            existing_report.get(key) == value
+            for key, value in expected_provenance.items()
+        ):
+            return {
+                **existing_report,
+                "status": "ok",
+                "preparation_status": "reused",
+            }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = output_path.with_name(
+        f".{output_path.stem}.tmp{output_path.suffix}"
+    )
+    if temporary_path.exists():
+        temporary_path.unlink()
+    commands = [
+        [
+            OTB_APP_CLI_NAMES["BandMathX"],
+            "-il",
+            str(segmentation_stack_path),
+            str(valid_mask_path),
+            "-exp",
+            "im2b1 > 0 ? im1 : im1 * 0",
+            "-out",
+            str(temporary_path),
+            "float",
+        ],
+        [
+            GDAL_EDIT_CLI_NAME,
+            "-a_nodata",
+            f"{float(segmentation_nodata_value):.17g}",
+            str(temporary_path),
+        ],
+    ]
+    command_results = []
+    failure_reasons = []
+    for command in commands:
+        result = subprocess.run(command, capture_output=True, text=True)
+        command_results.append(
+            {
+                "command": command,
+                "returncode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+        )
+        if result.returncode != 0:
+            failure_reasons.append(
+                f"command failed with returncode {result.returncode}"
+            )
+            break
+    if not failure_reasons and (
+        not temporary_path.is_file() or temporary_path.stat().st_size == 0
+    ):
+        failure_reasons.append("canonical masked segmentation stack is missing or empty")
+    if failure_reasons:
+        if temporary_path.exists():
+            temporary_path.unlink()
+        return {
+            **expected_provenance,
+            "status": "failed",
+            "preparation_status": "failed",
+            "commands": commands,
+            "command_results": command_results,
+            "failure_reasons": failure_reasons,
+        }
+
+    temporary_path.replace(output_path)
+    report = {
+        **expected_provenance,
+        "status": "ok",
+        "preparation_status": "computed",
+        "commands": commands,
+        "command_results": [
+            {
+                "command": result["command"],
+                "returncode": result["returncode"],
+            }
+            for result in command_results
+        ],
+        "failure_reasons": [],
+        "size_bytes": output_path.stat().st_size,
+    }
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return report
 
 
 def build_masked_meanshift_smoothed_command(config, layout) -> list[str]:
@@ -418,8 +576,15 @@ def build_postmask_labels_command(config, layout) -> list[str]:
     ]
 
 
-def _output_artifacts(layout) -> dict[str, str]:
-    return {key: str(layout["smoke_dir"] / filename) for key, filename in OUTPUT_ARTIFACT_FILENAMES.items()}
+def _output_artifacts(config, layout) -> dict[str, str]:
+    artifacts = {
+        key: str(layout["smoke_dir"] / filename)
+        for key, filename in OUTPUT_ARTIFACT_FILENAMES.items()
+    }
+    artifacts["masked_segmentation_stack"] = str(
+        _masked_segmentation_stack_path(config, layout)
+    )
+    return artifacts
 
 
 def _artifact_exists(artifacts) -> dict[str, bool]:
@@ -438,7 +603,7 @@ def _files_written(artifacts, report_path) -> list[str]:
 
 
 def _base_report(config, layout, checks, failure_reasons, apps) -> dict[str, object]:
-    artifacts = _output_artifacts(layout)
+    artifacts = _output_artifacts(config, layout)
     values = {
         "candidate_id": str(config.candidate_id).strip(),
         "scale_id": None,
@@ -449,7 +614,14 @@ def _base_report(config, layout, checks, failure_reasons, apps) -> dict[str, obj
         "segmentation_stack_path": str(_segmentation_stack_path(config)),
         "segmentation_stack_source": str(config.segmentation_stack_source),
         "valid_mask_path": str(Path(config.valid_mask_path)) if config.valid_mask_path is not None else None,
-        "masked_segmentation_stack_path": str(layout["smoke_dir"] / "masked_segmentation_stack.tif"),
+        "masked_segmentation_stack_path": str(
+            _masked_segmentation_stack_path(config, layout)
+        ),
+        "masked_segmentation_stack_scope": str(
+            config.masked_segmentation_stack_scope
+        ),
+        "run_contract_version": int(config.run_contract_version),
+        "merged_labels_path": str(layout["smoke_dir"] / "merged_labels.tif"),
         "meanshift_smoothed_path": str(layout["smoke_dir"] / "meanshift_smoothed.tif"),
         "meanshift_position_path": str(layout["smoke_dir"] / "meanshift_position.tif"),
         "meanshift_smoothed_masked_path": str(layout["smoke_dir"] / "meanshift_smoothed_masked.tif"),
@@ -505,6 +677,12 @@ def _write_report(report, layout) -> dict[str, object]:
     report["output_artifact_exists"] = _artifact_exists(report["output_artifacts"])
     report["output_artifact_non_empty"] = _artifact_non_empty(report["output_artifacts"])
     report["files_written"] = _files_written(report["output_artifacts"], report_path)
+    if report["masked_segmentation_stack_scope"] == "response_surface_canonical":
+        report["files_written"] = [
+            filename
+            for filename in report["files_written"]
+            if filename != "masked_segmentation_stack.tif"
+        ]
     if REPORT_FILENAME not in report["files_written"]:
         report["files_written"].append(REPORT_FILENAME)
     if report["status"] == "ok" and not report["debug_command_output"]:
@@ -543,32 +721,68 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
         report["minsize_px"] = parameters["minsize"]
         report["radius_m"] = selected_candidate_radius_m(selected_candidate)
         report["ranger"] = parameters["ranger"]
-        commands = [
-            build_masked_segmentation_stack_command(config, layout),
-            build_set_nodata_command(config, layout),
-            build_meanshift_smoothing_command(config, apps, layout, selected_candidate),
-            build_masked_meanshift_smoothed_command(config, layout),
-            build_masked_meanshift_position_command(config, layout),
-            build_lsms_segmentation_command(config, apps, layout, selected_candidate),
-            build_small_regions_merging_command(config, apps, layout, selected_candidate),
-            build_postmask_labels_command(config, layout),
-        ]
-        report["otb_commands"] = commands
+        command_steps = []
+        if config.masked_segmentation_stack_path is None:
+            command_steps.extend(
+                [
+                    (
+                        build_masked_segmentation_stack_command(config, layout),
+                        ("masked_segmentation_stack",),
+                        None,
+                    ),
+                    (
+                        build_set_nodata_command(config, layout),
+                        ("masked_segmentation_stack",),
+                        None,
+                    ),
+                ]
+            )
+        command_steps.extend(
+            [
+                (
+                    build_meanshift_smoothing_command(
+                        config, apps, layout, selected_candidate
+                    ),
+                    ("meanshift_smoothed", "meanshift_position"),
+                    None,
+                ),
+                (
+                    build_masked_meanshift_smoothed_command(config, layout),
+                    ("meanshift_smoothed_masked",),
+                    None,
+                ),
+                (
+                    build_masked_meanshift_position_command(config, layout),
+                    ("meanshift_position_masked",),
+                    "pre_lsms_mask_applied",
+                ),
+                (
+                    build_lsms_segmentation_command(
+                        config, apps, layout, selected_candidate
+                    ),
+                    ("lsms_labels",),
+                    None,
+                ),
+                (
+                    build_small_regions_merging_command(
+                        config, apps, layout, selected_candidate
+                    ),
+                    ("merged_labels_unmasked",),
+                    None,
+                ),
+                (
+                    build_postmask_labels_command(config, layout),
+                    ("merged_labels",),
+                    "post_mask_applied",
+                ),
+            ]
+        )
+        report["otb_commands"] = [step[0] for step in command_steps]
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         report["failure_reasons"].append(str(exc))
         return _write_report(report, layout)
 
-    expected_by_step = (
-        ("masked_segmentation_stack",),
-        ("masked_segmentation_stack",),
-        ("meanshift_smoothed", "meanshift_position"),
-        ("meanshift_smoothed_masked",),
-        ("meanshift_position_masked",),
-        ("lsms_labels",),
-        ("merged_labels_unmasked",),
-        ("merged_labels",),
-    )
-    for index, command in enumerate(report["otb_commands"]):
+    for command, expected_artifacts, completion_flag in command_steps:
         result = subprocess.run(command, capture_output=True, text=True)
         report["command_results"].append(
             {
@@ -581,7 +795,7 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
         if result.returncode != 0:
             report["failure_reasons"].append(f"command failed with returncode {result.returncode}")
             return _write_report(report, layout)
-        for filename in expected_by_step[index]:
+        for filename in expected_artifacts:
             output_path = Path(report["output_artifacts"][filename])
             if not output_path.exists():
                 report["failure_reasons"].append(f"missing expected output {output_path.name}")
@@ -589,9 +803,9 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
             if output_path.stat().st_size == 0:
                 report["failure_reasons"].append(f"empty expected output {output_path.name}")
                 return _write_report(report, layout)
-        if index == 4:
+        if completion_flag == "pre_lsms_mask_applied":
             report["pre_lsms_mask_applied"] = True
-        if index == 7:
+        if completion_flag == "post_mask_applied":
             report["post_mask_applied"] = True
             report["labels_postmasked"] = True
             report["invalid_support_excluded_from_q_statistics"] = True

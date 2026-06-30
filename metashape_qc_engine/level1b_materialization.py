@@ -11,6 +11,16 @@ import subprocess
 from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 
+def _selected_label_raster_path(selected_row: dict) -> Path:
+    run_contract_version = selected_row.get("run_contract_version")
+    if run_contract_version is None or int(run_contract_version) == 1:
+        return (
+            Path(selected_row["masked_segmentation_stack_path"]).parent
+            / "merged_labels.tif"
+        )
+    return Path(selected_row["merged_labels_path"])
+
+
 def run_level1b_step10_collect_finalist_evidence(
     output_dir: str | Path,
 ) -> dict:
@@ -810,10 +820,7 @@ def run_level1b_step10_materialize_selected_segments(
         and row["original_row_metadata"]["is_baseline"] is True
     ]
 
-    source_label_raster = (
-        Path(selected_row["masked_segmentation_stack_path"]).parent
-        / "merged_labels.tif"
-    )
+    source_label_raster = _selected_label_raster_path(selected_row)
     final_segments_dir = (
         output_root / "level1b" / "step10_materialization" / "final_segments"
     )

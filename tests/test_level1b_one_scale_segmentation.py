@@ -227,3 +227,128 @@ def test_one_scale_uses_masked_input_postmasks_labels_and_reports_contract(tmp_p
     assert report["meanshift_position_masked_path"].endswith("meanshift_position_masked.tif")
     assert report["labels_postmasked"] is True
     assert report["invalid_support_excluded_from_q_statistics"] is True
+
+
+def test_one_scale_reuses_prebuilt_masked_stack_without_rebuilding_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stack = write_stack(tmp_path / "proxy_stack.tif")
+    mask = write_mask(tmp_path / "valid_mask.tif")
+    canonical = write_stack(tmp_path / "canonical_masked_stack.tif")
+    candidates = tmp_path / "candidates.json"
+    candidates.write_text(
+        json.dumps(
+            {
+                "candidates": [
+                    {
+                        "perturbation_id": "run-a",
+                        "scale_id": "s",
+                        "radius_m": 1.5,
+                        "spatialr_px": 2,
+                        "minsize_px": 3,
+                        "ranger": 0.4,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        one,
+        "discover_one_scale_segmentation_otb_apps",
+        lambda: {name: name for name in (*one.OTB_APP_CLI_NAMES, "gdal_edit")},
+    )
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        if "-fout" in command:
+            Path(command[command.index("-fout") + 1]).write_bytes(b"smoothed")
+            Path(command[command.index("-foutpos") + 1]).write_bytes(b"position")
+        elif "-out" in command:
+            Path(command[command.index("-out") + 1]).write_bytes(b"output")
+        return Result()
+
+    monkeypatch.setattr(one.subprocess, "run", fake_run)
+    report = one.run_one_scale_segmentation_smoke(
+        one.Level1BOneScaleSegmentationConfig(
+            candidate_id="candidate",
+            output_dir=tmp_path / "out",
+            feature_space_stack_path=stack,
+            segmentation_stack_path=stack,
+            segmentation_stack_source="proxy_stack",
+            masked_segmentation_stack_path=canonical,
+            masked_segmentation_stack_scope="response_surface_canonical",
+            run_contract_version=2,
+            valid_mask_path=mask,
+            perturbation_candidates_json_path=candidates,
+            perturbation_id="run-a",
+        )
+    )
+
+    assert report["status"] == "ok"
+    assert len(commands) == 6
+    assert not any(command[0] == one.GDAL_EDIT_CLI_NAME for command in commands)
+    assert not any(
+        command[0] == one.OTB_APP_CLI_NAMES["BandMathX"]
+        and "canonical_masked_stack.tif" in command
+        for command in commands
+    )
+    meanshift = next(
+        command
+        for command in commands
+        if command[0] == one.OTB_APP_CLI_NAMES["MeanShiftSmoothing"]
+    )
+    assert meanshift[meanshift.index("-in") + 1] == str(canonical)
+    assert report["masked_segmentation_stack_path"] == str(canonical)
+    assert report["masked_segmentation_stack_scope"] == (
+        "response_surface_canonical"
+    )
+    assert report["run_contract_version"] == 2
+    assert report["merged_labels_path"].endswith("merged_labels.tif")
+    assert "masked_segmentation_stack.tif" not in report["files_written"]
+
+
+def test_canonical_masked_stack_preparation_is_reused_by_exact_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = write_stack(tmp_path / "source.tif")
+    mask = write_mask(tmp_path / "mask.tif")
+    output = tmp_path / "response_surface" / "masked_segmentation_stack.tif"
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        if "-out" in command:
+            target = Path(command[command.index("-out") + 1])
+            target.write_bytes(b"canonical")
+        return Result()
+
+    monkeypatch.setattr(one.subprocess, "run", fake_run)
+
+    first = one.prepare_canonical_masked_segmentation_stack(
+        source, mask, output
+    )
+    second = one.prepare_canonical_masked_segmentation_stack(
+        source, mask, output
+    )
+
+    assert first["status"] == "ok"
+    assert first["preparation_status"] == "computed"
+    assert second["status"] == "ok"
+    assert second["preparation_status"] == "reused"
+    assert len(commands) == 2
+    assert output.read_bytes() == b"canonical"
+    assert output.with_name("masked_segmentation_stack_report.json").exists()
