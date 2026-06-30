@@ -92,7 +92,7 @@ def _install_stubs(
         _write(surface / "run_population_summary.json", [])
         _write(surface / "candidate_group_response_summary.json", [])
         _write(surface / "candidate_response_surface_report.json")
-        return {"status": "ok"}
+        return {"status": "ok", "large_embedded_report": "must-not-be-copied"}
 
     def step9b_prepare(*, run_root, candidate_id, perturbation_config):
         calls.append("step9b_prepare")
@@ -290,6 +290,33 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     connector = captured["step9b_midpoint_handoff"]
     assert connector["candidate_response_surface_config"] is step9a_config
     assert result["status"] == "level1b_dumb_chain_complete"
+    assert result["step_results"]["step9a"] == {
+        "status": "ok",
+        "artifacts": {
+            "run_population": str(
+                output_dir
+                / "level1b"
+                / "candidate_response_surface"
+                / "run_population_summary.json"
+            ),
+            "candidate_group_summary": str(
+                output_dir
+                / "level1b"
+                / "candidate_response_surface"
+                / "candidate_group_response_summary.json"
+            ),
+            "report": str(
+                output_dir
+                / "level1b"
+                / "candidate_response_surface"
+                / "candidate_response_surface_report.json"
+            ),
+        },
+    }
+    assert all(
+        set(step_result).issubset({"status", "step9b_status", "artifacts"})
+        for step_result in result["step_results"].values()
+    )
 
 
 def test_non_adjacent_artifact_branch_stops_before_midpoint_and_step10(

@@ -32,11 +32,6 @@ from metashape_qc_engine.level1b_candidate_response_surface import (
 )
 
 
-OBSOLETE_RESUME_FULL_RASTER = pytest.mark.skip(
-    reason="obsolete resume fixture uses disabled full-raster label reads; Step-9 now requires windowed helpers"
-)
-
-
 def cfg(tmp_path: Path | None = None, **overrides) -> Level1BCandidateResponseSurfaceConfig:
     root = tmp_path or Path("/tmp")
     values = {
@@ -299,6 +294,17 @@ def test_19_required_outputs_are_written(tmp_path: Path, monkeypatch) -> None:
     for path in report["required_outputs"].values():
         assert Path(path).exists()
     output_dir = rs.response_surface_output_dir(tmp_path / "out")
+    assert not (output_dir / "candidate_response_surface_summary.json").exists()
+    assert not (output_dir / "candidate_response_surface_summary.csv").exists()
+    assert set(report["perturbation_statuses"][0]) == {
+        "run_id",
+        "candidate_scale_group_id",
+        "status",
+        "report_path",
+    }
+    assert report["perturbation_statuses"][0]["report_path"].endswith(
+        "one_scale_segmentation_report.json"
+    )
     for stem in ("candidate_group_response_summary", "ranked_candidate_scales"):
         summaries = json.loads((output_dir / f"{stem}.json").read_text(encoding="utf-8"))
         assert "stability_score_raw" in summaries[0]
@@ -429,11 +435,16 @@ def test_20_proxy_stack_is_default_and_mask_is_forwarded(tmp_path: Path, monkeyp
         return {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(labels)}}
 
     monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", fake)
-    report = run_candidate_response_surface_step(Level1BCandidateResponseSurfaceConfig("candidate", output, candidates))
+    report = run_candidate_response_surface_step(
+        Level1BCandidateResponseSurfaceConfig(
+            "candidate", output, candidates, debug_command_output=True
+        )
+    )
 
     assert captured[0].segmentation_stack_path == proxy
     assert captured[0].segmentation_stack_source == "proxy_stack"
     assert captured[0].valid_mask_path == mask
+    assert captured[0].debug_command_output is True
     assert report["segmentation_stack_path"] == str(proxy)
     assert report["segmentation_stack_source"] == "proxy_stack"
 
@@ -501,108 +512,6 @@ def test_23_per_run_statistics_survive_a_later_run_failure(tmp_path: Path, monke
     assert paths["segments_csv"].exists() and paths["summary_json"].exists() and paths["summary_csv"].exists()
 
 
-def _seed_complete_run(tmp_path: Path, feature: Path, mask: Path, candidates: Path) -> tuple[Level1BCandidateResponseSurfaceConfig, dict[str, Path]]:
-    config = cfg(tmp_path, perturbation_candidates_json_path=candidates, feature_space_stack_path=feature, valid_mask_path=mask, overwrite=False)
-    out_dir = rs.response_surface_output_dir(config.output_dir)
-    paths = rs._run_artifact_paths(out_dir, "scale-a", "run-a")
-    write_raster(paths["labels"], np.array([[1, 1], [2, 2]], dtype=np.uint32))
-    row = json.loads(candidates.read_text(encoding="utf-8"))["candidates"][0]
-    expected = rs._expected_run_metadata(config, paths, "scale-a", row, "run-a")
-    paths["report"].write_text(json.dumps(dict(expected, status="ok", output_artifacts={"merged_labels": str(paths["labels"])})), encoding="utf-8")
-    labels = rs._apply_valid_mask_to_labels(rs._read_label_raster(paths["labels"]), mask)
-    summary_row = compute_run_population_summary("run-a", "scale-a", row, labels, 1.0, config)
-    rs._write_incremental_run_q_statistics(out_dir, "scale-a", "run-a", row, labels, 1.0, config, summary_row)
-    return config, paths
-
-
-@OBSOLETE_RESUME_FULL_RASTER
-def test_24_resume_skips_complete_perturbation(tmp_path: Path, monkeypatch) -> None:
-    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
-    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
-    candidates = _one_run_candidates(tmp_path / "candidates.json")
-    config, _paths = _seed_complete_run(tmp_path, feature, mask, candidates)
-    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", lambda config: (_ for _ in ()).throw(AssertionError("complete run was recomputed")))
-
-    report = run_candidate_response_surface_step(config)
-
-    assert report["perturbation_statuses"][0]["status"] == "reused"
-
-
-@OBSOLETE_RESUME_FULL_RASTER
-def test_25_resume_recomputes_incomplete_perturbation(tmp_path: Path, monkeypatch) -> None:
-    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
-    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
-    candidates = _one_run_candidates(tmp_path / "candidates.json")
-    config, paths = _seed_complete_run(tmp_path, feature, mask, candidates)
-    paths["summary_csv"].unlink()
-    calls = []
-
-    def fake(segmentation_config):
-        calls.append(segmentation_config)
-        return {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(paths["labels"])}}
-
-    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", fake)
-    report = run_candidate_response_surface_step(config)
-
-    assert len(calls) == 1
-    assert calls[0].overwrite is True
-    assert report["perturbation_statuses"][0]["status"] == "recomputed_incomplete"
-
-
-def _run_and_assert_recomputed(config, paths, monkeypatch) -> None:
-    calls = []
-
-    def fake(segmentation_config):
-        calls.append(segmentation_config)
-        return {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(paths["labels"])}}
-
-    monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", fake)
-    report = run_candidate_response_surface_step(config)
-    assert len(calls) == 1
-    assert calls[0].overwrite is True
-    assert report["perturbation_statuses"][0]["status"] == "recomputed_incomplete"
-
-
-@OBSOLETE_RESUME_FULL_RASTER
-def test_26_resume_recomputes_when_segmentation_stack_path_changes(tmp_path: Path, monkeypatch) -> None:
-    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
-    replacement = write_raster(tmp_path / "replacement.tif", np.ones((2, 2), dtype=np.uint8))
-    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
-    candidates = _one_run_candidates(tmp_path / "candidates.json")
-    config, paths = _seed_complete_run(tmp_path, feature, mask, candidates)
-    config.feature_space_stack_path = replacement
-
-    _run_and_assert_recomputed(config, paths, monkeypatch)
-
-
-@OBSOLETE_RESUME_FULL_RASTER
-def test_27_resume_recomputes_when_valid_mask_path_changes(tmp_path: Path, monkeypatch) -> None:
-    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
-    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
-    replacement = write_raster(tmp_path / "replacement_mask.tif", np.ones((2, 2), dtype=np.uint8))
-    candidates = _one_run_candidates(tmp_path / "candidates.json")
-    config, paths = _seed_complete_run(tmp_path, feature, mask, candidates)
-    config.valid_mask_path = replacement
-
-    _run_and_assert_recomputed(config, paths, monkeypatch)
-
-
-@OBSOLETE_RESUME_FULL_RASTER
-def test_28_resume_recomputes_when_candidate_parameters_change(tmp_path: Path, monkeypatch) -> None:
-    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
-    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
-    for field, value in (("radius_m", 2.0), ("spatialr_px", 2), ("minsize_px", 2), ("ranger", 0.2)):
-        case_dir = tmp_path / field
-        case_dir.mkdir()
-        candidates = _one_run_candidates(case_dir / "candidates.json")
-        config, paths = _seed_complete_run(case_dir, feature, mask, candidates)
-        payload = json.loads(candidates.read_text(encoding="utf-8"))
-        payload["candidates"][0][field] = value
-        candidates.write_text(json.dumps(payload), encoding="utf-8")
-
-        _run_and_assert_recomputed(config, paths, monkeypatch)
-
-
 def test_29_resume_recomputes_intermediate_only_state(tmp_path: Path, monkeypatch) -> None:
     feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
     mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
@@ -625,37 +534,65 @@ def test_29_resume_recomputes_intermediate_only_state(tmp_path: Path, monkeypatc
     assert report["perturbation_statuses"][0]["status"] == "recomputed_incomplete"
 
 
-@OBSOLETE_RESUME_FULL_RASTER
-def test_30_resume_recomputes_when_summary_csv_disagrees_with_json(tmp_path: Path, monkeypatch) -> None:
-    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
+def test_resume_accepts_existing_full_report_without_reading_label_raster(
+    tmp_path: Path,
+) -> None:
+    feature = write_raster(
+        tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8)
+    )
     mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
     candidates = _one_run_candidates(tmp_path / "candidates.json")
-    config, paths = _seed_complete_run(tmp_path, feature, mask, candidates)
-    with paths["summary_csv"].open(newline="", encoding="utf-8") as file_obj:
-        rows = list(csv.DictReader(file_obj))
-    rows[0]["n_segments"] = "999"
-    rs._write_csv(paths["summary_csv"], rows)
+    config = cfg(
+        tmp_path,
+        perturbation_candidates_json_path=candidates,
+        feature_space_stack_path=feature,
+        valid_mask_path=mask,
+        overwrite=False,
+    )
+    out_dir = rs.response_surface_output_dir(config.output_dir)
+    paths = rs._run_artifact_paths(out_dir, "scale-a", "run-a")
+    paths["labels"].parent.mkdir(parents=True, exist_ok=True)
+    paths["labels"].write_bytes(b"existing-label-product")
+    row = json.loads(candidates.read_text(encoding="utf-8"))["candidates"][0]
+    expected = rs._expected_run_metadata(config, paths, "scale-a", row, "run-a")
+    old_full_report = {
+        **expected,
+        "status": "ok",
+        "output_artifacts": {"merged_labels": str(paths["labels"])},
+        "command_results": [
+            {
+                "command": ["otbcli_Test"],
+                "returncode": 0,
+                "stdout": "legacy successful stdout",
+                "stderr": "legacy successful stderr",
+            }
+        ],
+    }
+    paths["report"].write_text(json.dumps(old_full_report), encoding="utf-8")
+    summary_row = {
+        **expected,
+        "run_id": "run-a",
+        "candidate_scale_group_id": "scale-a",
+        "n_segments": 1,
+    }
+    rs._write_json(paths["summary_json"], summary_row)
+    rs._write_csv(paths["summary_csv"], [summary_row])
+    rs._write_csv(
+        paths["segments_csv"],
+        [
+            {
+                "scale_id": "scale-a",
+                "candidate_id": "cand-a",
+                "perturbation_id": "run-a",
+                "area_m2": 1.0,
+                "req_m": 1.0,
+                "q": 1.0,
+                "q_class": "in_scale",
+            }
+        ],
+    )
 
-    _run_and_assert_recomputed(config, paths, monkeypatch)
-
-
-@OBSOLETE_RESUME_FULL_RASTER
-def test_31_resume_recomputes_when_stack_source_or_candidate_id_changes(tmp_path: Path, monkeypatch) -> None:
-    feature = write_raster(tmp_path / "features.tif", np.ones((2, 2), dtype=np.uint8))
-    mask = write_raster(tmp_path / "mask.tif", np.ones((2, 2), dtype=np.uint8))
-    for field in ("stack_source", "candidate_id"):
-        case_dir = tmp_path / field
-        case_dir.mkdir()
-        candidates = _one_run_candidates(case_dir / "candidates.json")
-        config, paths = _seed_complete_run(case_dir, feature, mask, candidates)
-        if field == "stack_source":
-            config.segmentation_stack_source = "changed_source"
-        else:
-            payload = json.loads(candidates.read_text(encoding="utf-8"))
-            payload["candidates"][0]["source_candidate_id"] = "cand-b"
-            candidates.write_text(json.dumps(payload), encoding="utf-8")
-
-        _run_and_assert_recomputed(config, paths, monkeypatch)
+    assert rs._is_complete_run(paths, expected, "scale-a") is True
 
 
 def test_32_stability_score_raw_is_exposed_and_stability_score_remains_clamped() -> None:
@@ -1349,6 +1286,10 @@ def test_step9b_prepare_from_existing_step9a_writes_true_ranked_views_and_calls_
     )
     assert prepared_report == {
         "status": "step9a-complete",
+        "candidate_id": "opaque-candidate-id",
+        "source_candidate_response_surface_report": str(
+            step9a_dir / "candidate_response_surface_report.json"
+        ),
         "top_pair_scale_continuity_status": "adjacent_top_pair_confirmed",
     }
     assert json.loads((prepare_dir / "step9b_prepare_result.json").read_text(encoding="utf-8")) == result[

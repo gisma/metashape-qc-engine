@@ -32,8 +32,6 @@ SUMMARY_DISTANCE_WEIGHTS = {
 }
 OUTPUT_FILENAMES = {
     "report": "candidate_response_surface_report.json",
-    "summary_csv": "candidate_response_surface_summary.csv",
-    "summary_json": "candidate_response_surface_summary.json",
     "run_population_csv": "run_population_summary.csv",
     "run_population_json": "run_population_summary.json",
     "group_csv": "candidate_group_response_summary.csv",
@@ -104,6 +102,7 @@ class Level1BCandidateResponseSurfaceConfig:
     ram_mb: int = 8192
     overwrite: bool = False
     dry_run: bool = False
+    debug_command_output: bool = False
     max_candidate_scale_groups: int | None = None
     max_runs_per_group: int | None = None
     run_hoover_audit: bool = False
@@ -1718,8 +1717,13 @@ def run_step9b_prepare_from_existing_step9a(
         run_population_rows,
         ranked_candidate_rows,
     )
-    step9a_gate_report = deepcopy(step9a_report)
-    step9a_gate_report.update(step9a_gate_metadata)
+    source_step9a_report = step9a_dir / "candidate_response_surface_report.json"
+    step9a_gate_report = {
+        "status": step9a_report.get("status"),
+        "candidate_id": step9a_report.get("candidate_id", candidate_id),
+        "source_candidate_response_surface_report": str(source_step9a_report),
+        **step9a_gate_metadata,
+    }
 
     step9b_prepare_inputs_dir = run_root / "level1b" / "step9b_prepare_inputs"
     step9b_prepare_inputs_dir.mkdir(parents=True, exist_ok=True)
@@ -1929,7 +1933,20 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
                     labels = np.zeros((0, 0), dtype=np.int32)
                 else:
                     segmentation_report = _run_or_reuse_segmentation(cfg, out_dir, group_id, row, run_id)
-                    segmentation_reports.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": segmentation_report.get("step9_run_status", "computed"), "report": segmentation_report})
+                    segmentation_reports.append(
+                        {
+                            "run_id": run_id,
+                            "candidate_scale_group_id": group_id,
+                            "status": segmentation_report.get(
+                                "step9_run_status", "computed"
+                            ),
+                            "report_path": str(
+                                _run_artifact_paths(out_dir, group_id, run_id)[
+                                    "report"
+                                ]
+                            ),
+                        }
+                    )
                     status_recorded = True
                     if segmentation_report.get("status") != "ok":
                         raise RuntimeError("one-scale segmentation failed: " + "; ".join(segmentation_report.get("failure_reasons", [])))
@@ -1938,7 +1955,18 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
                         raise RuntimeError("merged label raster missing from segmentation report")
                     label_counts = count_segment_sizes_from_raster(labels_path, valid_mask_path, pixel_size)
                 if cfg.dry_run:
-                    segmentation_reports.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": "skipped_dry_run", "report": segmentation_report})
+                    segmentation_reports.append(
+                        {
+                            "run_id": run_id,
+                            "candidate_scale_group_id": group_id,
+                            "status": "skipped_dry_run",
+                            "report_path": str(
+                                _run_artifact_paths(out_dir, group_id, run_id)[
+                                    "report"
+                                ]
+                            ),
+                        }
+                    )
                     status_recorded = True
                 if cfg.dry_run:
                     failed_runs.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": "omitted", "reason": "dry_run"})
@@ -1970,7 +1998,19 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
                     segmentation_reports[-1]["status"] = "failed"
                     segmentation_reports[-1]["reason"] = str(exc)
                 else:
-                    segmentation_reports.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": "failed", "reason": str(exc)})
+                    segmentation_reports.append(
+                        {
+                            "run_id": run_id,
+                            "candidate_scale_group_id": group_id,
+                            "status": "failed",
+                            "reason": str(exc),
+                            "report_path": str(
+                                _run_artifact_paths(out_dir, group_id, run_id)[
+                                    "report"
+                                ]
+                            ),
+                        }
+                    )
         if group_run_summaries:
             group_summaries.append(compute_candidate_group_response_summary(group_id, group_run_summaries, group_matrix_summaries, cfg))
 
@@ -2031,8 +2071,6 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
     report["perturbation_statuses"] = segmentation_reports
     report.update(scale_gate)
     _write_json(out_dir / OUTPUT_FILENAMES["report"], report)
-    _write_json(out_dir / OUTPUT_FILENAMES["summary_json"], report)
-    _write_csv(out_dir / OUTPUT_FILENAMES["summary_csv"], [report])
     return report
 
 
@@ -2157,6 +2195,7 @@ def _run_or_reuse_segmentation(
         perturbation_id=run_id,
         ram_mb=cfg.ram_mb,
         overwrite=cfg.overwrite or run_artifacts_exist,
+        debug_command_output=cfg.debug_command_output,
     )
     report = run_one_scale_segmentation_smoke(segmentation_cfg)
     if report.get("status") != "ok":

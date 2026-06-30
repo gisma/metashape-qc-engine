@@ -75,6 +75,22 @@ def _require_artifacts(step_name: str, paths: Sequence[Path]) -> None:
             raise RuntimeError(f"{step_name}: expected artifact missing: {path}")
 
 
+def _compact_step_result(
+    result: object,
+    artifacts: dict[str, Path] | None = None,
+) -> dict[str, object]:
+    status = result.get("status") if isinstance(result, dict) else None
+    compact: dict[str, object] = {
+        "status": status,
+        "artifacts": {
+            name: str(path) for name, path in (artifacts or {}).items()
+        },
+    }
+    if isinstance(result, dict) and isinstance(result.get("step9b_result"), dict):
+        compact["step9b_status"] = result["step9b_result"].get("step9b_status")
+    return compact
+
+
 def run_level1b_dumb_chain(
     rgb_ortho: Path,
     output_dir: Path,
@@ -131,7 +147,7 @@ def run_level1b_dumb_chain(
         )
     )
     _raise_on_failed_status("preflight", preflight_result)
-    step_results["preflight"] = preflight_result
+    step_results["preflight"] = _compact_step_result(preflight_result)
 
     valid_mask_result = run_valid_mask_step(
         Level1BValidMaskConfig(
@@ -143,7 +159,9 @@ def run_level1b_dumb_chain(
     )
     _raise_on_failed_status("valid_mask", valid_mask_result)
     _require_artifacts("valid_mask", (valid_mask,))
-    step_results["valid_mask"] = valid_mask_result
+    step_results["valid_mask"] = _compact_step_result(
+        valid_mask_result, {"valid_mask": valid_mask}
+    )
 
     pixel_size_m = _pixel_size_m(rgb_ortho)
     channels_result = run_channel_construction_step(
@@ -159,7 +177,10 @@ def run_level1b_dumb_chain(
     )
     _raise_on_failed_status("channels", channels_result)
     _require_artifacts("channels", (proxy_stack, channel_report))
-    step_results["channels"] = channels_result
+    step_results["channels"] = _compact_step_result(
+        channels_result,
+        {"proxy_stack": proxy_stack, "channel_report": channel_report},
+    )
 
     scaling_result = run_scaling_step(
         Level1BScalingConfig(
@@ -173,7 +194,9 @@ def run_level1b_dumb_chain(
     )
     _raise_on_failed_status("scaling", scaling_result)
     _require_artifacts("scaling", (scaled_feature_stack,))
-    step_results["scaling"] = scaling_result
+    step_results["scaling"] = _compact_step_result(
+        scaling_result, {"scaled_feature_stack": scaled_feature_stack}
+    )
 
     scale_distribution_result = run_scale_distribution_step(
         Level1BScaleDistributionConfig(
@@ -194,7 +217,9 @@ def run_level1b_dumb_chain(
     )
     _raise_on_failed_status("scale_distribution", scale_distribution_result)
     _require_artifacts("scale_distribution", (scale_candidates,))
-    step_results["scale_distribution"] = scale_distribution_result
+    step_results["scale_distribution"] = _compact_step_result(
+        scale_distribution_result, {"scale_candidates": scale_candidates}
+    )
 
     feature_range_result = run_feature_range_assignment_step(
         Level1BFeatureRangeConfig(
@@ -210,7 +235,10 @@ def run_level1b_dumb_chain(
     )
     _raise_on_failed_status("feature_range", feature_range_result)
     _require_artifacts("feature_range", (scale_candidates_with_ranger,))
-    step_results["feature_range"] = feature_range_result
+    step_results["feature_range"] = _compact_step_result(
+        feature_range_result,
+        {"scale_candidates_with_ranger": scale_candidates_with_ranger},
+    )
 
     perturbation_config = Level1BPerturbationConfig(
         candidate_id=candidate_id,
@@ -221,7 +249,10 @@ def run_level1b_dumb_chain(
     perturbation_result = run_local_perturbation_step(perturbation_config)
     _raise_on_failed_status("perturbations", perturbation_result)
     _require_artifacts("perturbations", (perturbation_candidates,))
-    step_results["perturbations"] = perturbation_result
+    step_results["perturbations"] = _compact_step_result(
+        perturbation_result,
+        {"perturbation_candidates": perturbation_candidates},
+    )
 
     candidate_response_surface_config = Level1BCandidateResponseSurfaceConfig(
         candidate_id=candidate_id,
@@ -240,7 +271,14 @@ def run_level1b_dumb_chain(
         "step9a",
         (step9a_run_population, step9a_group_summary, step9a_report),
     )
-    step_results["step9a"] = step9a_result
+    step_results["step9a"] = _compact_step_result(
+        step9a_result,
+        {
+            "run_population": step9a_run_population,
+            "candidate_group_summary": step9a_group_summary,
+            "report": step9a_report,
+        },
+    )
 
     step9b_prepare_result = run_step9b_prepare_from_existing_step9a(
         run_root=output_dir,
@@ -249,7 +287,15 @@ def run_level1b_dumb_chain(
     )
     _raise_on_failed_status("step9b_prepare", step9b_prepare_result)
     _require_artifacts("step9b_prepare", step9b_prepare_artifacts)
-    step_results["step9b_prepare"] = step9b_prepare_result
+    step_results["step9b_prepare"] = _compact_step_result(
+        step9b_prepare_result,
+        {
+            "run_population": step9b_prepare_artifacts[0],
+            "ranked_candidates": step9b_prepare_artifacts[1],
+            "gate_report": step9b_prepare_artifacts[2],
+            "result": step9b_prepare_artifacts[3],
+        },
+    )
 
     if not (midpoint_probe.exists() and midpoint_perturbations.exists()):
         if supported_alternatives.exists():
@@ -299,7 +345,14 @@ def run_level1b_dumb_chain(
         "step9b_midpoint_handoff",
         (midpoint_run_population, midpoint_group_summary, handoff),
     )
-    step_results["step9b_midpoint_handoff"] = step9b_midpoint_handoff_result
+    step_results["step9b_midpoint_handoff"] = _compact_step_result(
+        step9b_midpoint_handoff_result,
+        {
+            "run_population": midpoint_run_population,
+            "candidate_group_summary": midpoint_group_summary,
+            "handoff": handoff,
+        },
+    )
 
     step10_root = level1b_dir / "step10_materialization"
     decision_evidence_dir = step10_root / "decision_evidence"
@@ -314,7 +367,13 @@ def run_level1b_dumb_chain(
     _require_artifacts(
         "step10_collect", (finalist_group_summary, finalist_perturbation_runs)
     )
-    step_results["step10_collect"] = step10_collect_result
+    step_results["step10_collect"] = _compact_step_result(
+        step10_collect_result,
+        {
+            "finalist_group_summary": finalist_group_summary,
+            "finalist_perturbation_runs": finalist_perturbation_runs,
+        },
+    )
 
     finalist_group_aggregation = (
         decision_evidence_dir / "finalist_group_aggregation.json"
@@ -330,13 +389,21 @@ def run_level1b_dumb_chain(
         "step10_aggregate",
         (finalist_group_aggregation, finalist_numeric_distribution),
     )
-    step_results["step10_aggregate"] = step10_aggregate_result
+    step_results["step10_aggregate"] = _compact_step_result(
+        step10_aggregate_result,
+        {
+            "finalist_group_aggregation": finalist_group_aggregation,
+            "finalist_numeric_distribution": finalist_numeric_distribution,
+        },
+    )
 
     figure_manifest = step10_root / "figures" / "step10_figure_manifest.json"
     step10_figures_result = run_level1b_step10_make_finalist_figures(output_dir)
     _raise_on_failed_status("step10_figures", step10_figures_result)
     _require_artifacts("step10_figures", (figure_manifest,))
-    step_results["step10_figures"] = step10_figures_result
+    step_results["step10_figures"] = _compact_step_result(
+        step10_figures_result, {"figure_manifest": figure_manifest}
+    )
 
     final_segments_dir = step10_root / "final_segments"
     selected_segments_manifest = (
@@ -352,7 +419,14 @@ def run_level1b_dumb_chain(
         "step10_materialize",
         (selected_segments_manifest, selected_segments, selected_labels),
     )
-    step_results["step10_materialize"] = step10_materialize_result
+    step_results["step10_materialize"] = _compact_step_result(
+        step10_materialize_result,
+        {
+            "selected_segments_manifest": selected_segments_manifest,
+            "selected_segments": selected_segments,
+            "selected_labels": selected_labels,
+        },
+    )
 
     segment_stats_dir = step10_root / "segment_stats"
     segment_stats_csv = (
@@ -372,7 +446,14 @@ def run_level1b_dumb_chain(
         "step10_quality",
         (segment_stats_csv, segment_stats_summary, step10_quality),
     )
-    step_results["step10_quality"] = step10_quality_result
+    step_results["step10_quality"] = _compact_step_result(
+        step10_quality_result,
+        {
+            "segment_stats": segment_stats_csv,
+            "segment_stats_summary": segment_stats_summary,
+            "quality": step10_quality,
+        },
+    )
 
     return {
         "status": "level1b_dumb_chain_complete",

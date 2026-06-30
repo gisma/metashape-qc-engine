@@ -58,6 +58,78 @@ def test_read_perturbation_candidates_accepts_midpoint_list_payload(tmp_path: Pa
     assert one.read_perturbation_candidates(path) == rows
 
 
+def test_report_is_serialized_once_and_success_output_is_compact(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = one.Level1BOneScaleSegmentationConfig(
+        candidate_id="candidate",
+        output_dir=tmp_path / "out",
+        feature_space_stack_path=tmp_path / "stack.tif",
+        perturbation_candidates_json_path=tmp_path / "candidates.json",
+        perturbation_id="run-a",
+    )
+    layout = one.build_level1b_one_scale_segmentation_layout(
+        config.output_dir, config.perturbation_id
+    )
+    report = one._base_report(config, layout, {}, [], {})
+    report["status"] = "ok"
+    report["command_results"] = [
+        {
+            "command": ["otbcli_Test"],
+            "returncode": 0,
+            "stdout": "verbose successful output",
+            "stderr": "successful warning",
+        }
+    ]
+    original_dump = one.json.dump
+    dump_calls = []
+
+    def counting_dump(*args, **kwargs):
+        dump_calls.append(None)
+        return original_dump(*args, **kwargs)
+
+    monkeypatch.setattr(one.json, "dump", counting_dump)
+    written = one._write_report(report, layout)
+
+    assert len(dump_calls) == 1
+    assert written["command_results"] == [
+        {"command": ["otbcli_Test"], "returncode": 0}
+    ]
+    assert json.loads(
+        (layout["smoke_dir"] / one.REPORT_FILENAME).read_text(encoding="utf-8")
+    ) == written
+
+
+def test_failed_or_debug_report_retains_full_command_output(tmp_path: Path) -> None:
+    for status, debug in (("failed", False), ("ok", True)):
+        config = one.Level1BOneScaleSegmentationConfig(
+            candidate_id="candidate",
+            output_dir=tmp_path / status,
+            feature_space_stack_path=tmp_path / "stack.tif",
+            perturbation_candidates_json_path=tmp_path / "candidates.json",
+            perturbation_id="run-a",
+            debug_command_output=debug,
+        )
+        layout = one.build_level1b_one_scale_segmentation_layout(
+            config.output_dir, config.perturbation_id
+        )
+        report = one._base_report(config, layout, {}, [], {})
+        report["status"] = status
+        report["command_results"] = [
+            {
+                "command": ["otbcli_Test"],
+                "returncode": 1 if status == "failed" else 0,
+                "stdout": "diagnostic stdout",
+                "stderr": "diagnostic stderr",
+            }
+        ]
+
+        written = one._write_report(report, layout)
+
+        assert written["command_results"][0]["stdout"] == "diagnostic stdout"
+        assert written["command_results"][0]["stderr"] == "diagnostic stderr"
+
+
 def test_matrix_zero_mask_expression_is_accepted_by_otb_when_available(tmp_path: Path) -> None:
     otb = shutil.which("otbcli_BandMathX")
     if otb is None:

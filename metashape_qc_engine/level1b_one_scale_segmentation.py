@@ -61,6 +61,7 @@ REPORT_KEYS = (
     "ram_mb",
     "cleanup",
     "overwrite",
+    "debug_command_output",
     "checks",
     "status",
     "failure_reasons",
@@ -121,6 +122,7 @@ class Level1BOneScaleSegmentationConfig:
     ram_mb: int = 1024
     cleanup: bool = True
     overwrite: bool = False
+    debug_command_output: bool = False
 
 
 def build_level1b_one_scale_segmentation_layout(output_dir, perturbation_id) -> dict[str, Path]:
@@ -472,6 +474,7 @@ def _base_report(config, layout, checks, failure_reasons, apps) -> dict[str, obj
         "ram_mb": config.ram_mb,
         "cleanup": config.cleanup,
         "overwrite": config.overwrite,
+        "debug_command_output": config.debug_command_output,
         "checks": checks,
         "status": "failed",
         "failure_reasons": failure_reasons,
@@ -504,14 +507,19 @@ def _write_report(report, layout) -> dict[str, object]:
     report["files_written"] = _files_written(report["output_artifacts"], report_path)
     if REPORT_FILENAME not in report["files_written"]:
         report["files_written"].append(REPORT_FILENAME)
+    if report["status"] == "ok" and not report["debug_command_output"]:
+        report["command_results"] = [
+            {
+                key: value
+                for key, value in command_result.items()
+                if key not in {"stdout", "stderr"}
+            }
+            for command_result in report["command_results"]
+        ]
+    payload = {key: report[key] for key in REPORT_KEYS}
     with report_path.open("w", encoding="utf-8") as file_obj:
-        json.dump({key: report[key] for key in REPORT_KEYS}, file_obj, indent=2)
-    report["output_artifact_exists"] = _artifact_exists(report["output_artifacts"])
-    report["output_artifact_non_empty"] = _artifact_non_empty(report["output_artifacts"])
-    report["files_written"] = _files_written(report["output_artifacts"], report_path)
-    with report_path.open("w", encoding="utf-8") as file_obj:
-        json.dump({key: report[key] for key in REPORT_KEYS}, file_obj, indent=2)
-    return json.loads(report_path.read_text(encoding="utf-8"))
+        json.dump(payload, file_obj, indent=2)
+    return payload
 
 
 def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
