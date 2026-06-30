@@ -1,4 +1,5 @@
 import csv
+import inspect
 import json
 from pathlib import Path
 import sys
@@ -510,6 +511,11 @@ def test_23_per_run_statistics_survive_a_later_run_failure(tmp_path: Path, monke
 
     assert calls == ["run-a", "run-b"]
     assert paths["segments_csv"].exists() and paths["summary_json"].exists() and paths["summary_csv"].exists()
+    audit_path = paths["labels"].parent / rs.SHADOW_RETENTION_AUDIT_FILENAME
+    assert audit_path.exists()
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert audit["deletion_performed"] is False
+    assert audit["deleted_paths"] == []
 
 
 def test_29_resume_recomputes_intermediate_only_state(tmp_path: Path, monkeypatch) -> None:
@@ -593,6 +599,146 @@ def test_resume_accepts_existing_full_report_without_reading_label_raster(
     )
 
     assert rs._is_complete_run(paths, expected, "scale-a") is True
+
+
+def test_shadow_retention_audit_proposes_only_resume_safe_transients(
+    tmp_path: Path,
+) -> None:
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    config = cfg(tmp_path, perturbation_candidates_json_path=candidates)
+    out_dir = rs.response_surface_output_dir(config.output_dir)
+    paths = rs._run_artifact_paths(out_dir, "scale-a", "run-a")
+    paths["labels"].parent.mkdir(parents=True, exist_ok=True)
+    paths["labels"].write_bytes(b"labels")
+    row = json.loads(candidates.read_text(encoding="utf-8"))["candidates"][0]
+    expected = rs._expected_run_metadata(
+        config, paths, "scale-a", row, "run-a"
+    )
+    report = {
+        **expected,
+        "status": "ok",
+        "output_artifacts": {"merged_labels": str(paths["labels"])},
+    }
+    paths["report"].write_text(json.dumps(report), encoding="utf-8")
+    summary_row = {
+        **expected,
+        "run_id": "run-a",
+        "candidate_scale_group_id": "scale-a",
+        "n_segments": 1,
+    }
+    rs._write_json(paths["summary_json"], summary_row)
+    rs._write_csv(paths["summary_csv"], [summary_row])
+    rs._write_csv(
+        paths["segments_csv"],
+        [
+            {
+                "scale_id": "scale-a",
+                "candidate_id": "cand-a",
+                "perturbation_id": "run-a",
+                "area_m2": 1.0,
+                "req_m": 1.0,
+                "q": 1.0,
+                "q_class": "in_scale",
+            }
+        ],
+    )
+    for artifact_key in (
+        *rs.SHADOW_TRANSIENT_ARTIFACT_KEYS,
+        "masked_segmentation_stack",
+    ):
+        (paths["labels"].parent / rs.OUTPUT_ARTIFACT_FILENAMES[artifact_key]).write_bytes(
+            artifact_key.encode("utf-8")
+        )
+
+    audit = rs._write_shadow_retention_audit(
+        out_dir, config, "scale-a", row, "run-a"
+    )
+
+    assert audit["status"] == "shadow_retention_audit_ready"
+    assert audit["mode"] == "shadow_only_no_deletion"
+    assert audit["deletion_performed"] is False
+    assert audit["deleted_paths"] == []
+    assert audit["checks"] == {
+        "final_label_exists_and_non_empty": True,
+        "run_summary_exists_and_non_empty": True,
+        "run_report_exists_and_non_empty": True,
+        "run_report_status_successful": True,
+        "resume_complete_without_proposed_transients": True,
+        "proposed_transients_unreferenced_by_step9b_or_step10": True,
+    }
+    assert [item["artifact_key"] for item in audit["would_delete"]] == list(
+        rs.SHADOW_TRANSIENT_ARTIFACT_KEYS
+    )
+    assert all(item["would_delete"] for item in audit["artifact_inventory"])
+    assert not any(
+        item["resume_contract_required"]
+        or item["referenced_by_step9b_or_step10"]
+        for item in audit["artifact_inventory"]
+    )
+    retained = {
+        item["artifact_key"]: item for item in audit["retained_artifacts"]
+    }
+    assert retained["masked_segmentation_stack"]["reason"] == (
+        "required_by_step10_exactextractr_segment_stats"
+    )
+    assert "masked_segmentation_stack" not in {
+        item["artifact_key"] for item in audit["would_delete"]
+    }
+    assert (
+        paths["labels"].parent / rs.SHADOW_RETENTION_AUDIT_FILENAME
+    ).exists()
+
+    for item in audit["would_delete"]:
+        Path(item["path"]).unlink()
+    assert rs._is_complete_run(paths, expected, "scale-a") is True
+
+
+def test_shadow_retention_audit_never_proposes_deletion_for_incomplete_run(
+    tmp_path: Path,
+) -> None:
+    candidates = _one_run_candidates(tmp_path / "candidates.json")
+    config = cfg(tmp_path, perturbation_candidates_json_path=candidates)
+    out_dir = rs.response_surface_output_dir(config.output_dir)
+    paths = rs._run_artifact_paths(out_dir, "scale-a", "run-a")
+    paths["labels"].parent.mkdir(parents=True, exist_ok=True)
+    transient = (
+        paths["labels"].parent
+        / rs.OUTPUT_ARTIFACT_FILENAMES["meanshift_smoothed"]
+    )
+    transient.write_bytes(b"interrupted")
+    row = json.loads(candidates.read_text(encoding="utf-8"))["candidates"][0]
+
+    audit = rs._write_shadow_retention_audit(
+        out_dir, config, "scale-a", row, "run-a"
+    )
+
+    assert audit["status"] == "shadow_retention_audit_not_ready"
+    assert audit["would_delete"] == []
+    assert audit["deletion_performed"] is False
+    assert transient.read_bytes() == b"interrupted"
+
+
+def test_shadow_transients_are_not_read_by_step9b_or_step10() -> None:
+    from metashape_qc_engine import level1b_materialization
+
+    consumer_source = "\n".join(
+        [
+            inspect.getsource(rs.validate_step9b_local_transition_refinement),
+            inspect.getsource(rs.run_step9b_local_transition_refinement_preflight),
+            inspect.getsource(rs.run_step9b_midpoint_support_probe),
+            inspect.getsource(rs.run_step9b_prepare_from_existing_step9a),
+            inspect.getsource(
+                rs.run_step9b_midpoint_response_surface_and_handoff_from_prepare
+            ),
+            inspect.getsource(level1b_materialization),
+        ]
+    )
+
+    assert all(
+        rs.OUTPUT_ARTIFACT_FILENAMES[artifact_key] not in consumer_source
+        for artifact_key in rs.SHADOW_TRANSIENT_ARTIFACT_KEYS
+    )
+    assert "masked_segmentation_stack_path" in consumer_source
 
 
 def test_32_stability_score_raw_is_exposed_and_stability_score_remains_clamped() -> None:

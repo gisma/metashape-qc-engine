@@ -14,6 +14,7 @@ import numpy as np
 
 from metashape_qc_engine.level1b_one_scale_segmentation import (
     Level1BOneScaleSegmentationConfig,
+    OUTPUT_ARTIFACT_FILENAMES,
     run_one_scale_segmentation_smoke,
 )
 from metashape_qc_engine.level1b_perturbations import (
@@ -70,6 +71,20 @@ STEP9B_OUTPUT_FILENAMES = {
     "midpoint_perturbations_csv": "step9b_midpoint_perturbation_candidates.csv",
     "midpoint_perturbations_json": "step9b_midpoint_perturbation_candidates.json",
     "gain_share_handoff": "step9b_midpoint_gain_share_handoff.json",
+}
+
+SHADOW_RETENTION_AUDIT_FILENAME = "retention_shadow_audit.json"
+SHADOW_TRANSIENT_ARTIFACT_KEYS = (
+    "meanshift_smoothed",
+    "meanshift_position",
+    "meanshift_smoothed_masked",
+    "meanshift_position_masked",
+    "lsms_labels",
+    "merged_labels_unmasked",
+)
+DOWNSTREAM_RETAINED_ARTIFACT_CONSUMERS = {
+    "merged_labels": ("step9_resume", "step10_materialize_selected_segments"),
+    "masked_segmentation_stack": ("step10_exactextractr_segment_stats",),
 }
 
 STEP9B_GATE_METADATA_FIELDS = (
@@ -2084,6 +2099,9 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
                 matrix_summary = dict(matrix["summary"], analysis_cell_size_m=matrix["cell_size_m"], analysis_cell_size_px=matrix["cell_size_px"])
                 matrix_summaries.append(matrix_summary)
                 group_matrix_summaries.append(matrix_summary)
+                _write_shadow_retention_audit(
+                    out_dir, cfg, group_id, row, run_id
+                )
             except Exception as exc:  # noqa: BLE001 - every failed planned run is reported.
                 failed_runs.append({"run_id": run_id, "candidate_scale_group_id": group_id, "status": "failed", "reason": str(exc), "row": row})
                 if status_recorded:
@@ -2419,6 +2437,156 @@ def _is_complete_run(paths: dict[str, Path], expected_metadata: dict[str, Any], 
         and all(item.get("perturbation_id") == run_id for item in segment_rows)
         and str(report.get("output_artifacts", {}).get("merged_labels", "")) == str(paths["labels"])
     )
+
+
+def _artifact_state(path: Path) -> dict[str, Any]:
+    exists = path.is_file()
+    size_bytes = path.stat().st_size if exists else 0
+    return {
+        "path": str(path),
+        "exists": exists,
+        "non_empty": size_bytes > 0,
+        "size_bytes": size_bytes,
+    }
+
+
+def _write_shadow_retention_audit(
+    out_dir: Path,
+    cfg: Level1BCandidateResponseSurfaceConfig,
+    group_id: str,
+    row: dict[str, Any],
+    run_id: str,
+) -> dict[str, Any]:
+    paths = _run_artifact_paths(out_dir, group_id, run_id)
+    run_dir = paths["labels"].parent
+    expected_metadata = _expected_run_metadata(cfg, paths, group_id, row, run_id)
+    try:
+        run_report = json.loads(paths["report"].read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        run_report = {}
+
+    final_label_state = _artifact_state(paths["labels"])
+    run_summary_state = _artifact_state(paths["summary_json"])
+    report_state = _artifact_state(paths["report"])
+    resume_contract_paths = {path for path in paths.values()}
+    resume_contract_complete = _is_complete_run(
+        paths, expected_metadata, group_id
+    )
+
+    artifact_inventory: list[dict[str, Any]] = []
+    for artifact_key in SHADOW_TRANSIENT_ARTIFACT_KEYS:
+        artifact_path = run_dir / OUTPUT_ARTIFACT_FILENAMES[artifact_key]
+        consumers = DOWNSTREAM_RETAINED_ARTIFACT_CONSUMERS.get(artifact_key, ())
+        state = _artifact_state(artifact_path)
+        state.update(
+            {
+                "artifact_key": artifact_key,
+                "resume_contract_required": artifact_path
+                in resume_contract_paths,
+                "step9b_or_step10_consumers": list(consumers),
+                "referenced_by_step9b_or_step10": bool(consumers),
+            }
+        )
+        artifact_inventory.append(state)
+
+    checks = {
+        "final_label_exists_and_non_empty": bool(
+            final_label_state["exists"] and final_label_state["non_empty"]
+        ),
+        "run_summary_exists_and_non_empty": bool(
+            run_summary_state["exists"] and run_summary_state["non_empty"]
+        ),
+        "run_report_exists_and_non_empty": bool(
+            report_state["exists"] and report_state["non_empty"]
+        ),
+        "run_report_status_successful": run_report.get("status") == "ok",
+        "resume_complete_without_proposed_transients": bool(
+            resume_contract_complete
+            and all(
+                not item["resume_contract_required"]
+                for item in artifact_inventory
+            )
+        ),
+        "proposed_transients_unreferenced_by_step9b_or_step10": all(
+            not item["referenced_by_step9b_or_step10"]
+            for item in artifact_inventory
+        ),
+    }
+    audit_ready = all(checks.values())
+    for item in artifact_inventory:
+        item["would_delete"] = bool(audit_ready and item["exists"])
+
+    would_delete = [
+        {
+            "artifact_key": item["artifact_key"],
+            "path": item["path"],
+            "size_bytes": item["size_bytes"],
+        }
+        for item in artifact_inventory
+        if item["would_delete"]
+    ]
+    retained_artifacts = [
+        {
+            "artifact_key": "masked_segmentation_stack",
+            **_artifact_state(
+                run_dir
+                / OUTPUT_ARTIFACT_FILENAMES["masked_segmentation_stack"]
+            ),
+            "reason": "required_by_step10_exactextractr_segment_stats",
+            "consumers": list(
+                DOWNSTREAM_RETAINED_ARTIFACT_CONSUMERS[
+                    "masked_segmentation_stack"
+                ]
+            ),
+        },
+        {
+            "artifact_key": "merged_labels",
+            **final_label_state,
+            "reason": "required_by_resume_and_step10_materialization",
+            "consumers": list(
+                DOWNSTREAM_RETAINED_ARTIFACT_CONSUMERS["merged_labels"]
+            ),
+        },
+        *[
+            {
+                "artifact_key": artifact_key,
+                **_artifact_state(paths[path_key]),
+                "reason": "required_by_step9_resume_contract",
+                "consumers": ["step9_resume"],
+            }
+            for artifact_key, path_key in (
+                ("one_scale_segmentation_report", "report"),
+                ("run_q_segments", "segments_csv"),
+                ("run_q_summary_json", "summary_json"),
+                ("run_q_summary_csv", "summary_csv"),
+            )
+        ],
+    ]
+    audit = {
+        "schema": "level1b_shadow_retention_audit",
+        "schema_version": 1,
+        "status": (
+            "shadow_retention_audit_ready"
+            if audit_ready
+            else "shadow_retention_audit_not_ready"
+        ),
+        "mode": "shadow_only_no_deletion",
+        "candidate_scale_group_id": str(group_id),
+        "run_id": str(run_id),
+        "deletion_point": "after_run_q_and_analysis_matrix_completion",
+        "checks": checks,
+        "artifact_inventory": artifact_inventory,
+        "would_delete": would_delete,
+        "would_delete_count": len(would_delete),
+        "would_delete_bytes": sum(
+            int(item["size_bytes"]) for item in would_delete
+        ),
+        "retained_artifacts": retained_artifacts,
+        "deletion_performed": False,
+        "deleted_paths": [],
+    }
+    _write_json(run_dir / SHADOW_RETENTION_AUDIT_FILENAME, audit)
+    return audit
 
 
 def label_classes_from_counts(
