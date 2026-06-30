@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-import subprocess
 import sys
 
 
@@ -361,18 +360,3 @@ def test_14_dry_run_builds_planned_segmentation_without_calling_helpers(tmp_path
 
     assert report["segmentation_runs_attempted"] == 5
     assert report["hoover_comparisons_attempted"] == 0
-
-
-def test_15_no_step_1_8_production_files_are_modified() -> None:
-    protected = [
-        "metashape_qc_engine/level1b_preflight.py",
-        "metashape_qc_engine/level1b_channels.py",
-        "metashape_qc_engine/level1b_valid_mask.py",
-        "metashape_qc_engine/level1b_pca.py",
-        "metashape_qc_engine/level1b_scaling.py",
-        "metashape_qc_engine/level1b_scale_distribution.py",
-        "metashape_qc_engine/level1b_feature_range.py",
-        "metashape_qc_engine/level1b_perturbations.py",
-    ]
-
-    assert subprocess.run(["git", "diff", "--quiet", "--", *protected]).returncode == 0

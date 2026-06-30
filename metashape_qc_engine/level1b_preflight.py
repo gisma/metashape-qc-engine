@@ -15,6 +15,8 @@ from pathlib import Path
 import shutil
 from typing import Any, Iterable
 
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+
 
 DEFAULT_REQUIRED_OTB_APPS = (
     "BandMathX",
@@ -422,5 +424,19 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
         with report_path.open("w", encoding="utf-8") as handle:
             json.dump(report, handle, indent=2, sort_keys=True)
             handle.write("\n")
+
+    write_step_manifest(
+        config.output_dir,
+        step="preflight",
+        status=status,
+        inputs={"input_ortho": input_path},
+        artifacts={
+            "preflight_report": Path(config.output_dir)
+            / "level1b"
+            / "reports"
+            / "preflight.json"
+        },
+        candidate_id=candidate_id,
+    )
 
     return report

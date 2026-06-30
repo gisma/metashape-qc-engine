@@ -8,6 +8,8 @@ import shutil
 import statistics
 import subprocess
 
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+
 
 def run_level1b_step10_collect_finalist_evidence(
     output_dir: str | Path,
@@ -174,6 +176,31 @@ def run_level1b_step10_collect_finalist_evidence(
     write_csv(group_csv_path, group_rows)
     write_json(runs_json_path, run_rows)
     write_csv(runs_csv_path, run_rows)
+
+    write_step_manifest(
+        output_dir,
+        step="step10_collect",
+        status="step10_part1_finalist_evidence_collected",
+        inputs={
+            "step9b_handoff_json": step9b_dir
+            / "step9b_midpoint_gain_share_handoff.json",
+            "step9a_candidate_group_response_summary_json": step9a_dir
+            / "candidate_group_response_summary.json",
+            "step9a_run_population_summary_json": step9a_dir
+            / "run_population_summary.json",
+            "midpoint_candidate_group_response_summary_json": midpoint_response_surface_dir
+            / "candidate_group_response_summary.json",
+            "midpoint_run_population_summary_json": midpoint_response_surface_dir
+            / "run_population_summary.json",
+        },
+        artifacts={
+            "finalist_group_summary_json": group_json_path,
+            "finalist_group_summary_csv": group_csv_path,
+            "finalist_perturbation_runs_json": runs_json_path,
+            "finalist_perturbation_runs_csv": runs_csv_path,
+        },
+        candidate_id=selected_candidate_id,
+    )
 
     return {
         "status": "step10_part1_finalist_evidence_collected",
@@ -379,6 +406,30 @@ def run_level1b_step10_aggregate_finalist_evidence(
         writer = csv.DictWriter(file_obj, fieldnames=distribution_csv_fields)
         writer.writeheader()
         writer.writerows(numeric_distribution_rows)
+
+    selected_candidate_id = next(
+        row["candidate_scale_group_id"]
+        for row in group_rows
+        if row["step10_selected_candidate"] is True
+    )
+    write_step_manifest(
+        output_dir,
+        step="step10_aggregate",
+        status="step10_part2_finalist_evidence_aggregated",
+        inputs={
+            "finalist_group_summary_json": decision_evidence_dir
+            / "finalist_group_summary.json",
+            "finalist_perturbation_runs_json": decision_evidence_dir
+            / "finalist_perturbation_runs.json",
+        },
+        artifacts={
+            "finalist_group_aggregation_json": group_json_path,
+            "finalist_group_aggregation_csv": group_csv_path,
+            "finalist_numeric_distribution_summary_json": distribution_json_path,
+            "finalist_numeric_distribution_summary_csv": distribution_csv_path,
+        },
+        candidate_id=selected_candidate_id,
+    )
 
     return {
         "status": "step10_part2_finalist_evidence_aggregated",
@@ -709,6 +760,23 @@ def run_level1b_step10_make_finalist_figures(
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
+    write_step_manifest(
+        output_dir,
+        step="step10_figures",
+        status="step10_part3_figures_created",
+        inputs={
+            "finalist_group_summary_json": input_paths[0],
+            "finalist_perturbation_runs_json": input_paths[1],
+            "finalist_group_aggregation_json": input_paths[2],
+            "finalist_numeric_distribution_summary_json": input_paths[3],
+        },
+        artifacts={
+            "figure_manifest_json": manifest_path,
+            **{path.stem: path for path in figure_paths},
+        },
+        candidate_id=selected_candidate_id,
+    )
+
     return {
         "status": "step10_part3_figures_created",
         "output_dir": str(output_dir),
@@ -822,6 +890,22 @@ def run_level1b_step10_materialize_selected_segments(
     if "label_invalid_support_value" in selected_row:
         manifest["label_invalid_support_value"] = invalid_support_value
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    write_step_manifest(
+        output_dir,
+        step="step10_materialize",
+        status="step10_part4_selected_segments_materialized",
+        inputs={
+            "finalist_perturbation_runs_json": input_path,
+            "source_label_raster": source_label_raster,
+        },
+        artifacts={
+            "selected_labels_tif": selected_labels_tif,
+            "selected_segments_gpkg": selected_segments_gpkg,
+            "selected_segments_manifest_json": manifest_path,
+        },
+        candidate_id=selected_row["candidate_scale_group_id"],
+    )
 
     return {
         "status": "step10_part4_selected_segments_materialized",
@@ -986,6 +1070,26 @@ def run_level1b_step10_compute_exactextractr_segment_stats_and_quality_info(
     }
     quality_info_json.write_text(
         json.dumps(quality_info, indent=2), encoding="utf-8"
+    )
+
+    write_step_manifest(
+        output_dir,
+        step="step10_quality",
+        status="step10_part5_exactextractr_segment_stats_and_quality_info_ready",
+        inputs={
+            "selected_labels_tif": selected_labels_tif,
+            "selected_segments_gpkg": selected_segments_gpkg,
+            "selected_segments_manifest_json": selected_segments_manifest_json,
+            "finalist_perturbation_runs_json": finalist_perturbation_runs_json,
+            "finalist_group_aggregation_json": finalist_group_aggregation_json,
+            "finalist_numeric_distribution_summary_json": finalist_numeric_distribution_summary_json,
+        },
+        artifacts={
+            "selected_segment_exactextractr_stats_csv": stats_csv,
+            "selected_segment_exactextractr_summary_json": summary_json,
+            "ortho_segmentation_quality_info_json": quality_info_json,
+        },
+        candidate_id=selected_candidate_id,
     )
 
     return {

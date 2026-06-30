@@ -20,6 +20,7 @@ from metashape_qc_engine.level1b_perturbations import (
     Level1BPerturbationConfig,
     build_perturbation_candidates,
 )
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 
 SIZE_CLASSES = ("micro", "small", "in_scale", "large", "oversize")
@@ -138,6 +139,28 @@ def response_surface_output_dir(output_dir: str | Path) -> Path:
 
 def local_transition_refinement_output_dir(output_dir: str | Path) -> Path:
     return Path(output_dir) / "level1b" / "local_transition_refinement"
+
+
+def _write_candidate_response_surface_manifest(
+    cfg: Level1BCandidateResponseSurfaceConfig,
+    out_dir: Path,
+    status: str,
+) -> None:
+    segmentation_stack_path, _ = resolve_segmentation_stack(cfg)
+    write_step_manifest(
+        cfg.output_dir,
+        step="candidate_response_surface",
+        status=status,
+        inputs={
+            "perturbation_candidates_json": cfg.perturbation_candidates_json_path,
+            "segmentation_stack": segmentation_stack_path,
+            "valid_mask": resolve_valid_mask_path(cfg),
+        },
+        artifacts={
+            name: out_dir / filename for name, filename in OUTPUT_FILENAMES.items()
+        },
+        candidate_id=cfg.candidate_id,
+    )
 
 
 def resolve_segmentation_stack(cfg: Level1BCandidateResponseSurfaceConfig) -> tuple[Path, str]:
@@ -1746,6 +1769,49 @@ def run_step9b_prepare_from_existing_step9a(
     step9b_prepare_result_json = step9b_prepare_inputs_dir / "step9b_prepare_result.json"
     _write_json(step9b_prepare_result_json, step9b_result)
 
+    step9b_dir = Path(run_root) / "level1b" / "local_transition_refinement"
+    prepare_artifacts = {
+        "run_population_summary_json": step9b_prepare_inputs_dir
+        / "run_population_summary.json",
+        "ranked_candidate_scales_json": step9b_prepare_inputs_dir
+        / "ranked_candidate_scales.json",
+        "candidate_response_surface_gate_report_json": step9b_prepare_inputs_dir
+        / "candidate_response_surface_report.json",
+        "step9b_prepare_result_json": step9b_prepare_result_json,
+        "step9b_interval_preflight_json": step9b_dir
+        / STEP9B_OUTPUT_FILENAMES["preflight"],
+    }
+    step9b_status = str(
+        step9b_result.get("status") or step9b_result.get("step9b_status")
+    )
+    if step9b_status == "step9b_midpoint_probe_ready":
+        prepare_artifacts.update(
+            {
+                "midpoint_probe_candidate_json": step9b_dir
+                / STEP9B_OUTPUT_FILENAMES["midpoint_probe_json"],
+                "midpoint_perturbation_candidates_json": step9b_dir
+                / STEP9B_OUTPUT_FILENAMES["midpoint_perturbations_json"],
+            }
+        )
+    elif step9b_status == "step9b_user_choice_required_bimodal_or_multimodal":
+        prepare_artifacts["supported_scale_alternatives_json"] = (
+            step9b_dir / STEP9B_OUTPUT_FILENAMES["supported_alternatives_json"]
+        )
+    write_step_manifest(
+        run_root,
+        step="step9b_prepare",
+        status=step9b_status,
+        inputs={
+            "step9a_run_population_summary_json": step9a_dir
+            / "run_population_summary.json",
+            "step9a_candidate_group_response_summary_json": step9a_dir
+            / "candidate_group_response_summary.json",
+            "step9a_candidate_response_surface_report_json": source_step9a_report,
+        },
+        artifacts=prepare_artifacts,
+        candidate_id=candidate_id,
+    )
+
     return {
         "status": step9b_result.get("status"),
         "run_root": str(run_root),
@@ -1854,6 +1920,29 @@ def run_step9b_midpoint_response_surface_and_handoff_from_prepare(
     )
     _write_json(step9b_midpoint_gain_share_handoff_json, handoff)
 
+    write_step_manifest(
+        run_root,
+        step="step9b_midpoint_handoff",
+        status="step9b_midpoint_response_surface_and_handoff_ready",
+        inputs={
+            "prepared_ranked_candidate_scales_json": step9b_prepare_inputs_dir
+            / "ranked_candidate_scales.json",
+            "midpoint_probe_candidate_json": local_transition_refinement_dir
+            / "step9b_midpoint_probe_candidate.json",
+            "midpoint_perturbation_candidates_json": midpoint_perturbation_candidates_json,
+        },
+        artifacts={
+            "midpoint_run_population_summary_json": midpoint_run_population_json,
+            "midpoint_candidate_group_response_summary_json": midpoint_candidate_group_summary_json,
+            "midpoint_ranked_candidate_scales_json": midpoint_candidate_response_surface_dir
+            / "ranked_candidate_scales.json",
+            "midpoint_candidate_response_surface_report_json": midpoint_candidate_response_surface_dir
+            / "candidate_response_surface_report.json",
+            "step9b_midpoint_gain_share_handoff_json": step9b_midpoint_gain_share_handoff_json,
+        },
+        candidate_id=candidate_id,
+    )
+
     return {
         "status": "step9b_midpoint_response_surface_and_handoff_ready",
         "run_root": str(run_root),
@@ -1896,6 +1985,9 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
         )
         report["status"] = "failed"
         _write_json(out_dir / OUTPUT_FILENAMES["report"], report)
+        _write_candidate_response_surface_manifest(
+            cfg, out_dir, str(report["status"])
+        )
         return report
 
     planned_group_count = len(groups)
@@ -2071,6 +2163,7 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
     report["perturbation_statuses"] = segmentation_reports
     report.update(scale_gate)
     _write_json(out_dir / OUTPUT_FILENAMES["report"], report)
+    _write_candidate_response_surface_manifest(cfg, out_dir, str(report["status"]))
     return report
 
 

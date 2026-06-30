@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
 REPORT_KEYS = (
@@ -389,3 +391,19 @@ def _write_report(report) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2, sort_keys=True)
         handle.write("\n")
+    write_step_manifest(
+        report["output_dir"],
+        step="scaling",
+        status=report["status"],
+        inputs={
+            "feature_stack": report["feature_stack_path"],
+            "valid_mask": report["valid_mask_path"],
+        },
+        artifacts={
+            "scaled_feature_stack": report["scaled_feature_stack_path"],
+            "scaling_parameters_xml": report["scaling_parameters_xml_path"],
+            "scaling_parameters_json": report["scaling_parameters_json_path"],
+            "report": path,
+        },
+        candidate_id=report["candidate_id"],
+    )

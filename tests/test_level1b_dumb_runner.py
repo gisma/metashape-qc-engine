@@ -13,6 +13,7 @@ from metashape_qc_engine.level1b_perturbations import Level1BPerturbationConfig
 from metashape_qc_engine.level1b_scale_distribution import (
     Level1BScaleDistributionConfig,
 )
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 
 def _write(path: Path, value: object | None = None) -> None:
@@ -35,10 +36,22 @@ def _install_stubs(
     level1b = output_dir / "level1b"
     monkeypatch.setattr(runner, "_pixel_size_m", lambda path: 0.25)
 
+    def manifest(step, status, artifacts):
+        write_step_manifest(
+            output_dir,
+            step=step,
+            status=status,
+            inputs={},
+            artifacts=artifacts,
+            candidate_id="test-candidate",
+        )
+
     def preflight(config):
         calls.append("preflight")
         captured["preflight"] = config
-        _write(level1b / "reports" / "preflight.json", {"status": "ok"})
+        report = level1b / "reports" / "preflight.json"
+        _write(report, {"status": "ok"})
+        manifest("preflight", "ok", {"preflight_report": report})
         return {"status": "ok"}
 
     def valid_mask(config):
@@ -46,6 +59,16 @@ def _install_stubs(
         captured["valid_mask"] = config
         if omit_step != "valid_mask":
             _write(level1b / "mask" / "valid_mask.tif")
+        report = level1b / "mask" / "valid_mask_report.json"
+        _write(report)
+        manifest(
+            "valid_mask",
+            "ok",
+            {
+                "valid_mask": level1b / "mask" / "valid_mask.tif",
+                "report": report,
+            },
+        )
         return {"status": "ok"}
 
     def channels(config):
@@ -53,18 +76,46 @@ def _install_stubs(
         captured["channels"] = config
         _write(level1b / "channels" / "proxy_stack.tif")
         _write(level1b / "channels" / "channel_report.json")
+        manifest(
+            "channels",
+            "ok",
+            {
+                "proxy_stack": level1b / "channels" / "proxy_stack.tif",
+                "report": level1b / "channels" / "channel_report.json",
+            },
+        )
         return {"status": "ok"}
 
     def scaling(config):
         calls.append("scaling")
         captured["scaling"] = config
         _write(level1b / "scaling" / "scaled_feature_stack.tif")
+        _write(level1b / "scaling" / "scaling_report.json")
+        manifest(
+            "scaling",
+            "ok",
+            {
+                "scaled_feature_stack": level1b
+                / "scaling"
+                / "scaled_feature_stack.tif",
+                "report": level1b / "scaling" / "scaling_report.json",
+            },
+        )
         return {"status": "ok"}
 
     def scale_distribution(config):
         calls.append("scale_distribution")
         captured["scale_distribution"] = config
         _write(level1b / "scales" / "scale_candidates.json", {"candidates": [{}]})
+        manifest(
+            "scale_distribution",
+            "ok",
+            {
+                "scale_candidates_json": level1b
+                / "scales"
+                / "scale_candidates.json"
+            },
+        )
         return {"status": "ok"}
 
     def feature_range(config):
@@ -73,6 +124,15 @@ def _install_stubs(
         _write(
             level1b / "ranger" / "scale_candidates_with_ranger.json",
             {"candidates": [{}]},
+        )
+        manifest(
+            "feature_range",
+            "ok",
+            {
+                "scale_candidates_with_ranger_json": level1b
+                / "ranger"
+                / "scale_candidates_with_ranger.json"
+            },
         )
         return {"status": "ok"}
 
@@ -83,6 +143,15 @@ def _install_stubs(
             level1b / "perturbations" / "perturbation_candidates.json",
             {"candidates": [{}]},
         )
+        manifest(
+            "perturbations",
+            "ok",
+            {
+                "perturbation_candidates_json": level1b
+                / "perturbations"
+                / "perturbation_candidates.json"
+            },
+        )
         return {"status": "ok"}
 
     def step9a(config):
@@ -92,6 +161,15 @@ def _install_stubs(
         _write(surface / "run_population_summary.json", [])
         _write(surface / "candidate_group_response_summary.json", [])
         _write(surface / "candidate_response_surface_report.json")
+        manifest(
+            "candidate_response_surface",
+            "ok",
+            {
+                "run_population_json": surface / "run_population_summary.json",
+                "group_json": surface / "candidate_group_response_summary.json",
+                "report": surface / "candidate_response_surface_report.json",
+            },
+        )
         return {"status": "ok", "large_embedded_report": "must-not-be-copied"}
 
     def step9b_prepare(*, run_root, candidate_id, perturbation_config):
@@ -114,11 +192,34 @@ def _install_stubs(
             _write(prepared / "step9b_prepare_result.json", {"step9b_status": status})
 
         local = level1b / "local_transition_refinement"
+        prepare_artifacts = {
+            "run_population_summary_json": prepared / "run_population_summary.json",
+            "ranked_candidate_scales_json": prepared / "ranked_candidate_scales.json",
+            "candidate_response_surface_gate_report_json": prepared
+            / "candidate_response_surface_report.json",
+            "step9b_prepare_result_json": prepared / "step9b_prepare_result.json",
+            "step9b_interval_preflight_json": local
+            / "step9b_interval_preflight.json",
+        }
+        _write(local / "step9b_interval_preflight.json", {"step9b_status": status})
         if branch == "adjacent":
             _write(local / "step9b_midpoint_probe_candidate.json")
             _write(local / "step9b_midpoint_perturbation_candidates.json", [])
+            prepare_artifacts.update(
+                {
+                    "midpoint_probe_candidate_json": local
+                    / "step9b_midpoint_probe_candidate.json",
+                    "midpoint_perturbation_candidates_json": local
+                    / "step9b_midpoint_perturbation_candidates.json",
+                }
+            )
         elif branch == "non_adjacent":
             _write(local / "step9b_supported_scale_alternatives.json", [])
+            prepare_artifacts["supported_scale_alternatives_json"] = (
+                local / "step9b_supported_scale_alternatives.json"
+            )
+        if omit_step != "step9b_prepare":
+            manifest("step9b_prepare", status, prepare_artifacts)
         return {"status": None, "step9b_result": {"step9b_status": status}}
 
     def midpoint_handoff(
@@ -148,6 +249,24 @@ def _install_stubs(
                 "handoff_candidate_id": "local_midpoint",
             },
         )
+        _write(nested / "candidate_response_surface_report.json")
+        _write(nested / "ranked_candidate_scales.json", [])
+        manifest(
+            "step9b_midpoint_handoff",
+            "step9b_midpoint_response_surface_and_handoff_ready",
+            {
+                "midpoint_run_population_summary_json": nested
+                / "run_population_summary.json",
+                "midpoint_candidate_group_response_summary_json": nested
+                / "candidate_group_response_summary.json",
+                "midpoint_ranked_candidate_scales_json": nested
+                / "ranked_candidate_scales.json",
+                "midpoint_candidate_response_surface_report_json": nested
+                / "candidate_response_surface_report.json",
+                "step9b_midpoint_gain_share_handoff_json": local
+                / "step9b_midpoint_gain_share_handoff.json",
+            },
+        )
         return {"status": "step9b_midpoint_response_surface_and_handoff_ready"}
 
     def collect(path):
@@ -156,6 +275,16 @@ def _install_stubs(
         evidence = level1b / "step10_materialization" / "decision_evidence"
         _write(evidence / "finalist_group_summary.json", [])
         _write(evidence / "finalist_perturbation_runs.json", [])
+        manifest(
+            "step10_collect",
+            "step10_part1_finalist_evidence_collected",
+            {
+                "finalist_group_summary_json": evidence
+                / "finalist_group_summary.json",
+                "finalist_perturbation_runs_json": evidence
+                / "finalist_perturbation_runs.json",
+            },
+        )
         return {"status": "step10_part1_finalist_evidence_collected"}
 
     def aggregate(path):
@@ -164,16 +293,32 @@ def _install_stubs(
         evidence = level1b / "step10_materialization" / "decision_evidence"
         _write(evidence / "finalist_group_aggregation.json", [])
         _write(evidence / "finalist_numeric_distribution_summary.json", [])
+        manifest(
+            "step10_aggregate",
+            "step10_part2_finalist_evidence_aggregated",
+            {
+                "finalist_group_aggregation_json": evidence
+                / "finalist_group_aggregation.json",
+                "finalist_numeric_distribution_summary_json": evidence
+                / "finalist_numeric_distribution_summary.json",
+            },
+        )
         return {"status": "step10_part2_finalist_evidence_aggregated"}
 
     def figures(path):
         calls.append("step10_figures")
         assert Path(path) == output_dir
-        _write(
+        figure_manifest = (
             level1b
             / "step10_materialization"
             / "figures"
             / "step10_figure_manifest.json"
+        )
+        _write(figure_manifest)
+        manifest(
+            "step10_figures",
+            "step10_part3_figures_created",
+            {"figure_manifest_json": figure_manifest},
         )
         return {"status": "step10_part3_figures_created"}
 
@@ -184,6 +329,16 @@ def _install_stubs(
         _write(final / "selected_segments_manifest.json")
         _write(final / "selected_segments.gpkg")
         _write(final / "selected_labels.tif")
+        manifest(
+            "step10_materialize",
+            "step10_part4_selected_segments_materialized",
+            {
+                "selected_segments_manifest_json": final
+                / "selected_segments_manifest.json",
+                "selected_segments_gpkg": final / "selected_segments.gpkg",
+                "selected_labels_tif": final / "selected_labels.tif",
+            },
+        )
         return {"status": "step10_part4_selected_segments_materialized"}
 
     def quality(path):
@@ -197,6 +352,21 @@ def _install_stubs(
             step10 / "segment_stats" / "selected_segment_exactextractr_summary.json"
         )
         _write(step10 / "quality" / "ortho_segmentation_quality_info.json")
+        manifest(
+            "step10_quality",
+            "step10_part5_exactextractr_segment_stats_and_quality_info_ready",
+            {
+                "selected_segment_exactextractr_stats_csv": step10
+                / "segment_stats"
+                / "selected_segment_exactextractr_stats.csv",
+                "selected_segment_exactextractr_summary_json": step10
+                / "segment_stats"
+                / "selected_segment_exactextractr_summary.json",
+                "ortho_segmentation_quality_info_json": step10
+                / "quality"
+                / "ortho_segmentation_quality_info.json",
+            },
+        )
         return {
             "status": "step10_part5_exactextractr_segment_stats_and_quality_info_ready"
         }
@@ -293,13 +463,13 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert result["step_results"]["step9a"] == {
         "status": "ok",
         "artifacts": {
-            "run_population": str(
+            "run_population_json": str(
                 output_dir
                 / "level1b"
                 / "candidate_response_surface"
                 / "run_population_summary.json"
             ),
-            "candidate_group_summary": str(
+            "group_json": str(
                 output_dir
                 / "level1b"
                 / "candidate_response_surface"
@@ -314,9 +484,41 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
         },
     }
     assert all(
-        set(step_result).issubset({"status", "step9b_status", "artifacts"})
+        set(step_result) == {"status", "artifacts"}
         for step_result in result["step_results"].values()
     )
+
+
+def test_runner_consumes_exact_manifest_artifact_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output_dir = tmp_path / "run"
+    calls, captured = _install_stubs(monkeypatch, output_dir, branch="adjacent")
+    manifest_mask = output_dir / "level1b" / "manifest_owned" / "mask.tif"
+    legacy_mask = output_dir / "level1b" / "mask" / "valid_mask.tif"
+
+    def valid_mask(config):
+        calls.append("valid_mask")
+        captured["valid_mask"] = config
+        _write(manifest_mask)
+        _write(legacy_mask)
+        report = output_dir / "level1b" / "mask" / "valid_mask_report.json"
+        _write(report)
+        write_step_manifest(
+            output_dir,
+            step="valid_mask",
+            status="ok",
+            inputs={},
+            artifacts={"valid_mask": manifest_mask, "report": report},
+            candidate_id="test-candidate",
+        )
+        return {"status": "ok"}
+
+    monkeypatch.setattr(runner, "run_valid_mask_step", valid_mask)
+
+    runner.run_level1b_dumb_chain(Path("/tmp/ortho.tif"), output_dir)
+
+    assert captured["channels"].valid_mask_path == manifest_mask
 
 
 def test_non_adjacent_artifact_branch_stops_before_midpoint_and_step10(
@@ -395,5 +597,5 @@ def test_manual_prepare_directory_is_not_a_fallback(
             Path("/tmp/ortho.tif"), output_dir, overwrite=True
         )
 
-    assert "step9b_prepare_inputs" in str(exc_info.value)
+    assert "manifests/step9b_prepare.json" in str(exc_info.value)
     assert str(manual) not in str(exc_info.value)

@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+
 
 SCALE_MODES = ("metric_scale_sweep", "structure_derived_scale_distribution")
 METRIC_COUPLING_RULE = "radius_m_to_spatialr_px__area_m2_to_minsize_px"
@@ -496,5 +498,25 @@ def run_scale_distribution_step(config) -> dict[str, object]:
             "candidates": candidates,
             "files_written": files_written,
         }
+    )
+    manifest_inputs = {
+        name: value
+        for name, value in {
+            "proxy_stack": config.proxy_stack_path,
+            "valid_mask": config.valid_mask_path,
+            "channel_report": config.channel_report_path,
+        }.items()
+        if value is not None
+    }
+    write_step_manifest(
+        config.output_dir,
+        step="scale_distribution",
+        status=status,
+        inputs=manifest_inputs,
+        artifacts={
+            "scale_candidates_csv": csv_path,
+            "scale_candidates_json": json_path,
+        },
+        candidate_id=str(config.candidate_id).strip(),
     )
     return report

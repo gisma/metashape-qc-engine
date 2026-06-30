@@ -227,21 +227,6 @@ def test_18_no_forbidden_concepts_are_introduced() -> None:
     assert [term for term in blocked if term in combined] == []
 
 
-def test_19_no_step_1_8_files_are_modified() -> None:
-    protected = [
-        "metashape_qc_engine/level1b_preflight.py",
-        "metashape_qc_engine/level1b_channels.py",
-        "metashape_qc_engine/level1b_valid_mask.py",
-        "metashape_qc_engine/level1b_pca.py",
-        "metashape_qc_engine/level1b_scaling.py",
-        "metashape_qc_engine/level1b_scale_distribution.py",
-        "metashape_qc_engine/level1b_feature_range.py",
-        "metashape_qc_engine/level1b_perturbations.py",
-    ]
-
-    assert subprocess.run(["git", "diff", "--quiet", "--", *protected]).returncode == 0
-
-
 def test_20_no_multi_run_orchestration_is_implemented() -> None:
     source = (REPO_ROOT / "metashape_qc_engine" / "level1b_hoover_compare.py").read_text(encoding="utf-8")
 

@@ -5,6 +5,8 @@ import math
 from pathlib import Path
 import random
 
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+
 
 PERTURBATION_RULE = "r_make_param_perturbations_local_grid"
 REQUIRED_CANDIDATE_FIELDS = ("candidate_id", "scale_id", "spatialr_px", "minsize_px", "ranger")
@@ -289,7 +291,7 @@ def _run_report(config, layout, checks, failure_reasons, complete_candidates, ca
     json_path = layout["perturbation_dir"] / config.output_json_filename
     baseline_count = sum(1 for candidate in candidates if candidate["is_baseline"])
     perturbation_count = len(candidates) - baseline_count
-    return {
+    report = {
         "candidate_id": str(config.candidate_id).strip(),
         "output_dir": str(Path(config.output_dir)),
         "perturbation_dir": str(layout["perturbation_dir"]),
@@ -319,6 +321,24 @@ def _run_report(config, layout, checks, failure_reasons, complete_candidates, ca
         "no_otb_used": True,
         "no_raster_read": True,
     }
+    if Path(config.output_dir).is_dir():
+        manifest_inputs = {}
+        if config.scale_candidates_with_ranger_json_path is not None:
+            manifest_inputs["scale_candidates_with_ranger_json"] = (
+                config.scale_candidates_with_ranger_json_path
+            )
+        write_step_manifest(
+            config.output_dir,
+            step="perturbations",
+            status=report["status"],
+            inputs=manifest_inputs,
+            artifacts={
+                "perturbation_candidates_csv": csv_path,
+                "perturbation_candidates_json": json_path,
+            },
+            candidate_id=str(config.candidate_id).strip(),
+        )
+    return report
 
 
 def _json_payload(config, candidates) -> dict[str, object]:

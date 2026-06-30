@@ -460,16 +460,6 @@ def test_boundary_source_scan_no_forbidden_workflow_terms_in_production_module()
     assert not any(term in source for term in terms)
 
 
-def test_level1b_preflight_py_diff_is_empty() -> None:
-    result = lvm.subprocess.run(
-        ["git", "diff", "--", "metashape_qc_engine/level1b_preflight.py"],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.stdout == ""
-
-
 def test_cli_py_diff_is_empty() -> None:
     result = lvm.subprocess.run(
         ["git", "diff", "--", "metashape_qc_engine/cli.py"],

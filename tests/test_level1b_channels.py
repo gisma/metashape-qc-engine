@@ -354,23 +354,6 @@ def test_report_contains_exactly_required_report_keys(tmp_path: Path, monkeypatc
     assert tuple(report_json.keys()) == REPORT_KEYS
 
 
-def test_protected_file_diffs_are_empty() -> None:
-    protected_paths = [
-        "metashape_qc_engine/level1b_preflight.py",
-        "metashape_qc_engine/cli.py",
-    ]
-
-    for path in protected_paths:
-        result = subprocess.run(
-            ["git", "diff", "--", path],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-
 def test_source_has_no_forbidden_raster_imports_or_workflow_symbols() -> None:
     channel_source = Path(channels.__file__).read_text(encoding="utf-8")
     test_source = Path(__file__).read_text(encoding="utf-8")

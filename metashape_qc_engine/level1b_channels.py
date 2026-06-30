@@ -7,6 +7,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
 RGB_CHANNEL_NAMES = ["VIG", "DRY", "BRI", "TEX_100M", "TEX_200M"]
@@ -446,4 +448,15 @@ def run_channel_construction_step(config) -> dict[str, object]:
     report = {key: report[key] for key in REPORT_KEYS}
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+    write_step_manifest(
+        config.output_dir,
+        step="channels",
+        status=status,
+        inputs={
+            "input_ortho": config.input_path,
+            "valid_mask": config.valid_mask_path,
+        },
+        artifacts={"proxy_stack": output_path, "report": report_path},
+        candidate_id=str(config.candidate_id).strip(),
+    )
     return report

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
 FEATURE_SPACE_SOURCES = {"scaled", "pca"}
@@ -491,7 +493,7 @@ def run_feature_range_assignment_step(config) -> dict[str, object]:
             ]
             status = "ok"
 
-    return {
+    report = {
         "candidate_id": str(config.candidate_id).strip(),
         "output_dir": str(Path(config.output_dir)),
         "ranger_dir": str(layout["ranger_dir"]),
@@ -526,3 +528,21 @@ def run_feature_range_assignment_step(config) -> dict[str, object]:
         "no_ranger_grid_created": True,
         "no_segmentation_performed": True,
     }
+    write_step_manifest(
+        config.output_dir,
+        step="feature_range",
+        status=status,
+        inputs={
+            "feature_space_stack": config.feature_space_stack_path,
+            "valid_mask": config.valid_mask_path,
+            "scale_candidates_json": config.scale_candidates_json_path,
+        },
+        artifacts={
+            "ranger_candidates_csv": ranger_csv_path,
+            "ranger_candidates_json": ranger_json_path,
+            "scale_candidates_with_ranger_csv": assigned_csv_path,
+            "scale_candidates_with_ranger_json": assigned_json_path,
+        },
+        candidate_id=str(config.candidate_id).strip(),
+    )
+    return report

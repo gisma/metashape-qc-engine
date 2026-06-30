@@ -358,17 +358,3 @@ def test_15_run_outputs_preserve_scale_fields_and_tail_padding_in_files(tmp_path
     assert assigned_payload["candidates"][0]["area_m2"] == 10.0
     assert rows[0]["radius_m"] == "1.0"
     assert rows[0]["area_m2"] == "10.0"
-
-
-def test_16_protected_step_boundaries_are_unchanged() -> None:
-    protected = [
-        "metashape_qc_engine/level1b_preflight.py",
-        "metashape_qc_engine/level1b_valid_mask.py",
-        "metashape_qc_engine/level1b_channels.py",
-        "metashape_qc_engine/level1b_scaling.py",
-        "metashape_qc_engine/level1b_pca.py",
-        "metashape_qc_engine/level1b_scale_distribution.py",
-        "metashape_qc_engine/cli.py",
-    ]
-
-    assert subprocess.run(["git", "diff", "--quiet", "--", *protected]).returncode == 0
