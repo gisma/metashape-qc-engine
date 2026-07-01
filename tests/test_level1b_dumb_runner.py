@@ -310,16 +310,12 @@ def _install_stubs(
         calls.append("step10_collect")
         assert Path(path) == output_dir
         evidence = level1b / "step10_materialization" / "decision_evidence"
-        _write(evidence / "finalist_group_summary.json", [])
-        _write(evidence / "finalist_perturbation_runs.json", [])
+        _write(evidence / "finalist_evidence.json", {})
         manifest(
             "step10_collect",
             "step10_part1_finalist_evidence_collected",
             {
-                "finalist_group_summary_json": evidence
-                / "finalist_group_summary.json",
-                "finalist_perturbation_runs_json": evidence
-                / "finalist_perturbation_runs.json",
+                "finalist_evidence_json": evidence / "finalist_evidence.json",
             },
         )
         return {"status": "step10_part1_finalist_evidence_collected"}
@@ -328,16 +324,12 @@ def _install_stubs(
         calls.append("step10_aggregate")
         assert Path(path) == output_dir
         evidence = level1b / "step10_materialization" / "decision_evidence"
-        _write(evidence / "finalist_group_aggregation.json", [])
-        _write(evidence / "finalist_numeric_distribution_summary.json", [])
+        _write(evidence / "finalist_evidence.json", {})
         manifest(
             "step10_aggregate",
             "step10_part2_finalist_evidence_aggregated",
             {
-                "finalist_group_aggregation_json": evidence
-                / "finalist_group_aggregation.json",
-                "finalist_numeric_distribution_summary_json": evidence
-                / "finalist_numeric_distribution_summary.json",
+                "finalist_evidence_json": evidence / "finalist_evidence.json",
             },
         )
         return {"status": "step10_part2_finalist_evidence_aggregated"}
@@ -504,6 +496,13 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     )
     assert result["artifacts"]["step9b_prepare_manifest"] == str(
         connector["step9b_prepare_manifest_path"]
+    )
+    assert result["artifacts"]["step10_evidence"] == str(
+        output_dir
+        / "level1b"
+        / "step10_materialization"
+        / "decision_evidence"
+        / "finalist_evidence.json"
     )
     assert result["status"] == "level1b_dumb_chain_complete"
     assert result["step_results"]["step9a"] == {

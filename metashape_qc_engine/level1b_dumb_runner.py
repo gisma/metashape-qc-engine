@@ -402,11 +402,12 @@ def run_level1b_dumb_chain(
     step10_collect_manifest = _consume_step_manifest(
         output_dir, "step10_collect", step10_collect_result
     )
-    _manifest_artifacts(
+    step10_collect_artifacts = _manifest_artifacts(
         "step10_collect",
         step10_collect_manifest,
-        ("finalist_group_summary_json", "finalist_perturbation_runs_json"),
+        ("finalist_evidence_json",),
     )
+    step10_evidence = step10_collect_artifacts["finalist_evidence_json"]
     step_results["step10_collect"] = _compact_step_result(
         step10_collect_manifest
     )
@@ -421,10 +422,7 @@ def run_level1b_dumb_chain(
     _manifest_artifacts(
         "step10_aggregate",
         step10_aggregate_manifest,
-        (
-            "finalist_group_aggregation_json",
-            "finalist_numeric_distribution_summary_json",
-        ),
+        ("finalist_evidence_json",),
     )
     step_results["step10_aggregate"] = _compact_step_result(
         step10_aggregate_manifest
@@ -507,6 +505,7 @@ def run_level1b_dumb_chain(
                 step9b_prepare_artifacts["step9b_prepare_manifest_json"]
             ),
             "handoff": str(handoff),
+            "step10_evidence": str(step10_evidence),
             "step10_quality": str(step10_quality),
         },
         "step_results": step_results,
