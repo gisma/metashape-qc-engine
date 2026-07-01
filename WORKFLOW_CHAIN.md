@@ -99,6 +99,58 @@ Principal outputs are:
 
 Level-1B starts from one finished orthomosaic. It does not run Metashape reproducibility, create an ecological classification, or assign a final quality class.
 
+### Operational follow-up commands
+
+After every exit, inspect the chain report and wrapper log:
+
+```bash
+jq . <run_root>/level1b_dumb_chain_report.json
+tail -n 80 <run_root>/level1b_chain.log
+```
+
+For a rerun through the normal wrapper:
+
+```bash
+ORTHO=<input_ortho> RUN_ROOT=<run_root> OVERWRITE=1 bash metashape_qc_engine/run_level1b_dumb_with_user_header.sh
+```
+
+If the runner cannot find that wrapper next to `level1b_dumb_runner.py`, it prints `UNRESOLVED` and the direct fallback command instead:
+
+```bash
+python3 -m metashape_qc_engine.level1b_dumb_runner --rgb-ortho <input_ortho> --out-dir <run_root> --overwrite
+```
+
+For a complete run, resolve Step-10 outputs through the manifests recorded in the chain report:
+
+```bash
+REPORT=<run_root>/level1b_dumb_chain_report.json
+MATERIALIZE_MANIFEST=$(jq -r '.step_results.step10_materialize.manifest' "$REPORT")
+jq -r '.artifacts.selected_labels_tif,
+       .artifacts.selected_segments_gpkg,
+       .artifacts.selected_segments_manifest_json' "$MATERIALIZE_MANIFEST"
+
+QUALITY_MANIFEST=$(jq -r '.step_results.step10_quality.manifest' "$REPORT")
+jq -r '.artifacts.selected_segment_exactextractr_stats_csv,
+       .artifacts.selected_segment_exactextractr_summary_json,
+       .artifacts.ortho_segmentation_quality_info_json' "$QUALITY_MANIFEST"
+
+FIGURE_STEP_MANIFEST=$(jq -r '.step_results.step10_figures.manifest' "$REPORT")
+FIGURE_MANIFEST=$(jq -r '.artifacts.figure_manifest_json' "$FIGURE_STEP_MANIFEST")
+jq . "$FIGURE_MANIFEST"
+```
+
+For the non-adjacent analyst-choice branch:
+
+```bash
+jq . <run_root>/level1b/local_transition_refinement/step9b_supported_scale_alternatives.json
+```
+
+For a failed run, list the manifests that were written before failure:
+
+```bash
+ls -la <run_root>/level1b/manifests
+```
+
 ## Relationship between the chains
 
 A reviewed Level-1A orthomosaic may be supplied as the Level-1B input, but the code does not automatically chain Level-1A into Level-1B. The handoff is an explicit orthomosaic path chosen by the operator.

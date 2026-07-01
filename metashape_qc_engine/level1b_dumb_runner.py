@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import shlex
 from collections.abc import Sequence
 import sys
 from typing import Any
@@ -616,6 +617,114 @@ def _write_chain_report(output_dir: Path, report: dict[str, object]) -> Path:
     return report_path
 
 
+def shell_join(command: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in command)
+
+
+def print_next_commands(
+    status: str,
+    run_root: Path,
+    input_ortho: Path,
+    *,
+    stream: Any = sys.stdout,
+) -> None:
+    run_root = Path(run_root).resolve()
+    input_ortho = Path(input_ortho).resolve()
+    report_path = run_root / CHAIN_REPORT_FILENAME
+    log_path = run_root / "level1b_chain.log"
+    manifests_dir = run_root / "level1b" / "manifests"
+
+    print("Next commands:", file=stream)
+    print(f"  {shell_join(['jq', '.', str(report_path)])}", file=stream)
+    print(f"  {shell_join(['tail', '-n', '80', str(log_path)])}", file=stream)
+
+    if status == "level1b_dumb_chain_failed":
+        print(f"  {shell_join(['ls', '-la', str(manifests_dir)])}", file=stream)
+        return
+
+    wrapper_path = (
+        Path(__file__).resolve().parent
+        / "run_level1b_dumb_with_user_header.sh"
+    )
+    if wrapper_path.exists():
+        rerun_command = " ".join(
+            [
+                f"ORTHO={shlex.quote(str(input_ortho))}",
+                f"RUN_ROOT={shlex.quote(str(run_root))}",
+                "OVERWRITE=1",
+                shell_join(["bash", str(wrapper_path)]),
+            ]
+        )
+        print(f"  {rerun_command}", file=stream)
+    else:
+        print(
+            "  # UNRESOLVED: wrapper script not found next to "
+            "level1b_dumb_runner.py",
+            file=stream,
+        )
+        direct_rerun_command = shell_join(
+            [
+                "python3",
+                "-m",
+                "metashape_qc_engine.level1b_dumb_runner",
+                "--rgb-ortho",
+                str(input_ortho),
+                "--out-dir",
+                str(run_root),
+                "--overwrite",
+            ]
+        )
+        print(f"  {direct_rerun_command}", file=stream)
+
+    if status == "step9b_non_adjacent_choice_required":
+        alternatives_path = (
+            run_root
+            / "level1b"
+            / "local_transition_refinement"
+            / "step9b_supported_scale_alternatives.json"
+        )
+        print(f"  {shell_join(['jq', '.', str(alternatives_path)])}", file=stream)
+        return
+
+    if status == "level1b_dumb_chain_complete":
+        print(f"  REPORT={shlex.quote(str(report_path))}", file=stream)
+        print(
+            "  MATERIALIZE_MANIFEST=$(jq -r "
+            "'.step_results.step10_materialize.manifest' \"$REPORT\")",
+            file=stream,
+        )
+        print(
+            "  jq -r '.artifacts.selected_labels_tif,\n"
+            "       .artifacts.selected_segments_gpkg,\n"
+            "       .artifacts.selected_segments_manifest_json' "
+            "\"$MATERIALIZE_MANIFEST\"",
+            file=stream,
+        )
+        print(
+            "  QUALITY_MANIFEST=$(jq -r "
+            "'.step_results.step10_quality.manifest' \"$REPORT\")",
+            file=stream,
+        )
+        print(
+            "  jq -r '.artifacts.selected_segment_exactextractr_stats_csv,\n"
+            "       .artifacts.selected_segment_exactextractr_summary_json,\n"
+            "       .artifacts.ortho_segmentation_quality_info_json' "
+            "\"$QUALITY_MANIFEST\"",
+            file=stream,
+        )
+        print(
+            "  FIGURE_STEP_MANIFEST=$(jq -r "
+            "'.step_results.step10_figures.manifest' \"$REPORT\")",
+            file=stream,
+        )
+        print(
+            "  FIGURE_MANIFEST=$(jq -r '.artifacts.figure_manifest_json' "
+            "\"$FIGURE_STEP_MANIFEST\")",
+            file=stream,
+        )
+        print('  jq . "$FIGURE_MANIFEST"', file=stream)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
@@ -643,6 +752,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"{report['status']} report={report_path}",
         file=stream,
+    )
+    print_next_commands(
+        str(report["status"]),
+        args.out_dir,
+        args.rgb_ortho,
+        stream=stream,
     )
     return exit_code
 
