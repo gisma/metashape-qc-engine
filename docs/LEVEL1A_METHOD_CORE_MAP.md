@@ -17,6 +17,7 @@ This map separates methodological decisions from execution infrastructure. Opera
 
 The wrapper does not define the continuous-stability ranking. The evaluation module does.
 
+
 ## Method sequence
 
 1. Define parameter variants and replicate count.
