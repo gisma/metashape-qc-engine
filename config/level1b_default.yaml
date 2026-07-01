@@ -1,7 +1,13 @@
 level1b:
   feature_band_count: 5
+
   channels:
     input_type: "rgb"
+    rgb_band_indices: [1, 2, 3]
+    tex_100m_radius_m: 1.0
+    tex_200m_radius_m: 2.0
+    report_filename: "channel_report.json"
+
   scale_distribution:
     scale_mode: "structure_derived_scale_distribution"
     proxy_structure_mode: "texture_preferred"
@@ -9,7 +15,13 @@ level1b:
     infer_structure_support_from_proxy: true
     infer_texture_support_from_proxy: true
     upper_radius_factor: 2.5
+
   feature_range:
     feature_space_source: "scaled"
+    sample_n: 50000
+    knn_k: 10
+    max_distance_sample_n: 8000
+    quantile_probs: [0.25, 0.5, 0.75, 0.9]
+
   candidate_response_surface:
     segmentation_stack_source: "scaled_proxy_stack"

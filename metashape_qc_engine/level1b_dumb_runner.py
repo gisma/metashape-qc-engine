@@ -131,8 +131,14 @@ def run_level1b_dumb_chain(
     output_dir = Path(output_dir)
     candidate_id = _candidate_id(rgb_ortho)
     level1b_dir = output_dir / "level1b"
+
+    if level1b_dir.exists() and not overwrite:
+        raise RuntimeError(
+            f"level1b_dumb_chain: output directory already exists: {level1b_dir}"
+        )
+
     level1b_dir.mkdir(parents=True, exist_ok=True)
-    
+
     config_path = Path(__file__).resolve().parent / "config" / "level1b_default.yaml"
     with config_path.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)["level1b"]
@@ -140,11 +146,6 @@ def run_level1b_dumb_chain(
     resolved_config_path = level1b_dir / "resolved_level1b_config.yaml"
     with resolved_config_path.open("w", encoding="utf-8") as f:
         yaml.safe_dump({"level1b": cfg}, f, default_flow_style=False)
-
-    if level1b_dir.exists() and not overwrite:
-        raise RuntimeError(
-            f"level1b_dumb_chain: output directory already exists: {level1b_dir}"
-        )
 
     step_results: dict[str, Any] = {}
 
@@ -183,14 +184,19 @@ def run_level1b_dumb_chain(
     step_results["valid_mask"] = _compact_step_result(output_dir, valid_mask_manifest)
 
     pixel_size_m = _pixel_size_m(rgb_ortho)
+    channels_cfg = cfg["channels"]
     channels_result = run_channel_construction_step(
         Level1BChannelConfig(
             candidate_id=candidate_id,
             input_path=rgb_ortho,
             output_dir=output_dir,
-            input_type=cfg["channels"]["input_type"],
+            input_type=channels_cfg["input_type"],
             valid_mask_path=valid_mask,
             pixel_size_m=pixel_size_m,
+            rgb_band_indices=tuple(channels_cfg["rgb_band_indices"]),
+            tex_100m_radius_m=channels_cfg["tex_100m_radius_m"],
+            tex_200m_radius_m=channels_cfg["tex_200m_radius_m"],
+            report_filename=channels_cfg["report_filename"],
             overwrite=overwrite,
         )
     )
@@ -252,6 +258,7 @@ def run_level1b_dumb_chain(
         output_dir, scale_distribution_manifest
     )
 
+    feature_range_cfg = cfg["feature_range"]
     feature_range_result = run_feature_range_assignment_step(
         Level1BFeatureRangeConfig(
             candidate_id=candidate_id,
@@ -259,8 +266,12 @@ def run_level1b_dumb_chain(
             feature_space_stack_path=scaled_feature_stack,
             valid_mask_path=valid_mask,
             scale_candidates_json_path=scale_candidates,
-            feature_space_source=cfg["feature_range"]["feature_space_source"],
+            feature_space_source=feature_range_cfg["feature_space_source"],
             band_count=cfg["feature_band_count"],
+            sample_n=feature_range_cfg["sample_n"],
+            knn_k=feature_range_cfg["knn_k"],
+            quantile_probs=tuple(feature_range_cfg["quantile_probs"]),
+            max_distance_sample_n=feature_range_cfg["max_distance_sample_n"],
             overwrite=overwrite,
         )
     )
