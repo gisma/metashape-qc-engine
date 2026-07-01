@@ -1,89 +1,81 @@
 # metashape-qc-engine
 
-## Project purpose
+`metashape-qc-engine` contains two related geospatial evidence workflows:
 
-`metashape-qc-engine` is a product-analysis workflow for reproducible Agisoft Metashape orthomosaic candidate selection. It prepares candidate matrices, runs repeated Metashape builds, analyzes orthomosaic stability on a canonical grid, records support diagnostics, and writes a selected-product trace for review.
+- **Level-1A** prepares, runs, resumes, evaluates, and reviews Agisoft Metashape orthomosaic product candidates.
+- **Level-1B** starts from one finished RGB orthomosaic and produces a selected segmentation product plus segmentation-stability and segment-statistics evidence.
 
-The workflow measures internal repeated-build stability and support persistence. It does not by itself establish absolute geometric accuracy, external truth, cross-date accuracy, platform comparison, or change-detection suitability.
+The repository layout is historical and does not cleanly mirror those logical names. Level-1A code is split across `python/`, `scripts/`, and `metashape_qc_engine/cli.py`. Level-1B code is mostly in `metashape_qc_engine/level1b_*.py`, plus its shell wrapper and exactextractr R script.
 
-## Current workflow
+## Setup
 
-For one image set, `metashape-qc prepare` writes run-local control files from a preset and variants template. `metashape-qc run-analysis` executes the candidate x replicate matrix through the Metashape runtime bridge. `metashape-qc resume-analysis` continues an interrupted run directory by skipping successful work and rerunning failed or missing work. `metashape-qc evaluate` runs or reuses the analyzer, writes support and stability summaries, creates threshold review products, and records `selected_product.json`.
+For Level-1A:
 
-## Current command sequence
+```bash
+bash scripts/setup_level1a.sh
+```
+
+For Level-1B:
+
+```bash
+bash scripts/setup_level1b.sh
+```
+
+The setup scripts create or reuse `.venv`, install the local Python package, verify required Python imports, and check external tools. They do **not** install licensed or system software such as Agisoft Metashape, OTB, GDAL CLI tools, or R itself.
+
+## Active documentation
+
+| Workflow | Operations | Method and artifact map |
+|---|---|---|
+| Level-1A | [docs/RUN_LEVEL1A.md](docs/RUN_LEVEL1A.md) | [docs/LEVEL1A_METHOD_CORE_MAP.md](docs/LEVEL1A_METHOD_CORE_MAP.md) |
+| Level-1B | [docs/RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) | [docs/LEVEL1B_METHOD_CORE_MAP.md](docs/LEVEL1B_METHOD_CORE_MAP.md) |
+
+[WORKFLOW_CHAIN.md](WORKFLOW_CHAIN.md) shows how both chains relate. Other manuals are deprecated or background material unless explicitly promoted here.
+
+## Minimal command pointers
+
+### Level-1A
+
+After setup, prepare a run from an image directory and preset:
 
 ```bash
 metashape-qc prepare \
-  --image-dir "/path/to/input-images" \
-  --product-id "product_id" \
-  --preset "config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json" \
-  --reps 5 \
-  --output-root "/path/to/runs"
+  --image-dir /path/to/images \
+  --product-id PRODUCT_ID \
+  --preset /path/to/preset.json \
+  --reps 2 \
+  --output-root /path/to/runs
 ```
 
-`prepare` prints the concrete `metashape-qc run-analysis` command for the generated run directory.
+`prepare` prints the exact `run-analysis`, `resume-analysis`, and `evaluate` commands for the generated run directory. See [RUN_LEVEL1A.md](docs/RUN_LEVEL1A.md).
+
+### Level-1B
+
+Use the environment wrapper as the normal entry point:
 
 ```bash
-metashape-qc run-analysis "<run_dir>/config.yml" \
-  --variants "<run_dir>/variants.csv" \
-  --reps 5 \
-  --run-dir "<run_dir>" \
-  --metashape-dir "$METASHAPE_DIR"
+ORTHO=/path/to/ortho.tif \
+RUN_ROOT=/path/to/run_root \
+OVERWRITE=1 \
+bash metashape_qc_engine/run_level1b_dumb_with_user_header.sh
 ```
 
-```bash
-metashape-qc resume-analysis "<run_dir>/config.yml" \
-  --variants "<run_dir>/variants.csv" \
-  --reps 5 \
-  --run-dir "<run_dir>" \
-  --metashape-dir "$METASHAPE_DIR"
-```
+See [RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) for dependencies, statuses, final products, and quality evidence.
 
-```bash
-metashape-qc evaluate "<run_dir>"
-```
+## Scope boundaries
 
-## Current reference benchmark
+- Level-1A does not run Step 9 or Step 10 segmentation.
+- Level-1B does not run Metashape reproducibility.
+- Level-1B does not create an ecological classification.
+- Level-1B does not assign a final quality class; it writes reviewable quality evidence.
+- Neither workflow alone establishes absolute geometric accuracy or external truth.
 
-The current reference benchmark is the MOF Alignment-Mesh-Ortho reference matrix:
+## External software
 
-- Image directory: `/datadisk/data/uav/MOF_repro_test_recovered/input-images`
-- Preset: `config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json`
-- Matrix: alignment downscale, adaptive fitting, mesh face count, mesh smoothing iterations, and requested orthomosaic pixel size
-- Size: `48` processing candidates x `5` replicates = `240` Metashape runs
+Level-1A execution requires Agisoft Metashape. Its analyzer/evaluator also imports GDAL Python bindings. Level-1B requires OTB, GDAL Python/CLI components, and R packages used by exactextractr. These components must be installed compatibly with the local operating system and Python/R environments; the setup scripts report their availability but do not install the system software.
 
-`buildOrthomosaic.orthoRes` is the requested orthomosaic pixel size / sampling resolution passed to Metashape. It is not a direct measure of geometric accuracy or true scene detail.
-
-Dense Cloud, Depth Maps, Point Cloud, DSM/DEM quality, 3D reconstruction quality, GCP/checkpoint validation, cross-date accuracy, platform comparison, and change-detection suitability are outside the current MOF reference benchmark.
-
-`config/experiments/presets/mesh_facecount_smoothing_3x3.json` remains useful as a small starter/example preset, but it is not the current reference benchmark.
-
-## Documentation map
-
-- [WORKFLOW_CHAIN.md](WORKFLOW_CHAIN.md): active architecture and runtime chain.
-- [docs/quick_workflow.md](docs/quick_workflow.md): concise operational command guide.
-- [docs/orthomosaic_stability_manual.md](docs/orthomosaic_stability_manual.md): maintained interpretation and workflow manual.
-- [docs/product_manifest_contract.md](docs/product_manifest_contract.md): manifest, evaluator, threshold review, and selected-product contract.
-- [docs/current_system_reference.md](docs/current_system_reference.md): code-derived current system reference.
-- [docs/rationale_and_paper_argument_register.md](docs/rationale_and_paper_argument_register.md): rationale and paper argument register.
-- [docs/legacy_document_mining_report.md](docs/legacy_document_mining_report.md): mining guidance for legacy material.
-- [config/experiments/README.md](config/experiments/README.md): preset and matrix reference.
-
-## Repository layout
-
-- `metashape_qc_engine/`: thin installable CLI wrapper exposing `metashape-qc`.
-- `python/`: Metashape workflow, preparation, reproducibility runner, analyzer, and evaluator scripts.
-- `scripts/`: shell bridge for launching the workflow inside the Metashape runtime environment.
-- `config/`: runtime YAML configs, experiment presets, variant templates, and legacy config material.
-- `docs/`: active documentation, reference contracts, audit notes, and upstream/background material.
-- `R/`: retained AM2-style helper scripts and compatibility material; not the current primary product-analysis path.
-- `calibration/`: retained calibration CSV input/reference files.
-- `prior-versions/`: archived workflow code for older Metashape compatibility/reference cases.
+The installation method for compatible GDAL Python bindings when `gdal-config` is unavailable is **UNRESOLVED** and system-specific.
 
 ## License and attribution
 
-This repository is distributed under the BSD 3-Clause License.
-
-It contains adapted components from the UC Davis / AM2 / automate-metashape code base. Original copyright, author, license, and disclaimer notices are retained in `LICENSE`; project-specific attribution and scope notes are provided in `NOTICE.md`.
-
-Selected active project scripts are Copyright (c) 2026 Chris Reudenbach, Lars Opgenoorth, and Christian Mestre Runge.
+This repository is distributed under the BSD 3-Clause License. Adapted UC Davis / AM2 / automate-metashape components retain their original notices in [LICENSE](LICENSE); project-specific attribution is in [NOTICE.md](NOTICE.md).

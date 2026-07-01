@@ -1,1 +1,5 @@
+# Minimal Python requirement for the Agisoft Metashape runtime bridge.
+# This is not the complete metashape-qc-engine development or workflow environment.
+# Agisoft Metashape itself must be installed and licensed separately.
+# This file does not install OTB, GDAL CLI tools, R, exactextractr, or Level-1B dependencies.
 PyYAML>=6.0

@@ -1,0 +1,4214 @@
+{
+  "golden_run_id": "level1b-golden-ref_dumb_20260629T134611-v1",
+  "handoff": {
+    "S1": 0.3218860997478801,
+    "S2": -0.1827726228748731,
+    "SM": 0.26015553095917726,
+    "gain_share_comparator": ">",
+    "gain_share_threshold": 0.5,
+    "handoff_candidate_id": "local_midpoint",
+    "handoff_reason": "Midpoint-family raw support delivers more than half of the local reference gain",
+    "midpoint_candidate_id": "local_midpoint",
+    "midpoint_gain": 0.4429281538340504,
+    "midpoint_gain_share": 0.8776785855045091,
+    "no1_candidate_scale_group_id": "r3p88m_px078",
+    "no2_candidate_scale_group_id": "r2p14m_px043",
+    "status": "step9b_midpoint_gain_share_handoff",
+    "total_gain": 0.5046587226227531,
+    "warning": false
+  },
+  "identifiers": {
+    "candidate_scale_group_ids": [
+      "r0p2m_px004",
+      "r0p36m_px007",
+      "r0p65m_px013",
+      "r1p18m_px024",
+      "r2p14m_px043",
+      "r3p88m_px078"
+    ],
+    "midpoint_perturbation_ids": [
+      "local_midpoint__baseline",
+      "local_midpoint__perturb_001",
+      "local_midpoint__perturb_002",
+      "local_midpoint__perturb_003",
+      "local_midpoint__perturb_004",
+      "local_midpoint__perturb_005",
+      "local_midpoint__perturb_006",
+      "local_midpoint__perturb_007",
+      "local_midpoint__perturb_008"
+    ],
+    "perturbation_ids": [
+      "ref-ortho__structure_scales_r0p2m_px004__baseline",
+      "ref-ortho__structure_scales_r0p2m_px004__perturb_001",
+      "ref-ortho__structure_scales_r0p2m_px004__perturb_002",
+      "ref-ortho__structure_scales_r0p2m_px004__perturb_003",
+      "ref-ortho__structure_scales_r0p2m_px004__perturb_004",
+      "ref-ortho__structure_scales_r0p2m_px004__perturb_005",
+      "ref-ortho__structure_scales_r0p2m_px004__perturb_006",
+      "ref-ortho__structure_scales_r0p2m_px004__perturb_007",
+      "ref-ortho__structure_scales_r0p2m_px004__perturb_008",
+      "ref-ortho__structure_scales_r0p36m_px007__baseline",
+      "ref-ortho__structure_scales_r0p36m_px007__perturb_001",
+      "ref-ortho__structure_scales_r0p36m_px007__perturb_002",
+      "ref-ortho__structure_scales_r0p36m_px007__perturb_003",
+      "ref-ortho__structure_scales_r0p36m_px007__perturb_004",
+      "ref-ortho__structure_scales_r0p36m_px007__perturb_005",
+      "ref-ortho__structure_scales_r0p36m_px007__perturb_006",
+      "ref-ortho__structure_scales_r0p36m_px007__perturb_007",
+      "ref-ortho__structure_scales_r0p36m_px007__perturb_008",
+      "ref-ortho__structure_scales_r0p65m_px013__baseline",
+      "ref-ortho__structure_scales_r0p65m_px013__perturb_001",
+      "ref-ortho__structure_scales_r0p65m_px013__perturb_002",
+      "ref-ortho__structure_scales_r0p65m_px013__perturb_003",
+      "ref-ortho__structure_scales_r0p65m_px013__perturb_004",
+      "ref-ortho__structure_scales_r0p65m_px013__perturb_005",
+      "ref-ortho__structure_scales_r0p65m_px013__perturb_006",
+      "ref-ortho__structure_scales_r0p65m_px013__perturb_007",
+      "ref-ortho__structure_scales_r0p65m_px013__perturb_008",
+      "ref-ortho__structure_scales_r1p18m_px024__baseline",
+      "ref-ortho__structure_scales_r1p18m_px024__perturb_001",
+      "ref-ortho__structure_scales_r1p18m_px024__perturb_002",
+      "ref-ortho__structure_scales_r1p18m_px024__perturb_003",
+      "ref-ortho__structure_scales_r1p18m_px024__perturb_004",
+      "ref-ortho__structure_scales_r1p18m_px024__perturb_005",
+      "ref-ortho__structure_scales_r1p18m_px024__perturb_006",
+      "ref-ortho__structure_scales_r1p18m_px024__perturb_007",
+      "ref-ortho__structure_scales_r1p18m_px024__perturb_008",
+      "ref-ortho__structure_scales_r2p14m_px043__baseline",
+      "ref-ortho__structure_scales_r2p14m_px043__perturb_001",
+      "ref-ortho__structure_scales_r2p14m_px043__perturb_002",
+      "ref-ortho__structure_scales_r2p14m_px043__perturb_003",
+      "ref-ortho__structure_scales_r2p14m_px043__perturb_004",
+      "ref-ortho__structure_scales_r2p14m_px043__perturb_005",
+      "ref-ortho__structure_scales_r2p14m_px043__perturb_006",
+      "ref-ortho__structure_scales_r2p14m_px043__perturb_007",
+      "ref-ortho__structure_scales_r2p14m_px043__perturb_008",
+      "ref-ortho__structure_scales_r3p88m_px078__baseline",
+      "ref-ortho__structure_scales_r3p88m_px078__perturb_001",
+      "ref-ortho__structure_scales_r3p88m_px078__perturb_002",
+      "ref-ortho__structure_scales_r3p88m_px078__perturb_003",
+      "ref-ortho__structure_scales_r3p88m_px078__perturb_004",
+      "ref-ortho__structure_scales_r3p88m_px078__perturb_005",
+      "ref-ortho__structure_scales_r3p88m_px078__perturb_006",
+      "ref-ortho__structure_scales_r3p88m_px078__perturb_007",
+      "ref-ortho__structure_scales_r3p88m_px078__perturb_008"
+    ],
+    "source_candidate_ids": [
+      "ref-ortho__structure_scales_r0p2m_px004",
+      "ref-ortho__structure_scales_r0p36m_px007",
+      "ref-ortho__structure_scales_r0p65m_px013",
+      "ref-ortho__structure_scales_r1p18m_px024",
+      "ref-ortho__structure_scales_r2p14m_px043",
+      "ref-ortho__structure_scales_r3p88m_px078"
+    ]
+  },
+  "midpoint": {
+    "group_summary_canonical_sha256": "0c7527d240b90e489aea4188623b9aa94032bba04e8a531a5d66514963854056",
+    "interval_preflight": {
+      "anchor_references": [
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "requires_step9b_execution": false,
+          "source_step9a_metrics_reused": true,
+          "step9b_row_role": "existing_lower_anchor"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "requires_step9b_execution": false,
+          "source_step9a_metrics_reused": true,
+          "step9b_row_role": "existing_upper_anchor"
+        }
+      ],
+      "midpoint_candidate_count": 1,
+      "midpoint_perturbation_candidate_count": 9,
+      "midpoint_probe_candidate": {
+        "candidate_id": "local_midpoint",
+        "candidate_scale_group_id": "local_midpoint",
+        "minsize_px": 12327,
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "requires_step9b_execution": true,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_step9a_metrics_reused": false,
+        "source_upper_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 61,
+        "step9b_row_role": "new_midpoint_probe"
+      },
+      "real_midpoint_family_support_available": false,
+      "source_step9a_directory": "${RUN_ROOT}/level1b/step9b_prepare_inputs",
+      "step9b_no_extrapolation_beyond_interval": true,
+      "step9b_status": "step9b_midpoint_probe_ready",
+      "step9b_status_reason": "Exactly one midpoint probe family is prepared inside the confirmed adjacent interval",
+      "supported_alternative_count": 0,
+      "top_pair_boundary_constrained": true,
+      "top_pair_intervening_candidate_scale_group_ids": [],
+      "top_pair_is_scale_adjacent": true,
+      "top_pair_lower_scale_candidate_group_id": "r2p14m_px043",
+      "top_pair_lower_scale_coordinate_value": 2.142019226103952,
+      "top_pair_rank1_at_scale_boundary": true,
+      "top_pair_rank1_boundary_side": "upper",
+      "top_pair_rank1_candidate_scale_group_id": "r3p88m_px078",
+      "top_pair_rank1_upper_extrapolation_not_tested": true,
+      "top_pair_rank2_candidate_scale_group_id": "r2p14m_px043",
+      "top_pair_scale_continuity_status": "adjacent_top_pair_confirmed",
+      "top_pair_scale_coordinate_name": "source_candidate_radius_m",
+      "top_pair_upper_scale_candidate_group_id": "r3p88m_px078",
+      "top_pair_upper_scale_coordinate_value": 3.875,
+      "user_choice_required": false
+    },
+    "perturbation_rows": [
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": true,
+        "minsize_px": 12327,
+        "perturbation_id": "local_midpoint__baseline",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 61
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 12327,
+        "perturbation_id": "local_midpoint__perturb_001",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 60
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 12327,
+        "perturbation_id": "local_midpoint__perturb_002",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.6345625864924859,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 62
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.19996755090451854,
+          "minsize_px_delta": 2465,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 14792,
+        "perturbation_id": "local_midpoint__perturb_003",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.6345625864924859,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 60
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.19996755090451854,
+          "minsize_px_delta": 2465,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 14792,
+        "perturbation_id": "local_midpoint__perturb_004",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7755764946019271,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 60
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": -0.19996755090451854,
+          "minsize_px_delta": -2465,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 9862,
+        "perturbation_id": "local_midpoint__perturb_005",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 60
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 12327,
+        "perturbation_id": "local_midpoint__perturb_006",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7755764946019271,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 61
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": -0.19996755090451854,
+          "minsize_px_delta": -2465,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 9862,
+        "perturbation_id": "local_midpoint__perturb_007",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7755764946019271,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 61
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": -0.19996755090451854,
+          "minsize_px_delta": -2465,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 9862,
+        "perturbation_id": "local_midpoint__perturb_008",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 62
+      }
+    ],
+    "probe_candidate": {
+      "candidate_id": "local_midpoint",
+      "candidate_scale_group_id": "local_midpoint",
+      "minsize_px": 12327,
+      "radius_m": 3.008509613051976,
+      "ranger": 0.7050695405472065,
+      "requires_step9b_execution": true,
+      "scale_coordinate_name": "source_candidate_radius_m",
+      "scale_coordinate_value": 3.008509613051976,
+      "scale_id": "local_midpoint",
+      "source_candidate_radius_m": 3.008509613051976,
+      "source_lower_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+      "source_lower_candidate_scale_group_id": "r2p14m_px043",
+      "source_step9a_metrics_reused": false,
+      "source_upper_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+      "source_upper_candidate_scale_group_id": "r3p88m_px078",
+      "spatialr_px": 61,
+      "step9b_row_role": "new_midpoint_probe"
+    },
+    "run_population_canonical_sha256": "5f750c5cd63df6575f92ad1bd075dd833d079de360916c64a7c7cb221ee325dd"
+  },
+  "normalization": {
+    "NaN": "not allowed",
+    "absolute_input_ortho": "${INPUT_ORTHO}",
+    "absolute_run_root": "${RUN_ROOT}",
+    "dictionary_keys": "sorted for hashes",
+    "json_separators": [
+      ",",
+      ":"
+    ],
+    "unicode": "ASCII escaped"
+  },
+  "parameter_rows": {
+    "midpoint": [
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": true,
+        "minsize_px": 12327,
+        "perturbation_id": "local_midpoint__baseline",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 61
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 12327,
+        "perturbation_id": "local_midpoint__perturb_001",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 60
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 12327,
+        "perturbation_id": "local_midpoint__perturb_002",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.6345625864924859,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 62
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.19996755090451854,
+          "minsize_px_delta": 2465,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 14792,
+        "perturbation_id": "local_midpoint__perturb_003",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.6345625864924859,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 60
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.19996755090451854,
+          "minsize_px_delta": 2465,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 14792,
+        "perturbation_id": "local_midpoint__perturb_004",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7755764946019271,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 60
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": -0.19996755090451854,
+          "minsize_px_delta": -2465,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 9862,
+        "perturbation_id": "local_midpoint__perturb_005",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 60
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 12327,
+        "perturbation_id": "local_midpoint__perturb_006",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7755764946019271,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 61
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": -0.19996755090451854,
+          "minsize_px_delta": -2465,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 9862,
+        "perturbation_id": "local_midpoint__perturb_007",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7755764946019271,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 61
+      },
+      {
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": -0.19996755090451854,
+          "minsize_px_delta": -2465,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 9862,
+        "perturbation_id": "local_midpoint__perturb_008",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 62
+      }
+    ],
+    "scale_candidates": [
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 0.12566370614359174,
+        "candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 50,
+        "patch_radius_quantile": 0.25,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 0.2,
+        "ranger": null,
+        "scale_id": "r0p2m_px004",
+        "scale_index": 1,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 4,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 0.41125060370702043,
+        "candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 165,
+        "patch_radius_quantile": 0.4,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 0.3618081437156948,
+        "ranger": null,
+        "scale_id": "r0p36m_px007",
+        "scale_index": 2,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 7,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 1.3458703729152541,
+        "candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 539,
+        "patch_radius_quantile": 0.55,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 0.6545256642949843,
+        "ranger": null,
+        "scale_id": "r0p65m_px013",
+        "scale_index": 3,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 13,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 4.404533499436473,
+        "candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 1763,
+        "patch_radius_quantile": 0.7,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 1.1840635780642512,
+        "ranger": null,
+        "scale_id": "r1p18m_px024",
+        "scale_index": 4,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 24,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 14.414401073140846,
+        "candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 5770,
+        "patch_radius_quantile": 0.85,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 2.142019226103952,
+        "ranger": null,
+        "scale_id": "r2p14m_px043",
+        "scale_index": 5,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 43,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 47.17297718905924,
+        "candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 18884,
+        "patch_radius_quantile": 0.95,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 3.875,
+        "ranger": null,
+        "scale_id": "r3p88m_px078",
+        "scale_index": 6,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 78,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      }
+    ],
+    "scale_candidates_with_ranger": [
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 0.12566370614359174,
+        "assignment_rule": "ordered_scale_candidates_assigned_ordered_knn_distance_quantiles_with_tail_padding",
+        "candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 50,
+        "patch_radius_quantile": 0.25,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 0.2,
+        "ranger": 0.3540343190487846,
+        "ranger_id": "ref-ortho__structure_scales_ranger_001",
+        "ranger_source": "knn_distance_quantile",
+        "scale_id": "r0p2m_px004",
+        "scale_index": 1,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 4,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 0.41125060370702043,
+        "assignment_rule": "ordered_scale_candidates_assigned_ordered_knn_distance_quantiles_with_tail_padding",
+        "candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 165,
+        "patch_radius_quantile": 0.4,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.43154683209316597,
+        "ranger_id": "ref-ortho__structure_scales_ranger_002",
+        "ranger_source": "knn_distance_quantile",
+        "scale_id": "r0p36m_px007",
+        "scale_index": 2,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 7,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 1.3458703729152541,
+        "assignment_rule": "ordered_scale_candidates_assigned_ordered_knn_distance_quantiles_with_tail_padding",
+        "candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 539,
+        "patch_radius_quantile": 0.55,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.5469669888407498,
+        "ranger_id": "ref-ortho__structure_scales_ranger_003",
+        "ranger_source": "knn_distance_quantile",
+        "scale_id": "r0p65m_px013",
+        "scale_index": 3,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 13,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 4.404533499436473,
+        "assignment_rule": "ordered_scale_candidates_assigned_ordered_knn_distance_quantiles_with_tail_padding",
+        "candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 1763,
+        "patch_radius_quantile": 0.7,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.7050695405472065,
+        "ranger_id": "ref-ortho__structure_scales_ranger_004",
+        "ranger_source": "knn_distance_quantile",
+        "scale_id": "r1p18m_px024",
+        "scale_index": 4,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 24,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 14.414401073140846,
+        "assignment_rule": "ordered_scale_candidates_assigned_ordered_knn_distance_quantiles_with_tail_padding",
+        "candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 5770,
+        "patch_radius_quantile": 0.85,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.7050695405472065,
+        "ranger_id": "ref-ortho__structure_scales_ranger_004",
+        "ranger_source": "knn_distance_quantile",
+        "scale_id": "r2p14m_px043",
+        "scale_index": 5,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 43,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      },
+      {
+        "all_bands_used_explicitly": false,
+        "area_m2": 47.17297718905924,
+        "assignment_rule": "ordered_scale_candidates_assigned_ordered_knn_distance_quantiles_with_tail_padding",
+        "candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "candidates_are_metadata_derived": true,
+        "channel_metadata_path": "${RUN_ROOT}/level1b/channels/channel_report.json",
+        "color_index_bands_excluded_by_default": [
+          1,
+          2,
+          3
+        ],
+        "coupling_rule": "metadata_texture_support_radius_m_to_spatialr_px__area_m2_to_minsize_px",
+        "envelope_is_not_candidate": true,
+        "envelope_source": "inferred_texture_support_x_upper_radius_factor",
+        "evidence_quantile": null,
+        "excluded_proxy_band_indices": [
+          1,
+          2,
+          3
+        ],
+        "gsd_mapping_rule": "metadata_radius_m_to_pixel_radius_and_area",
+        "inside_uav_segment_similarity_envelope": true,
+        "max_radius_m": null,
+        "minsize_px": 18884,
+        "patch_radius_quantile": 0.95,
+        "pixel_area_m2": 0.002498031958817133,
+        "pixel_size_m": 0.04998031571345996,
+        "proxy_structure_mode": "texture_preferred",
+        "radius_m": 3.875,
+        "ranger": 0.7050695405472065,
+        "ranger_id": "ref-ortho__structure_scales_ranger_004",
+        "ranger_source": "knn_distance_quantile",
+        "scale_id": "r3p88m_px078",
+        "scale_index": 6,
+        "scale_mode": "structure_derived_scale_distribution",
+        "scale_source": "proxy_stack",
+        "selected_structure_band_indices": [
+          4,
+          5
+        ],
+        "selected_structure_band_roles": [
+          "TEX_100M",
+          "TEX_200M"
+        ],
+        "selected_structure_band_source": "metadata_texture_roles",
+        "spatialr_px": 78,
+        "target_structure_max_m": 2.0,
+        "texture_support_inference_method": "channel_metadata_or_selected_texture_roles",
+        "texture_support_max_m": 2.0,
+        "upper_envelope_radius_m": 5.0,
+        "upper_radius_factor": 2.5
+      }
+    ],
+    "step9a": [
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": true,
+        "minsize_px": 50,
+        "perturbation_id": "ref-ortho__structure_scales_r0p2m_px004__baseline",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.2,
+        "ranger": 0.3540343190487846,
+        "scale_id": "r0p2m_px004",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "spatialr_px": 4
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 50,
+        "perturbation_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_001",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.2,
+        "ranger": 0.3540343190487846,
+        "scale_id": "r0p2m_px004",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "spatialr_px": 3
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": -0.035403431904878435,
+          "ranger_delta_fraction": -0.09999999999999994,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 50,
+        "perturbation_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_002",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.2,
+        "ranger": 0.31863088714390614,
+        "scale_id": "r0p2m_px004",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "spatialr_px": 5
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.2,
+          "minsize_px_delta": 10,
+          "ranger_delta": -0.035403431904878435,
+          "ranger_delta_fraction": -0.09999999999999994,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 60,
+        "perturbation_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_003",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.2,
+        "ranger": 0.31863088714390614,
+        "scale_id": "r0p2m_px004",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "spatialr_px": 3
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.2,
+          "minsize_px_delta": 10,
+          "ranger_delta": 0.035403431904878435,
+          "ranger_delta_fraction": 0.09999999999999994,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 60,
+        "perturbation_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_004",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.2,
+        "ranger": 0.389437750953663,
+        "scale_id": "r0p2m_px004",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "spatialr_px": 3
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.2,
+          "minsize_px_delta": -10,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 40,
+        "perturbation_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_005",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.2,
+        "ranger": 0.3540343190487846,
+        "scale_id": "r0p2m_px004",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "spatialr_px": 3
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.035403431904878435,
+          "ranger_delta_fraction": 0.09999999999999994,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 50,
+        "perturbation_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_006",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.2,
+        "ranger": 0.389437750953663,
+        "scale_id": "r0p2m_px004",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "spatialr_px": 4
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.2,
+          "minsize_px_delta": -10,
+          "ranger_delta": 0.035403431904878435,
+          "ranger_delta_fraction": 0.09999999999999994,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 40,
+        "perturbation_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_007",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.2,
+        "ranger": 0.389437750953663,
+        "scale_id": "r0p2m_px004",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "spatialr_px": 4
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.2,
+          "minsize_px_delta": -10,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 40,
+        "perturbation_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_008",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.2,
+        "ranger": 0.3540343190487846,
+        "scale_id": "r0p2m_px004",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p2m_px004",
+        "spatialr_px": 5
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": true,
+        "minsize_px": 165,
+        "perturbation_id": "ref-ortho__structure_scales_r0p36m_px007__baseline",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.43154683209316597,
+        "scale_id": "r0p36m_px007",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "spatialr_px": 7
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 165,
+        "perturbation_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_001",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.43154683209316597,
+        "scale_id": "r0p36m_px007",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "spatialr_px": 6
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": -0.04315468320931659,
+          "ranger_delta_fraction": -0.09999999999999999,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 165,
+        "perturbation_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_002",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.3883921488838494,
+        "scale_id": "r0p36m_px007",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "spatialr_px": 8
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.2,
+          "minsize_px_delta": 33,
+          "ranger_delta": -0.04315468320931659,
+          "ranger_delta_fraction": -0.09999999999999999,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 198,
+        "perturbation_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_003",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.3883921488838494,
+        "scale_id": "r0p36m_px007",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "spatialr_px": 6
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.2,
+          "minsize_px_delta": 33,
+          "ranger_delta": 0.04315468320931659,
+          "ranger_delta_fraction": 0.09999999999999999,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 198,
+        "perturbation_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_004",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.47470151530248256,
+        "scale_id": "r0p36m_px007",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "spatialr_px": 6
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.2,
+          "minsize_px_delta": -33,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 132,
+        "perturbation_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_005",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.43154683209316597,
+        "scale_id": "r0p36m_px007",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "spatialr_px": 6
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.04315468320931659,
+          "ranger_delta_fraction": 0.09999999999999999,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 165,
+        "perturbation_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_006",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.47470151530248256,
+        "scale_id": "r0p36m_px007",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "spatialr_px": 7
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.2,
+          "minsize_px_delta": -33,
+          "ranger_delta": 0.04315468320931659,
+          "ranger_delta_fraction": 0.09999999999999999,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 132,
+        "perturbation_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_007",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.47470151530248256,
+        "scale_id": "r0p36m_px007",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "spatialr_px": 7
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.2,
+          "minsize_px_delta": -33,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 132,
+        "perturbation_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_008",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.3618081437156948,
+        "ranger": 0.43154683209316597,
+        "scale_id": "r0p36m_px007",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p36m_px007",
+        "spatialr_px": 8
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": true,
+        "minsize_px": 539,
+        "perturbation_id": "ref-ortho__structure_scales_r0p65m_px013__baseline",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.5469669888407498,
+        "scale_id": "r0p65m_px013",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "spatialr_px": 13
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 539,
+        "perturbation_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_001",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.5469669888407498,
+        "scale_id": "r0p65m_px013",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "spatialr_px": 12
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": -0.05469669888407497,
+          "ranger_delta_fraction": -0.09999999999999998,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 539,
+        "perturbation_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_002",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.4922702899566748,
+        "scale_id": "r0p65m_px013",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "spatialr_px": 14
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.20037105751391465,
+          "minsize_px_delta": 108,
+          "ranger_delta": -0.05469669888407497,
+          "ranger_delta_fraction": -0.09999999999999998,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 647,
+        "perturbation_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_003",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.4922702899566748,
+        "scale_id": "r0p65m_px013",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "spatialr_px": 12
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.20037105751391465,
+          "minsize_px_delta": 108,
+          "ranger_delta": 0.05469669888407502,
+          "ranger_delta_fraction": 0.10000000000000007,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 647,
+        "perturbation_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_004",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.6016636877248248,
+        "scale_id": "r0p65m_px013",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "spatialr_px": 12
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.20037105751391465,
+          "minsize_px_delta": -108,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 431,
+        "perturbation_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_005",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.5469669888407498,
+        "scale_id": "r0p65m_px013",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "spatialr_px": 12
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.05469669888407502,
+          "ranger_delta_fraction": 0.10000000000000007,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 539,
+        "perturbation_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_006",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.6016636877248248,
+        "scale_id": "r0p65m_px013",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "spatialr_px": 13
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.20037105751391465,
+          "minsize_px_delta": -108,
+          "ranger_delta": 0.05469669888407502,
+          "ranger_delta_fraction": 0.10000000000000007,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 431,
+        "perturbation_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_007",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.6016636877248248,
+        "scale_id": "r0p65m_px013",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "spatialr_px": 13
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.20037105751391465,
+          "minsize_px_delta": -108,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 431,
+        "perturbation_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_008",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 0.6545256642949843,
+        "ranger": 0.5469669888407498,
+        "scale_id": "r0p65m_px013",
+        "source_candidate_id": "ref-ortho__structure_scales_r0p65m_px013",
+        "spatialr_px": 14
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": true,
+        "minsize_px": 1763,
+        "perturbation_id": "ref-ortho__structure_scales_r1p18m_px024__baseline",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r1p18m_px024",
+        "source_candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "spatialr_px": 24
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 1763,
+        "perturbation_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_001",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r1p18m_px024",
+        "source_candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "spatialr_px": 23
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 1763,
+        "perturbation_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_002",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.6345625864924859,
+        "scale_id": "r1p18m_px024",
+        "source_candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "spatialr_px": 25
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.20022688598979013,
+          "minsize_px_delta": 353,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 2116,
+        "perturbation_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_003",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.6345625864924859,
+        "scale_id": "r1p18m_px024",
+        "source_candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "spatialr_px": 23
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.20022688598979013,
+          "minsize_px_delta": 353,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 2116,
+        "perturbation_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_004",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.7755764946019271,
+        "scale_id": "r1p18m_px024",
+        "source_candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "spatialr_px": 23
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.20022688598979013,
+          "minsize_px_delta": -353,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 1410,
+        "perturbation_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_005",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r1p18m_px024",
+        "source_candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "spatialr_px": 23
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 1763,
+        "perturbation_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_006",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.7755764946019271,
+        "scale_id": "r1p18m_px024",
+        "source_candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "spatialr_px": 24
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.20022688598979013,
+          "minsize_px_delta": -353,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 1410,
+        "perturbation_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_007",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.7755764946019271,
+        "scale_id": "r1p18m_px024",
+        "source_candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "spatialr_px": 24
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.20022688598979013,
+          "minsize_px_delta": -353,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 1410,
+        "perturbation_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_008",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 1.1840635780642512,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r1p18m_px024",
+        "source_candidate_id": "ref-ortho__structure_scales_r1p18m_px024",
+        "spatialr_px": 25
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": true,
+        "minsize_px": 5770,
+        "perturbation_id": "ref-ortho__structure_scales_r2p14m_px043__baseline",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r2p14m_px043",
+        "source_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "spatialr_px": 43
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 5770,
+        "perturbation_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_001",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r2p14m_px043",
+        "source_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "spatialr_px": 42
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 5770,
+        "perturbation_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_002",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.6345625864924859,
+        "scale_id": "r2p14m_px043",
+        "source_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "spatialr_px": 44
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.2,
+          "minsize_px_delta": 1154,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 6924,
+        "perturbation_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_003",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.6345625864924859,
+        "scale_id": "r2p14m_px043",
+        "source_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "spatialr_px": 42
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.2,
+          "minsize_px_delta": 1154,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 6924,
+        "perturbation_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_004",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.7755764946019271,
+        "scale_id": "r2p14m_px043",
+        "source_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "spatialr_px": 42
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.2,
+          "minsize_px_delta": -1154,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 4616,
+        "perturbation_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_005",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r2p14m_px043",
+        "source_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "spatialr_px": 42
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 5770,
+        "perturbation_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_006",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.7755764946019271,
+        "scale_id": "r2p14m_px043",
+        "source_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "spatialr_px": 43
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.2,
+          "minsize_px_delta": -1154,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 4616,
+        "perturbation_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_007",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.7755764946019271,
+        "scale_id": "r2p14m_px043",
+        "source_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "spatialr_px": 43
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.2,
+          "minsize_px_delta": -1154,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 4616,
+        "perturbation_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_008",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 2.142019226103952,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r2p14m_px043",
+        "source_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "spatialr_px": 44
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": true,
+        "minsize_px": 18884,
+        "perturbation_id": "ref-ortho__structure_scales_r3p88m_px078__baseline",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.875,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r3p88m_px078",
+        "source_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "spatialr_px": 78
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 18884,
+        "perturbation_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_001",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.875,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r3p88m_px078",
+        "source_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "spatialr_px": 77
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 18884,
+        "perturbation_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_002",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.875,
+        "ranger": 0.6345625864924859,
+        "scale_id": "r3p88m_px078",
+        "source_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "spatialr_px": 79
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.20001059097648805,
+          "minsize_px_delta": 3777,
+          "ranger_delta": -0.07050695405472063,
+          "ranger_delta_fraction": -0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 22661,
+        "perturbation_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_003",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.875,
+        "ranger": 0.6345625864924859,
+        "scale_id": "r3p88m_px078",
+        "source_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "spatialr_px": 77
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.20001059097648805,
+          "minsize_px_delta": 3777,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 22661,
+        "perturbation_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_004",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.875,
+        "ranger": 0.7755764946019271,
+        "scale_id": "r3p88m_px078",
+        "source_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "spatialr_px": 77
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.20001059097648805,
+          "minsize_px_delta": -3777,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": -1
+        },
+        "is_baseline": false,
+        "minsize_px": 15107,
+        "perturbation_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_005",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.875,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r3p88m_px078",
+        "source_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "spatialr_px": 77
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 18884,
+        "perturbation_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_006",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.875,
+        "ranger": 0.7755764946019271,
+        "scale_id": "r3p88m_px078",
+        "source_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "spatialr_px": 78
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.20001059097648805,
+          "minsize_px_delta": -3777,
+          "ranger_delta": 0.07050695405472063,
+          "ranger_delta_fraction": 0.09999999999999996,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": false,
+        "minsize_px": 15107,
+        "perturbation_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_007",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.875,
+        "ranger": 0.7755764946019271,
+        "scale_id": "r3p88m_px078",
+        "source_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "spatialr_px": 78
+      },
+      {
+        "deltas": {
+          "minsize_delta_fraction": -0.20001059097648805,
+          "minsize_px_delta": -3777,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 1
+        },
+        "is_baseline": false,
+        "minsize_px": 15107,
+        "perturbation_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_008",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.875,
+        "ranger": 0.7050695405472065,
+        "scale_id": "r3p88m_px078",
+        "source_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "spatialr_px": 79
+      }
+    ]
+  },
+  "scale_continuity_and_boundary_gate": {
+    "scale_coordinate_order_agreement": true,
+    "scale_coordinate_value_by_group": {
+      "r0p2m_px004": 0.2,
+      "r0p36m_px007": 0.3618081437156948,
+      "r0p65m_px013": 0.6545256642949843,
+      "r1p18m_px024": 1.1840635780642512,
+      "r2p14m_px043": 2.142019226103952,
+      "r3p88m_px078": 3.875
+    },
+    "scale_ladder": [
+      {
+        "candidate_scale_group_id": "r0p2m_px004",
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 0.2,
+        "scale_ladder_rank": 1
+      },
+      {
+        "candidate_scale_group_id": "r0p36m_px007",
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 0.3618081437156948,
+        "scale_ladder_rank": 2
+      },
+      {
+        "candidate_scale_group_id": "r0p65m_px013",
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 0.6545256642949843,
+        "scale_ladder_rank": 3
+      },
+      {
+        "candidate_scale_group_id": "r1p18m_px024",
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 1.1840635780642512,
+        "scale_ladder_rank": 4
+      },
+      {
+        "candidate_scale_group_id": "r2p14m_px043",
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 2.142019226103952,
+        "scale_ladder_rank": 5
+      },
+      {
+        "candidate_scale_group_id": "r3p88m_px078",
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.875,
+        "scale_ladder_rank": 6
+      }
+    ],
+    "scale_ladder_rank_by_group": {
+      "r0p2m_px004": 1,
+      "r0p36m_px007": 2,
+      "r0p65m_px013": 3,
+      "r1p18m_px024": 4,
+      "r2p14m_px043": 5,
+      "r3p88m_px078": 6
+    },
+    "selected_scale_coordinate_name": "source_candidate_radius_m",
+    "top_pair_boundary_constrained": true,
+    "top_pair_intervening_candidate_scale_group_ids": [],
+    "top_pair_is_scale_adjacent": true,
+    "top_pair_lower_scale_candidate_group_id": "r2p14m_px043",
+    "top_pair_lower_scale_coordinate_value": 2.142019226103952,
+    "top_pair_rank1_at_scale_boundary": true,
+    "top_pair_rank1_boundary_side": "upper",
+    "top_pair_rank1_candidate_scale_group_id": "r3p88m_px078",
+    "top_pair_rank1_upper_extrapolation_not_tested": true,
+    "top_pair_rank2_candidate_scale_group_id": "r2p14m_px043",
+    "top_pair_scale_continuity_status": "adjacent_top_pair_confirmed",
+    "top_pair_scale_coordinate_name": "source_candidate_radius_m",
+    "top_pair_upper_scale_candidate_group_id": "r3p88m_px078",
+    "top_pair_upper_scale_coordinate_value": 3.875,
+    "usable_scale_coordinate_fields": [
+      "source_candidate_radius_m"
+    ]
+  },
+  "schema": "level1b_golden_scientific_fixture",
+  "schema_version": 1,
+  "scores_and_ranking": {
+    "midpoint_ranked": [
+      {
+        "candidate_outcome": "scale_jump_detected",
+        "candidate_scale_group_id": "local_midpoint",
+        "response_center_q": 1.906244792384433,
+        "response_spread_q": 2.5091810655607762,
+        "scale_coordinate_name": null,
+        "scale_coordinate_value": null,
+        "scale_ladder_rank": null,
+        "stability_score": 0.26015553095917726,
+        "stability_score_raw": 0.26015553095917726
+      }
+    ],
+    "midpoint_ranked_canonical_sha256": "0c7527d240b90e489aea4188623b9aa94032bba04e8a531a5d66514963854056",
+    "step9a_ranked": [
+      {
+        "candidate_outcome": "scale_jump_detected",
+        "candidate_scale_group_id": "r3p88m_px078",
+        "response_center_q": 1.7903489623997577,
+        "response_spread_q": 2.1842483147742042,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.875,
+        "scale_ladder_rank": 6,
+        "stability_score": 0.3218860997478801,
+        "stability_score_raw": 0.3218860997478801
+      },
+      {
+        "candidate_outcome": "scale_jump_detected",
+        "candidate_scale_group_id": "r2p14m_px043",
+        "response_center_q": 2.059248719757732,
+        "response_spread_q": 3.1243806202662174,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 2.142019226103952,
+        "scale_ladder_rank": 5,
+        "stability_score": 0.0,
+        "stability_score_raw": -0.1827726228748731
+      },
+      {
+        "candidate_outcome": "scale_jump_detected",
+        "candidate_scale_group_id": "r1p18m_px024",
+        "response_center_q": 4.676160296448773,
+        "response_spread_q": 25.313637312105875,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 1.1840635780642512,
+        "scale_ladder_rank": 4,
+        "stability_score": 0.0,
+        "stability_score_raw": -2.310847589101425
+      },
+      {
+        "candidate_outcome": "scale_jump_detected",
+        "candidate_scale_group_id": "r0p2m_px004",
+        "response_center_q": 1.8437079074013365,
+        "response_spread_q": 36.577057322942444,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 0.2,
+        "scale_ladder_rank": 1,
+        "stability_score": 0.0,
+        "stability_score_raw": -3.1468144201105828
+      },
+      {
+        "candidate_outcome": "scale_jump_detected",
+        "candidate_scale_group_id": "r0p65m_px013",
+        "response_center_q": 5.522587324593782,
+        "response_spread_q": 63.389690358249574,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 0.6545256642949843,
+        "scale_ladder_rank": 3,
+        "stability_score": 0.0,
+        "stability_score_raw": -6.2941287020751915
+      },
+      {
+        "candidate_outcome": "scale_jump_detected",
+        "candidate_scale_group_id": "r0p36m_px007",
+        "response_center_q": 3.007412979659883,
+        "response_spread_q": 87.05980837973527,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 0.3618081437156948,
+        "scale_ladder_rank": 2,
+        "stability_score": 0.0,
+        "stability_score_raw": -8.608906002818241
+      }
+    ],
+    "step9a_ranked_canonical_sha256": "3f4e26d50a70c156841ef424329b49b7b4cff499e26ae1f8a4f18fe424adb8df"
+  },
+  "selected_labels_raster": {
+    "band_count": 1,
+    "block_shapes": [
+      [
+        1,
+        3857
+      ]
+    ],
+    "bounds": [
+      477171.13700628205,
+      5632078.848391501,
+      477363.91108398885,
+      5632239.685047467
+    ],
+    "bytes": 49667200,
+    "crs_wkt": "PROJCS[\"WGS 84 / UTM zone 32N\",GEOGCS[\"WGS 84\",DATUM[\"World Geodetic System 1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",9],PARAMETER[\"scale_factor\",0.9996],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]",
+    "driver": "GTiff",
+    "dtypes": [
+      "uint32"
+    ],
+    "height": 3218,
+    "nodata_values": [
+      null
+    ],
+    "path": "level1b/step10_materialization/final_segments/selected_labels.tif",
+    "sha256": "d0499ad5ad2fd72cc63b6917f090237de3160a5227dda485a81b32cfc733963f",
+    "transform": [
+      0.04998031571345996,
+      0.0,
+      477171.13700628205,
+      0.0,
+      -0.049980315713483846,
+      5632239.685047467,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "width": 3857
+  },
+  "selection": {
+    "selected_baseline_row": {
+      "area_weighted_q_mean": 2.174340306993549,
+      "area_weighted_q_median": 1.906244792384433,
+      "area_weighted_q_q10": 1.2725722445985137,
+      "area_weighted_q_q25": 1.4856222817166809,
+      "area_weighted_q_q50": 1.906244792384433,
+      "area_weighted_q_q75": 2.8152804193699548,
+      "area_weighted_q_q90": 3.35942589785808,
+      "area_weighted_q_q95": 3.87023551673154,
+      "candidate_id": "local_midpoint",
+      "candidate_scale_group_id": "local_midpoint",
+      "central_area_share": 0.5188166398498663,
+      "diagnostic_size_classes": {
+        "central_area_share": 0.5188166398498663,
+        "edge_loaded_area_share": 0.48118336015013374,
+        "in_scale": {
+          "area_share": 0.5188166398498663,
+          "area_sum_m2": 12850.59582935947,
+          "median_radius_m": 4.135462363361666,
+          "q90_radius_m": 5.286975719963243,
+          "segment_count": 219
+        },
+        "large": {
+          "area_share": 0.46069639367990844,
+          "area_sum_m2": 11411.01248590862,
+          "median_radius_m": 7.578703057016785,
+          "q90_radius_m": 10.058028225611732,
+          "segment_count": 55
+        },
+        "lower_tail_area_share": 0.0,
+        "micro": {
+          "area_share": 0.0,
+          "area_sum_m2": 0.0,
+          "median_radius_m": 0.0,
+          "q90_radius_m": 0.0,
+          "segment_count": 0
+        },
+        "oversize": {
+          "area_share": 0.020486966470225285,
+          "area_sum_m2": 507.4427180182359,
+          "median_radius_m": 12.709210589850892,
+          "q90_radius_m": 12.709210589850892,
+          "segment_count": 1
+        },
+        "small": {
+          "area_share": 0.0,
+          "area_sum_m2": 0.0,
+          "median_radius_m": 0.0,
+          "q90_radius_m": 0.0,
+          "segment_count": 0
+        },
+        "upper_tail_area_share": 0.48118336015013374
+      },
+      "edge_loaded_area_share": 0.48118336015013374,
+      "in_scale_area_share": 0.5188166398498663,
+      "in_scale_frac_area": 0.5188166398498663,
+      "in_scale_frac_n": 0.7963636363636364,
+      "in_scale_segment_count": 219,
+      "invalid_support_excluded_from_q_statistics": true,
+      "label_count_strategy": "windowed_sparse_unique",
+      "label_invalid_support_value": 0,
+      "labels_postmasked": true,
+      "large_area_share": 0.46069639367990844,
+      "large_frac_area": 0.46069639367990844,
+      "large_frac_n": 0.2,
+      "large_segment_count": 55,
+      "lower_tail_area_share": 0.0,
+      "masked_segmentation_stack_path": "${RUN_ROOT}/level1b/local_transition_refinement/midpoint_response_surface_eval/level1b/candidate_response_surface/segmentations/local_midpoint/level1b/segmentation_smoke/local_midpoint__baseline/masked_segmentation_stack.tif",
+      "max_label": 918718,
+      "mean_area_m2": 90.06927648467756,
+      "mean_equivalent_radius_m": 5.038745863937124,
+      "median_area_m2": 63.4100432426141,
+      "median_equivalent_radius_m": 4.49266553923901,
+      "memory_strategy": {
+        "dense_count_bytes_if_used": 7349752,
+        "raster_array_loaded_whole": false,
+        "raster_window_count": 16,
+        "strategy": "windowed_sparse_unique"
+      },
+      "micro_area_share": 0.0,
+      "micro_frac_area": 0.0,
+      "micro_frac_n": 0.0,
+      "micro_segment_count": 0,
+      "minsize_px": 12327,
+      "n_segments": 275,
+      "original_row_metadata": {
+        "_step8_row_index": 0,
+        "candidate_scale_group_id": "local_midpoint",
+        "deltas": {
+          "minsize_delta_fraction": 0.0,
+          "minsize_px_delta": 0,
+          "ranger_delta": 0.0,
+          "ranger_delta_fraction": 0.0,
+          "spatialr_px_delta": 0
+        },
+        "is_baseline": true,
+        "minsize_px": 12327,
+        "perturbation_id": "local_midpoint__baseline",
+        "perturbation_rule": "r_make_param_perturbations_local_grid",
+        "radius_m": 3.008509613051976,
+        "ranger": 0.7050695405472065,
+        "requires_step9b_execution": true,
+        "scale_coordinate_name": "source_candidate_radius_m",
+        "scale_coordinate_value": 3.008509613051976,
+        "scale_id": "local_midpoint",
+        "source_candidate_id": "local_midpoint",
+        "source_candidate_radius_m": 3.008509613051976,
+        "source_lower_candidate_id": "ref-ortho__structure_scales_r2p14m_px043",
+        "source_lower_candidate_scale_group_id": "r2p14m_px043",
+        "source_step9a_metrics_reused": false,
+        "source_upper_candidate_id": "ref-ortho__structure_scales_r3p88m_px078",
+        "source_upper_candidate_scale_group_id": "r3p88m_px078",
+        "spatialr_px": 61
+      },
+      "oversize_area_share": 0.020486966470225285,
+      "oversize_frac_area": 0.020486966470225285,
+      "oversize_frac_n": 0.0036363636363636364,
+      "oversize_segment_count": 1,
+      "parameter_offsets": {
+        "minsize_delta_fraction": 0.0,
+        "minsize_px_delta": 0,
+        "ranger_delta": 0.0,
+        "ranger_delta_fraction": 0.0,
+        "spatialr_px_delta": 0
+      },
+      "perturbation_id": "local_midpoint__baseline",
+      "post_mask_applied": true,
+      "pre_lsms_mask_applied": true,
+      "q10_area_m2": 37.69630147133406,
+      "q10_equivalent_radius_m": 3.4639682897787,
+      "q25_area_m2": 47.26651170875838,
+      "q25_equivalent_radius_m": 3.878839558524595,
+      "q50_area_m2": 63.4100432426141,
+      "q50_equivalent_radius_m": 4.49266553923901,
+      "q75_area_m2": 95.18875680670627,
+      "q75_equivalent_radius_m": 5.50449530844628,
+      "q90_area_m2": 186.43511957600725,
+      "q90_equivalent_radius_m": 7.70284798312383,
+      "q95_area_m2": 244.65100496665298,
+      "q95_equivalent_radius_m": 8.824656241520351,
+      "q_histogram_area_distribution": [
+        0.0,
+        0.0,
+        0.0,
+        0.5188166398498663,
+        0.46069639367990844,
+        0.020486966470225285,
+        0.0
+      ],
+      "q_histogram_bins": [
+        0.0,
+        0.25,
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+        8.0,
+        "inf"
+      ],
+      "q_median": 1.4933193232118127,
+      "q_p10": 1.1513901350857527,
+      "q_p25": 1.2892894015351724,
+      "q_p75": 1.8296419212243293,
+      "q_p90": 2.5603534553142717,
+      "q_run_area_weighted_median": 1.8810539154686114,
+      "radius_m": 3.008509613051976,
+      "ranger": 0.7050695405472065,
+      "run_id": "local_midpoint__baseline",
+      "run_minsize": 12327,
+      "run_ranger": 0.7050695405472065,
+      "run_spatial_radius_m": 3.0487992585210577,
+      "scale_id": "local_midpoint",
+      "segment_count": 275,
+      "segment_density_per_ha": 111.02565036925976,
+      "segmentation_stack_path": "${RUN_ROOT}/level1b/scaling/scaled_feature_stack.tif",
+      "segmentation_stack_source": "scaled_proxy_stack",
+      "size_class_area_distribution": [
+        0.0,
+        0.0,
+        0.5188166398498663,
+        0.46069639367990844,
+        0.020486966470225285
+      ],
+      "small_area_share": 0.0,
+      "small_frac_area": 0.0,
+      "small_frac_n": 0.0,
+      "small_segment_count": 0,
+      "source_candidate_id": "local_midpoint",
+      "source_candidate_radius_m": 3.008509613051976,
+      "source_minsize": 12327,
+      "source_ranger": 0.7050695405472065,
+      "source_scale_id": "local_midpoint",
+      "source_spatial_radius": 61,
+      "spatialr_px": 61,
+      "step10_display_rank": 1,
+      "step10_finalist_role": "midpoint",
+      "step10_lower_boundary_documentation_only": false,
+      "step10_selected_candidate": true,
+      "step10_selected_role": "midpoint",
+      "step10_source_table": "midpoint_run_population_summary",
+      "total_labelled_area_m2": 24769.051033286327,
+      "unique_label_count": 275,
+      "upper_tail_area_share": 0.48118336015013374,
+      "valid_mask_path": "${RUN_ROOT}/level1b/mask/valid_mask.tif"
+    },
+    "selected_baseline_run_id": "local_midpoint__baseline",
+    "selected_candidate_id": "local_midpoint",
+    "selected_source": "midpoint"
+  },
+  "source_checksum_manifest": "tests/golden/level1b_golden_ref_dumb_20260629T134611_v1.json",
+  "step10": {
+    "dataset_hashes": {
+      "finalist_group_aggregation": "1485da028d4342000e3aff39632c53bfa0f10952361d7961136d257be376ca3c",
+      "finalist_group_summary": "76c2345946e65373f68c4167641adc9b45965e251750f5ef2195a6149534819f",
+      "finalist_numeric_distribution_summary": "329ee1ec7c9e745c78d30f39e90fe8b4d40307e51da32088af5c59ca20b0d01f",
+      "finalist_perturbation_runs": "87f033692f6caf068dcd9554f343ac45d58990ecb03a11226caa64150bf116f7"
+    },
+    "exactextractr_summary": {
+      "band_count": 5,
+      "input_selected_segments_gpkg": "${RUN_ROOT}/level1b/step10_materialization/final_segments/selected_segments.gpkg",
+      "input_valid_mask": "${RUN_ROOT}/level1b/mask/valid_mask.tif",
+      "input_value_raster": "${RUN_ROOT}/level1b/local_transition_refinement/midpoint_response_surface_eval/level1b/candidate_response_surface/segmentations/local_midpoint/level1b/segmentation_smoke/local_midpoint__baseline/masked_segmentation_stack.tif",
+      "numeric_column_summary": {
+        "count.masked_segmentation_stack_1": {
+          "max": 203137,
+          "mean": 32297.8046,
+          "median": 22591,
+          "min": 1,
+          "n_non_na": 307
+        },
+        "count.masked_segmentation_stack_2": {
+          "max": 203137,
+          "mean": 32297.8046,
+          "median": 22591,
+          "min": 1,
+          "n_non_na": 307
+        },
+        "count.masked_segmentation_stack_3": {
+          "max": 203137,
+          "mean": 32297.8046,
+          "median": 22591,
+          "min": 1,
+          "n_non_na": 307
+        },
+        "count.masked_segmentation_stack_4": {
+          "max": 203137,
+          "mean": 32297.8046,
+          "median": 22591,
+          "min": 1,
+          "n_non_na": 307
+        },
+        "count.masked_segmentation_stack_5": {
+          "max": 203137,
+          "mean": 32297.8046,
+          "median": 22591,
+          "min": 1,
+          "n_non_na": 307
+        },
+        "max.masked_segmentation_stack_1": {
+          "max": 3.9878,
+          "mean": 2.1337,
+          "median": 2.3078,
+          "min": -1.9674,
+          "n_non_na": 307
+        },
+        "max.masked_segmentation_stack_2": {
+          "max": 3.997,
+          "mean": 2.3022,
+          "median": 2.477,
+          "min": -0.3911,
+          "n_non_na": 307
+        },
+        "max.masked_segmentation_stack_3": {
+          "max": 3.5077,
+          "mean": 2.5763,
+          "median": 2.8013,
+          "min": -1.2935,
+          "n_non_na": 307
+        },
+        "max.masked_segmentation_stack_4": {
+          "max": 10.2245,
+          "mean": 2.3244,
+          "median": 2.2038,
+          "min": -0.9969,
+          "n_non_na": 307
+        },
+        "max.masked_segmentation_stack_5": {
+          "max": 6.4194,
+          "mean": 1.64,
+          "median": 1.5753,
+          "min": -1.1931,
+          "n_non_na": 307
+        },
+        "mean.masked_segmentation_stack_1": {
+          "max": 1.32,
+          "mean": -0.0779,
+          "median": -0.0104,
+          "min": -2.6936,
+          "n_non_na": 307
+        },
+        "mean.masked_segmentation_stack_2": {
+          "max": 1.8088,
+          "mean": 0.0477,
+          "median": 0.0382,
+          "min": -1.4319,
+          "n_non_na": 307
+        },
+        "mean.masked_segmentation_stack_3": {
+          "max": 1.4286,
+          "mean": 0.0115,
+          "median": -0.0033,
+          "min": -1.2935,
+          "n_non_na": 307
+        },
+        "mean.masked_segmentation_stack_4": {
+          "max": 2.914,
+          "mean": 0.0813,
+          "median": 0.0654,
+          "min": -1.2206,
+          "n_non_na": 307
+        },
+        "mean.masked_segmentation_stack_5": {
+          "max": 2.9359,
+          "mean": 0.0828,
+          "median": 0.0406,
+          "min": -1.3441,
+          "n_non_na": 307
+        },
+        "median.masked_segmentation_stack_1": {
+          "max": 1.2618,
+          "mean": -0.0263,
+          "median": 0.0149,
+          "min": -2.6975,
+          "n_non_na": 307
+        },
+        "median.masked_segmentation_stack_2": {
+          "max": 1.8214,
+          "mean": -0.0065,
+          "median": -0.023,
+          "min": -1.4491,
+          "n_non_na": 307
+        },
+        "median.masked_segmentation_stack_3": {
+          "max": 1.5152,
+          "mean": -0.0571,
+          "median": -0.121,
+          "min": -1.3166,
+          "n_non_na": 307
+        },
+        "median.masked_segmentation_stack_4": {
+          "max": 2.7525,
+          "mean": -0.0028,
+          "median": -0.0282,
+          "min": -1.3567,
+          "n_non_na": 307
+        },
+        "median.masked_segmentation_stack_5": {
+          "max": 2.7915,
+          "mean": 0.0323,
+          "median": 0.0395,
+          "min": -1.5669,
+          "n_non_na": 307
+        },
+        "min.masked_segmentation_stack_1": {
+          "max": 0.4912,
+          "mean": -2.8683,
+          "median": -3.0055,
+          "min": -6.147,
+          "n_non_na": 307
+        },
+        "min.masked_segmentation_stack_2": {
+          "max": 1.208,
+          "mean": -1.5205,
+          "median": -1.6833,
+          "min": -2.176,
+          "n_non_na": 307
+        },
+        "min.masked_segmentation_stack_3": {
+          "max": 0.4727,
+          "mean": -1.6991,
+          "median": -1.8197,
+          "min": -1.9207,
+          "n_non_na": 307
+        },
+        "min.masked_segmentation_stack_4": {
+          "max": 0.9771,
+          "mean": -1.0385,
+          "median": -1.1291,
+          "min": -1.5458,
+          "n_non_na": 307
+        },
+        "min.masked_segmentation_stack_5": {
+          "max": 1.152,
+          "mean": -0.9196,
+          "median": -0.9461,
+          "min": -1.8185,
+          "n_non_na": 307
+        },
+        "q05.masked_segmentation_stack_1": {
+          "max": 0.4912,
+          "mean": -1.3216,
+          "median": -1.3196,
+          "min": -4.4229,
+          "n_non_na": 307
+        },
+        "q05.masked_segmentation_stack_2": {
+          "max": 1.208,
+          "mean": -0.9537,
+          "median": -1.1136,
+          "min": -1.728,
+          "n_non_na": 307
+        },
+        "q05.masked_segmentation_stack_3": {
+          "max": 0.4727,
+          "mean": -1.1029,
+          "median": -1.2181,
+          "min": -1.6524,
+          "n_non_na": 307
+        },
+        "q05.masked_segmentation_stack_4": {
+          "max": 0.9771,
+          "mean": -0.7043,
+          "median": -0.7924,
+          "min": -1.5244,
+          "n_non_na": 307
+        },
+        "q05.masked_segmentation_stack_5": {
+          "max": 1.4007,
+          "mean": -0.6007,
+          "median": -0.6327,
+          "min": -1.7657,
+          "n_non_na": 307
+        },
+        "q10.masked_segmentation_stack_1": {
+          "max": 0.5665,
+          "mean": -1.0387,
+          "median": -0.9804,
+          "min": -4.0956,
+          "n_non_na": 307
+        },
+        "q10.masked_segmentation_stack_2": {
+          "max": 1.208,
+          "mean": -0.7998,
+          "median": -0.9295,
+          "min": -1.6782,
+          "n_non_na": 307
+        },
+        "q10.masked_segmentation_stack_3": {
+          "max": 0.4727,
+          "mean": -0.9312,
+          "median": -1.0369,
+          "min": -1.578,
+          "n_non_na": 307
+        },
+        "q10.masked_segmentation_stack_4": {
+          "max": 1.1408,
+          "mean": -0.5802,
+          "median": -0.6682,
+          "min": -1.5028,
+          "n_non_na": 307
+        },
+        "q10.masked_segmentation_stack_5": {
+          "max": 1.5676,
+          "mean": -0.4927,
+          "median": -0.5258,
+          "min": -1.7312,
+          "n_non_na": 307
+        },
+        "q25.masked_segmentation_stack_1": {
+          "max": 0.8393,
+          "mean": -0.5483,
+          "median": -0.4918,
+          "min": -3.4663,
+          "n_non_na": 307
+        },
+        "q25.masked_segmentation_stack_2": {
+          "max": 1.4215,
+          "mean": -0.4721,
+          "median": -0.5354,
+          "min": -1.5776,
+          "n_non_na": 307
+        },
+        "q25.masked_segmentation_stack_3": {
+          "max": 0.9093,
+          "mean": -0.5694,
+          "median": -0.674,
+          "min": -1.4612,
+          "n_non_na": 307
+        },
+        "q25.masked_segmentation_stack_4": {
+          "max": 1.7242,
+          "mean": -0.3391,
+          "median": -0.4166,
+          "min": -1.4604,
+          "n_non_na": 307
+        },
+        "q25.masked_segmentation_stack_5": {
+          "max": 2.1594,
+          "mean": -0.2675,
+          "median": -0.2764,
+          "min": -1.6652,
+          "n_non_na": 307
+        },
+        "q50.masked_segmentation_stack_1": {
+          "max": 1.2618,
+          "mean": -0.0263,
+          "median": 0.0149,
+          "min": -2.6975,
+          "n_non_na": 307
+        },
+        "q50.masked_segmentation_stack_2": {
+          "max": 1.8214,
+          "mean": -0.0065,
+          "median": -0.023,
+          "min": -1.4491,
+          "n_non_na": 307
+        },
+        "q50.masked_segmentation_stack_3": {
+          "max": 1.5152,
+          "mean": -0.0571,
+          "median": -0.121,
+          "min": -1.3166,
+          "n_non_na": 307
+        },
+        "q50.masked_segmentation_stack_4": {
+          "max": 2.7525,
+          "mean": -0.0028,
+          "median": -0.0282,
+          "min": -1.3567,
+          "n_non_na": 307
+        },
+        "q50.masked_segmentation_stack_5": {
+          "max": 2.7915,
+          "mean": 0.0323,
+          "median": 0.0395,
+          "min": -1.5669,
+          "n_non_na": 307
+        },
+        "q75.masked_segmentation_stack_1": {
+          "max": 1.7661,
+          "mean": 0.4324,
+          "median": 0.5252,
+          "min": -1.9674,
+          "n_non_na": 307
+        },
+        "q75.masked_segmentation_stack_2": {
+          "max": 2.2188,
+          "mean": 0.5239,
+          "median": 0.5119,
+          "min": -1.3753,
+          "n_non_na": 307
+        },
+        "q75.masked_segmentation_stack_3": {
+          "max": 2.1708,
+          "mean": 0.5419,
+          "median": 0.5648,
+          "min": -1.2935,
+          "n_non_na": 307
+        },
+        "q75.masked_segmentation_stack_4": {
+          "max": 3.985,
+          "mean": 0.4146,
+          "median": 0.3854,
+          "min": -1.1658,
+          "n_non_na": 307
+        },
+        "q75.masked_segmentation_stack_5": {
+          "max": 3.7437,
+          "mean": 0.3829,
+          "median": 0.2958,
+          "min": -1.2066,
+          "n_non_na": 307
+        },
+        "q90.masked_segmentation_stack_1": {
+          "max": 2.3838,
+          "mean": 0.7887,
+          "median": 0.9056,
+          "min": -1.9674,
+          "n_non_na": 307
+        },
+        "q90.masked_segmentation_stack_2": {
+          "max": 2.5045,
+          "mean": 0.988,
+          "median": 1.0853,
+          "min": -1.2616,
+          "n_non_na": 307
+        },
+        "q90.masked_segmentation_stack_3": {
+          "max": 2.4322,
+          "mean": 1.078,
+          "median": 1.3093,
+          "min": -1.2935,
+          "n_non_na": 307
+        },
+        "q90.masked_segmentation_stack_4": {
+          "max": 5.0112,
+          "mean": 0.8628,
+          "median": 0.8378,
+          "min": -1.0074,
+          "n_non_na": 307
+        },
+        "q90.masked_segmentation_stack_5": {
+          "max": 4.7178,
+          "mean": 0.7417,
+          "median": 0.6317,
+          "min": -1.1985,
+          "n_non_na": 307
+        },
+        "q95.masked_segmentation_stack_1": {
+          "max": 2.694,
+          "mean": 0.9826,
+          "median": 1.0825,
+          "min": -1.9674,
+          "n_non_na": 307
+        },
+        "q95.masked_segmentation_stack_2": {
+          "max": 2.6538,
+          "mean": 1.2385,
+          "median": 1.3783,
+          "min": -1.1845,
+          "n_non_na": 307
+        },
+        "q95.masked_segmentation_stack_3": {
+          "max": 2.6228,
+          "mean": 1.3651,
+          "median": 1.6745,
+          "min": -1.2935,
+          "n_non_na": 307
+        },
+        "q95.masked_segmentation_stack_4": {
+          "max": 5.5549,
+          "mean": 1.1646,
+          "median": 1.082,
+          "min": -1.0022,
+          "n_non_na": 307
+        },
+        "q95.masked_segmentation_stack_5": {
+          "max": 5.0168,
+          "mean": 0.9515,
+          "median": 0.8023,
+          "min": -1.1958,
+          "n_non_na": 307
+        },
+        "stdev.masked_segmentation_stack_1": {
+          "max": 1.3787,
+          "mean": 0.7106,
+          "median": 0.7583,
+          "min": 0,
+          "n_non_na": 307
+        },
+        "stdev.masked_segmentation_stack_2": {
+          "max": 1.2694,
+          "mean": 0.6847,
+          "median": 0.7316,
+          "min": 0,
+          "n_non_na": 307
+        },
+        "stdev.masked_segmentation_stack_3": {
+          "max": 1.2775,
+          "mean": 0.7663,
+          "median": 0.8361,
+          "min": 0,
+          "n_non_na": 307
+        },
+        "stdev.masked_segmentation_stack_4": {
+          "max": 1.9853,
+          "mean": 0.5785,
+          "median": 0.5693,
+          "min": 0,
+          "n_non_na": 307
+        },
+        "stdev.masked_segmentation_stack_5": {
+          "max": 1.4946,
+          "mean": 0.4786,
+          "median": 0.4487,
+          "min": 0,
+          "n_non_na": 307
+        },
+        "variance.masked_segmentation_stack_1": {
+          "max": 1.9009,
+          "mean": 0.5698,
+          "median": 0.5751,
+          "min": 0,
+          "n_non_na": 307
+        },
+        "variance.masked_segmentation_stack_2": {
+          "max": 1.6114,
+          "mean": 0.5334,
+          "median": 0.5353,
+          "min": 0,
+          "n_non_na": 307
+        },
+        "variance.masked_segmentation_stack_3": {
+          "max": 1.632,
+          "mean": 0.6491,
+          "median": 0.6991,
+          "min": 0,
+          "n_non_na": 307
+        },
+        "variance.masked_segmentation_stack_4": {
+          "max": 3.9416,
+          "mean": 0.4321,
+          "median": 0.3241,
+          "min": 0,
+          "n_non_na": 307
+        },
+        "variance.masked_segmentation_stack_5": {
+          "max": 2.2338,
+          "mean": 0.2891,
+          "median": 0.2013,
+          "min": 0,
+          "n_non_na": 307
+        }
+      },
+      "segment_count": 307,
+      "selected_candidate_id": "local_midpoint",
+      "selected_representative_id": "local_midpoint__baseline",
+      "selected_source": "midpoint",
+      "stats_column_count": 70,
+      "stats_columns": [
+        "count.masked_segmentation_stack_1",
+        "count.masked_segmentation_stack_2",
+        "count.masked_segmentation_stack_3",
+        "count.masked_segmentation_stack_4",
+        "count.masked_segmentation_stack_5",
+        "mean.masked_segmentation_stack_1",
+        "mean.masked_segmentation_stack_2",
+        "mean.masked_segmentation_stack_3",
+        "mean.masked_segmentation_stack_4",
+        "mean.masked_segmentation_stack_5",
+        "median.masked_segmentation_stack_1",
+        "median.masked_segmentation_stack_2",
+        "median.masked_segmentation_stack_3",
+        "median.masked_segmentation_stack_4",
+        "median.masked_segmentation_stack_5",
+        "min.masked_segmentation_stack_1",
+        "min.masked_segmentation_stack_2",
+        "min.masked_segmentation_stack_3",
+        "min.masked_segmentation_stack_4",
+        "min.masked_segmentation_stack_5",
+        "max.masked_segmentation_stack_1",
+        "max.masked_segmentation_stack_2",
+        "max.masked_segmentation_stack_3",
+        "max.masked_segmentation_stack_4",
+        "max.masked_segmentation_stack_5",
+        "stdev.masked_segmentation_stack_1",
+        "stdev.masked_segmentation_stack_2",
+        "stdev.masked_segmentation_stack_3",
+        "stdev.masked_segmentation_stack_4",
+        "stdev.masked_segmentation_stack_5",
+        "variance.masked_segmentation_stack_1",
+        "variance.masked_segmentation_stack_2",
+        "variance.masked_segmentation_stack_3",
+        "variance.masked_segmentation_stack_4",
+        "variance.masked_segmentation_stack_5",
+        "q05.masked_segmentation_stack_1",
+        "q05.masked_segmentation_stack_2",
+        "q05.masked_segmentation_stack_3",
+        "q05.masked_segmentation_stack_4",
+        "q05.masked_segmentation_stack_5",
+        "q10.masked_segmentation_stack_1",
+        "q10.masked_segmentation_stack_2",
+        "q10.masked_segmentation_stack_3",
+        "q10.masked_segmentation_stack_4",
+        "q10.masked_segmentation_stack_5",
+        "q25.masked_segmentation_stack_1",
+        "q25.masked_segmentation_stack_2",
+        "q25.masked_segmentation_stack_3",
+        "q25.masked_segmentation_stack_4",
+        "q25.masked_segmentation_stack_5",
+        "q50.masked_segmentation_stack_1",
+        "q50.masked_segmentation_stack_2",
+        "q50.masked_segmentation_stack_3",
+        "q50.masked_segmentation_stack_4",
+        "q50.masked_segmentation_stack_5",
+        "q75.masked_segmentation_stack_1",
+        "q75.masked_segmentation_stack_2",
+        "q75.masked_segmentation_stack_3",
+        "q75.masked_segmentation_stack_4",
+        "q75.masked_segmentation_stack_5",
+        "q90.masked_segmentation_stack_1",
+        "q90.masked_segmentation_stack_2",
+        "q90.masked_segmentation_stack_3",
+        "q90.masked_segmentation_stack_4",
+        "q90.masked_segmentation_stack_5",
+        "q95.masked_segmentation_stack_1",
+        "q95.masked_segmentation_stack_2",
+        "q95.masked_segmentation_stack_3",
+        "q95.masked_segmentation_stack_4",
+        "q95.masked_segmentation_stack_5"
+      ],
+      "stats_csv": "${RUN_ROOT}/level1b/step10_materialization/segment_stats/selected_segment_exactextractr_stats.csv",
+      "status": "step10_part5_exactextractr_segment_stats_ready",
+      "summary_fields_present": [
+        "n_non_na",
+        "mean",
+        "median",
+        "min",
+        "max"
+      ]
+    },
+    "row_counts": {
+      "exactextractr_segment_count": 307,
+      "finalist_group_aggregation": 3,
+      "finalist_group_summary": 3,
+      "finalist_numeric_distribution_summary": 219,
+      "finalist_perturbation_runs": 27
+    }
+  },
+  "summary_datasets": {
+    "midpoint_group_summary": {
+      "canonical_sha256": "0c7527d240b90e489aea4188623b9aa94032bba04e8a531a5d66514963854056",
+      "fields": [
+        "candidate_outcome",
+        "candidate_scale_group_id",
+        "centered",
+        "central_area_dominance_change",
+        "central_area_share_mean",
+        "central_area_share_sd",
+        "compatible_combination_count",
+        "decision_reasons",
+        "distribution_flutter_flag",
+        "distribution_flutter_score",
+        "distributional_spread_around_medoid",
+        "dominant_class_switch_count",
+        "dominant_size_class_agreement",
+        "dominant_tail_class_agreement",
+        "edge_loaded_flag",
+        "flurry_like",
+        "incompatible_combination_count",
+        "lower_tail_area_share_mean",
+        "lower_tail_area_share_sd",
+        "lower_tail_cell_persistence",
+        "lower_tail_dominance_change",
+        "lower_tail_dominated",
+        "matrix_distribution_distance",
+        "matrix_distribution_distance_max",
+        "max_distance_to_medoid",
+        "mean_distance_to_medoid",
+        "medoid_parameters",
+        "medoid_run_id",
+        "missing_central_mass_flag",
+        "multimodal_response_flag",
+        "one_sided_lower_tail_flag",
+        "one_sided_upper_tail_flag",
+        "pairwise_distribution_distance_max",
+        "pairwise_distribution_distance_mean",
+        "problem_cell_area_share_change",
+        "regime_switch_count",
+        "response_center_q",
+        "response_skewness_q",
+        "response_spread_q",
+        "run_count",
+        "scale_coordinate_name",
+        "scale_coordinate_value",
+        "scale_jump_flag",
+        "scale_ladder_rank",
+        "spatial_pattern_spread_around_medoid",
+        "spatial_scale_jump_flag",
+        "stability_score",
+        "stability_score_raw",
+        "strongly_skewed",
+        "unstably_spread",
+        "upper_tail_area_share_mean",
+        "upper_tail_area_share_sd",
+        "upper_tail_cell_persistence",
+        "upper_tail_dominance_change",
+        "upper_tail_dominated"
+      ],
+      "identity_fields": [
+        "candidate_scale_group_id"
+      ],
+      "row_count": 1,
+      "row_identities": [
+        {
+          "candidate_scale_group_id": "local_midpoint"
+        }
+      ],
+      "row_sha256": [
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "sha256": "71601e9be796b3b90a6752581cdfccde2c27f4c12a89256a5e84c6533dc2af1c"
+        }
+      ]
+    },
+    "midpoint_run_population": {
+      "canonical_sha256": "5f750c5cd63df6575f92ad1bd075dd833d079de360916c64a7c7cb221ee325dd",
+      "fields": [
+        "area_weighted_q_mean",
+        "area_weighted_q_median",
+        "area_weighted_q_q10",
+        "area_weighted_q_q25",
+        "area_weighted_q_q50",
+        "area_weighted_q_q75",
+        "area_weighted_q_q90",
+        "area_weighted_q_q95",
+        "candidate_id",
+        "candidate_scale_group_id",
+        "central_area_share",
+        "diagnostic_size_classes",
+        "edge_loaded_area_share",
+        "in_scale_area_share",
+        "in_scale_frac_area",
+        "in_scale_frac_n",
+        "in_scale_segment_count",
+        "invalid_support_excluded_from_q_statistics",
+        "label_count_strategy",
+        "label_invalid_support_value",
+        "labels_postmasked",
+        "large_area_share",
+        "large_frac_area",
+        "large_frac_n",
+        "large_segment_count",
+        "lower_tail_area_share",
+        "masked_segmentation_stack_path",
+        "max_label",
+        "mean_area_m2",
+        "mean_equivalent_radius_m",
+        "median_area_m2",
+        "median_equivalent_radius_m",
+        "memory_strategy",
+        "micro_area_share",
+        "micro_frac_area",
+        "micro_frac_n",
+        "micro_segment_count",
+        "minsize_px",
+        "n_segments",
+        "original_row_metadata",
+        "oversize_area_share",
+        "oversize_frac_area",
+        "oversize_frac_n",
+        "oversize_segment_count",
+        "parameter_offsets",
+        "perturbation_id",
+        "post_mask_applied",
+        "pre_lsms_mask_applied",
+        "q10_area_m2",
+        "q10_equivalent_radius_m",
+        "q25_area_m2",
+        "q25_equivalent_radius_m",
+        "q50_area_m2",
+        "q50_equivalent_radius_m",
+        "q75_area_m2",
+        "q75_equivalent_radius_m",
+        "q90_area_m2",
+        "q90_equivalent_radius_m",
+        "q95_area_m2",
+        "q95_equivalent_radius_m",
+        "q_histogram_area_distribution",
+        "q_histogram_bins",
+        "q_median",
+        "q_p10",
+        "q_p25",
+        "q_p75",
+        "q_p90",
+        "q_run_area_weighted_median",
+        "radius_m",
+        "ranger",
+        "run_id",
+        "run_minsize",
+        "run_ranger",
+        "run_spatial_radius_m",
+        "scale_id",
+        "segment_count",
+        "segment_density_per_ha",
+        "segmentation_stack_path",
+        "segmentation_stack_source",
+        "size_class_area_distribution",
+        "small_area_share",
+        "small_frac_area",
+        "small_frac_n",
+        "small_segment_count",
+        "source_candidate_id",
+        "source_candidate_radius_m",
+        "source_minsize",
+        "source_ranger",
+        "source_scale_id",
+        "source_spatial_radius",
+        "spatialr_px",
+        "total_labelled_area_m2",
+        "unique_label_count",
+        "upper_tail_area_share",
+        "valid_mask_path"
+      ],
+      "identity_fields": [
+        "run_id",
+        "candidate_scale_group_id"
+      ],
+      "row_count": 9,
+      "row_identities": [
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__baseline"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_001"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_002"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_003"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_004"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_005"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_006"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_007"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_008"
+        }
+      ],
+      "row_sha256": [
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__baseline",
+          "sha256": "3160832428da1b9c42b7cbc50dd4c65200586304416b8072dd7e5cf267b07a3c"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_001",
+          "sha256": "193eea5ac21d18ccad13ff689ba033a2e8f89ed09447bd5bde159f43ea39bb44"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_002",
+          "sha256": "ac2f104c61d1df7ee04bc00b980e67df6fd6a2eb616ecd12388cee993489fe38"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_003",
+          "sha256": "b0889964234e1bcd38cbf76a5ace378bf53ba29ea879490807356c258a81585e"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_004",
+          "sha256": "dca3c73bbe711f1705d07ac4c0b5edecfde815a390f569e1adc8316839eab174"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_005",
+          "sha256": "f8e012929c2c26db8bce20980d568f61c0583fbb3a378de3abd916ebda7fb263"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_006",
+          "sha256": "94dd37dacb1d5c59df954283ea6d37d08b83223a4be8313cce8a4b3e4e6fd62b"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_007",
+          "sha256": "a505f148f3bc60f18374d93cf2dc84109fcbbbe964f029c93debd67061159536"
+        },
+        {
+          "candidate_scale_group_id": "local_midpoint",
+          "run_id": "local_midpoint__perturb_008",
+          "sha256": "27753bdda02f49fe3ecae4c9e1feb598e4d7790ddcf88880c74c5ae808dcf3a0"
+        }
+      ]
+    },
+    "step9a_group_summary": {
+      "canonical_sha256": "60220b995b5aa582ed44e38f754aa55db29ae050c3d0d74483be518f49ba7f3a",
+      "fields": [
+        "candidate_outcome",
+        "candidate_scale_group_id",
+        "centered",
+        "central_area_dominance_change",
+        "central_area_share_mean",
+        "central_area_share_sd",
+        "compatible_combination_count",
+        "decision_reasons",
+        "distribution_flutter_flag",
+        "distribution_flutter_score",
+        "distributional_spread_around_medoid",
+        "dominant_class_switch_count",
+        "dominant_size_class_agreement",
+        "dominant_tail_class_agreement",
+        "edge_loaded_flag",
+        "flurry_like",
+        "incompatible_combination_count",
+        "lower_tail_area_share_mean",
+        "lower_tail_area_share_sd",
+        "lower_tail_cell_persistence",
+        "lower_tail_dominance_change",
+        "lower_tail_dominated",
+        "matrix_distribution_distance",
+        "matrix_distribution_distance_max",
+        "max_distance_to_medoid",
+        "mean_distance_to_medoid",
+        "medoid_parameters",
+        "medoid_run_id",
+        "missing_central_mass_flag",
+        "multimodal_response_flag",
+        "one_sided_lower_tail_flag",
+        "one_sided_upper_tail_flag",
+        "pairwise_distribution_distance_max",
+        "pairwise_distribution_distance_mean",
+        "problem_cell_area_share_change",
+        "regime_switch_count",
+        "response_center_q",
+        "response_skewness_q",
+        "response_spread_q",
+        "run_count",
+        "scale_coordinate_name",
+        "scale_coordinate_value",
+        "scale_jump_flag",
+        "scale_ladder_rank",
+        "spatial_pattern_spread_around_medoid",
+        "spatial_scale_jump_flag",
+        "stability_score",
+        "stability_score_raw",
+        "strongly_skewed",
+        "unstably_spread",
+        "upper_tail_area_share_mean",
+        "upper_tail_area_share_sd",
+        "upper_tail_cell_persistence",
+        "upper_tail_dominance_change",
+        "upper_tail_dominated"
+      ],
+      "identity_fields": [
+        "candidate_scale_group_id"
+      ],
+      "row_count": 6,
+      "row_identities": [
+        {
+          "candidate_scale_group_id": "r0p2m_px004"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078"
+        }
+      ],
+      "row_sha256": [
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "sha256": "7bdf0e28157b4ab4b8dcc1afdce45e5bf893bc94ab99f03ac5ada0cdc00fc08b"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "sha256": "abc83b5ed2593c16f486b5b21ca94e7a4f00ed6dfd9b6dfcc5ff464150b24cc5"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "sha256": "8f4cad846c0eaff0e024518e5961c3de7721416c6102d03e181fea63ca5659b6"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "sha256": "bec9b515ff60c7fbc5c8f9b876ae4cd3dc6599f7559826b2189f35771cd79f9a"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "sha256": "ce43a2aceb5028393ac1eeb32873da7f2c3eabdb318275f2059322fc33ae3440"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "sha256": "e132bb4983a20b8c1dae21b5bf441bfd18b990c77b03c2e757d3490558efde34"
+        }
+      ]
+    },
+    "step9a_run_population": {
+      "canonical_sha256": "b54baad314c731288d5fd2989f498f83ea367cb3215bcfb0c3849a5e619b249f",
+      "fields": [
+        "area_weighted_q_mean",
+        "area_weighted_q_median",
+        "area_weighted_q_q10",
+        "area_weighted_q_q25",
+        "area_weighted_q_q50",
+        "area_weighted_q_q75",
+        "area_weighted_q_q90",
+        "area_weighted_q_q95",
+        "candidate_id",
+        "candidate_scale_group_id",
+        "central_area_share",
+        "diagnostic_size_classes",
+        "edge_loaded_area_share",
+        "in_scale_area_share",
+        "in_scale_frac_area",
+        "in_scale_frac_n",
+        "in_scale_segment_count",
+        "invalid_support_excluded_from_q_statistics",
+        "label_count_strategy",
+        "label_invalid_support_value",
+        "labels_postmasked",
+        "large_area_share",
+        "large_frac_area",
+        "large_frac_n",
+        "large_segment_count",
+        "lower_tail_area_share",
+        "masked_segmentation_stack_path",
+        "max_label",
+        "mean_area_m2",
+        "mean_equivalent_radius_m",
+        "median_area_m2",
+        "median_equivalent_radius_m",
+        "memory_strategy",
+        "micro_area_share",
+        "micro_frac_area",
+        "micro_frac_n",
+        "micro_segment_count",
+        "minsize_px",
+        "n_segments",
+        "original_row_metadata",
+        "oversize_area_share",
+        "oversize_frac_area",
+        "oversize_frac_n",
+        "oversize_segment_count",
+        "parameter_offsets",
+        "perturbation_id",
+        "post_mask_applied",
+        "pre_lsms_mask_applied",
+        "q10_area_m2",
+        "q10_equivalent_radius_m",
+        "q25_area_m2",
+        "q25_equivalent_radius_m",
+        "q50_area_m2",
+        "q50_equivalent_radius_m",
+        "q75_area_m2",
+        "q75_equivalent_radius_m",
+        "q90_area_m2",
+        "q90_equivalent_radius_m",
+        "q95_area_m2",
+        "q95_equivalent_radius_m",
+        "q_histogram_area_distribution",
+        "q_histogram_bins",
+        "q_median",
+        "q_p10",
+        "q_p25",
+        "q_p75",
+        "q_p90",
+        "q_run_area_weighted_median",
+        "radius_m",
+        "ranger",
+        "run_id",
+        "run_minsize",
+        "run_ranger",
+        "run_spatial_radius_m",
+        "scale_id",
+        "segment_count",
+        "segment_density_per_ha",
+        "segmentation_stack_path",
+        "segmentation_stack_source",
+        "size_class_area_distribution",
+        "small_area_share",
+        "small_frac_area",
+        "small_frac_n",
+        "small_segment_count",
+        "source_candidate_id",
+        "source_candidate_radius_m",
+        "source_minsize",
+        "source_ranger",
+        "source_scale_id",
+        "source_spatial_radius",
+        "spatialr_px",
+        "total_labelled_area_m2",
+        "unique_label_count",
+        "upper_tail_area_share",
+        "valid_mask_path"
+      ],
+      "identity_fields": [
+        "run_id",
+        "candidate_scale_group_id"
+      ],
+      "row_count": 54,
+      "row_identities": [
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__baseline"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_001"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_002"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_003"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_004"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_005"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_006"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_007"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_008"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__baseline"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_001"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_002"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_003"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_004"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_005"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_006"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_007"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_008"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__baseline"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_001"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_002"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_003"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_004"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_005"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_006"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_007"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_008"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__baseline"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_001"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_002"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_003"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_004"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_005"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_006"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_007"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_008"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__baseline"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_001"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_002"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_003"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_004"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_005"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_006"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_007"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_008"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__baseline"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_001"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_002"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_003"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_004"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_005"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_006"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_007"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_008"
+        }
+      ],
+      "row_sha256": [
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__baseline",
+          "sha256": "97112dad6e7e347534e4813983fe1dc5fe2a7a74497dbd9eefef83cc81841d6c"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_001",
+          "sha256": "e754f8e7c652ee8158e759f9013d2e22a13d2db31eb0c8637fabfced0ee12819"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_002",
+          "sha256": "680cebeba4013c32bb21ad9629d1dbdff099525a109c06f975d4223cf5a4d4a2"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_003",
+          "sha256": "05a8ab11f99b4806e8e4a44ce4c155da8b3c4678236f499aef8a4a21bef00810"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_004",
+          "sha256": "5ce16e366726b331920040b22cb0fcbe135d9a8a7bbef0e1f95a63371608ec9f"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_005",
+          "sha256": "42e99b10e55a0361db1158a175ebbcb433299a9c1b90e6635aa679004918d322"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_006",
+          "sha256": "4e63d7ce65d05d5b84c36d0dc3a8ca4f6154dd6b1f945c0b77e45284677b0588"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_007",
+          "sha256": "e32a3cdff4e1a21299a8f12e41ef61a8ca3978db9de7f77170c9d31291aababb"
+        },
+        {
+          "candidate_scale_group_id": "r0p2m_px004",
+          "run_id": "ref-ortho__structure_scales_r0p2m_px004__perturb_008",
+          "sha256": "7ae9c830d2b4cefbb32e8f0746ce586e2058a4ebb2d32b326ef5724509f2c0cd"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__baseline",
+          "sha256": "4628dad4fe57dca704325a7513cc35bc2ba7cbde8109f9e4772c1110e22fa5cd"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_001",
+          "sha256": "f8afb65e4fdbc3547b55d761e4464035a2b2324656a5907d4d5723cbff5afe03"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_002",
+          "sha256": "4a498624c14adb0d217606209bfbd1ad9ed9321cd347351899cecad44f1c8ce9"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_003",
+          "sha256": "ab72eabe2323b66db01a85047fa98bdeb2fe515b8047f0cc63087b5d358c366e"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_004",
+          "sha256": "82d402cb08722a5e7e55813dc7c44f686e5e4ac8996dd8f8734343e2f1828815"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_005",
+          "sha256": "775ca7f518edec469088bffd22de14092a80e5a61fb1fdfa7a01bf9e8207d024"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_006",
+          "sha256": "4fe46766d1f623e3b2bb9ec9e4b0b6f6f043fdce431dff0521f467df9920a921"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_007",
+          "sha256": "4661b4b6bf4bdec42f3d723890d0850e093b370776f7b03805d1a1a4e6fdf3bb"
+        },
+        {
+          "candidate_scale_group_id": "r0p36m_px007",
+          "run_id": "ref-ortho__structure_scales_r0p36m_px007__perturb_008",
+          "sha256": "9c2f79b9f98a0a2705b1458b27849b23184d8090ea48073b3e77255063e0f5d2"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__baseline",
+          "sha256": "c61a0e5980f7ecd1aa47049f15d33d9a2676154c8e3fbf6b8bae9a72c81894f4"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_001",
+          "sha256": "317f05a86cd6f7a2a42fd5de0971ec4f2c1f662801f30b6506d3aa11a90efd99"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_002",
+          "sha256": "245ee67324599afb683f69b3bdc3fccea120c06e645d1598fe7e957e4b7c405e"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_003",
+          "sha256": "765a847b4ba9e34b215ce4fc799edfd87cbd345f16937a4999aadc1447669dae"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_004",
+          "sha256": "edfcd04c37bebdeb0c691887e14d9a5129803ebf88505ec5d13f52764ced605a"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_005",
+          "sha256": "7793f862dfb69c7343044dd5f947274fa62a0fa45f0fe65c5734d34a7373eb92"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_006",
+          "sha256": "f6c2a7c6d6a3213dd5023a76c61d15b98dcbd33fe5714a2d2878707606b3d847"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_007",
+          "sha256": "c8cbc0a929d596c47be934646a0caefdbf088364c3162b1706e81202500d3bce"
+        },
+        {
+          "candidate_scale_group_id": "r0p65m_px013",
+          "run_id": "ref-ortho__structure_scales_r0p65m_px013__perturb_008",
+          "sha256": "68bcaab2d48d28abcab67bea819b542281c31cfde262d545786f3e6e20d22cc8"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__baseline",
+          "sha256": "3dc04a42cb51ab2d574ce65b534277e1754394474fd0b9ae365d38f737da4a7b"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_001",
+          "sha256": "3061418d7e2d68c8022100e535f46f44007cf860ea642cdfac2584fd61bec595"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_002",
+          "sha256": "d51b81a1355438738266a0faeffed9a12611e3bf5ad90eceb2378a8673759e52"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_003",
+          "sha256": "28ca9c3d0f1df9b155a008b07c8dcd61ef20739717d5ba88d53d16ca3fe57116"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_004",
+          "sha256": "1aa53de49c366cc11bde2141cf788dae4eb47bff7b28840d242e936b138d699f"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_005",
+          "sha256": "430976020091ffe90ce5da2eb0dc27db081e5d312a4a2948e5a7810d2bb379b7"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_006",
+          "sha256": "5db0972901013556f2196100159273f0130df5409031ebf361b5e5008dd15df6"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_007",
+          "sha256": "bf8fd058a000b84eb63cc1360525bd5bfcb581a9f617d608031cd732bfcd1d5e"
+        },
+        {
+          "candidate_scale_group_id": "r1p18m_px024",
+          "run_id": "ref-ortho__structure_scales_r1p18m_px024__perturb_008",
+          "sha256": "c30c2429bd57bfa8f421413f2938791b08edeeaa4181581a1babf2bc247510a2"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__baseline",
+          "sha256": "bcaaee98d9a606d84c2cce36310a0645b990a31a0fa4f83c181a0b9b11cf8a04"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_001",
+          "sha256": "3b3bddcdfa7a6c6154762a5b8b0defb6fdfe341f5dafed3be2e56c0ec24fa091"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_002",
+          "sha256": "4df1900786db80d2972c583bc21ba7192dfc97732875eadbada4e02d79b59809"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_003",
+          "sha256": "6c4f5be34384372e5ba56ad229dd80981a60736262c90c5110ee7a83384752cf"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_004",
+          "sha256": "ae35abf65583734a9c804740e0250a8e05e924ae1ec92a25bcc537195f6e0ad7"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_005",
+          "sha256": "618653b2b3e1c3b4f74999bef830b634296fd963a8881e54e1d966d8ecc6cd0d"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_006",
+          "sha256": "6f15f9014ddd816cfe045678f43c3feee7f2cca19fd66d3cccb2bc74ec566c70"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_007",
+          "sha256": "08298ca2dc8a5dfbf14880649ee6171182741c1fe13ecb831d814fe03c41865f"
+        },
+        {
+          "candidate_scale_group_id": "r2p14m_px043",
+          "run_id": "ref-ortho__structure_scales_r2p14m_px043__perturb_008",
+          "sha256": "39a7fe1e61832eaa0bbdc31459f718f26b387aabcd3bcf07b9327490c0b229a3"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__baseline",
+          "sha256": "87df8e795343261149b22137c6425aa67f452902c134fa0994e9e291c92853f5"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_001",
+          "sha256": "ec03aaae0f65f581750794fc48506fc877ad3c1f841a6528f733262e8d8f1012"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_002",
+          "sha256": "84d2a2c3d51dc8b2d606adb9b3b0e1eece56d1ab388af47154a8b0eacd6975c5"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_003",
+          "sha256": "2c7523d46deb52dee853c0f85d43a6bcb8e7f164f5b8b2683a15a636d3c0ae4b"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_004",
+          "sha256": "7027a21f2f6316ce4c9deec10476ce78235da14145650693907383c73db1e8bf"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_005",
+          "sha256": "acb0f701b2f6f15afe3767c42055d77f249851a5d55f529fa8dcd2a9e4e7f93d"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_006",
+          "sha256": "5b14434760bbd3594518cfbe0b69524ea1be05ce73e42d0067e98d9e3ed3c63c"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_007",
+          "sha256": "a23f110ce5615aa09ddf8371854077344afa66f7f55223168a899d6d6217285a"
+        },
+        {
+          "candidate_scale_group_id": "r3p88m_px078",
+          "run_id": "ref-ortho__structure_scales_r3p88m_px078__perturb_008",
+          "sha256": "917e9381305ccf11e3cefd768fe4a2c1ac4f2335facb89397794fbe794fcd01c"
+        }
+      ]
+    }
+  }
+}
