@@ -78,6 +78,8 @@ STEP9B_OUTPUT_FILENAMES = {
     "midpoint_perturbations_json": "step9b_midpoint_perturbation_candidates.json",
     "gain_share_handoff": "step9b_midpoint_gain_share_handoff.json",
 }
+STEP9B_PREPARE_MANIFEST_FILENAME = "step9b_prepare_manifest.json"
+STEP9B_RANKED_VIEW_FILENAME = "ranked_candidate_scales_view.json"
 
 SHADOW_RETENTION_AUDIT_FILENAME = "retention_shadow_audit.json"
 RETENTION_CLEANUP_RESULT_FILENAME = "retention_cleanup_result.json"
@@ -1732,14 +1734,17 @@ def run_step9b_prepare_from_existing_step9a(
 ) -> dict:
     run_root = Path(run_root)
     step9a_dir = run_root / "level1b" / "candidate_response_surface"
+    source_run_population_json = step9a_dir / "run_population_summary.json"
+    source_group_summary_json = step9a_dir / "candidate_group_response_summary.json"
+    source_step9a_report_json = step9a_dir / "candidate_response_surface_report.json"
     run_population_rows = json.loads(
-        (step9a_dir / "run_population_summary.json").read_text(encoding="utf-8")
+        source_run_population_json.read_text(encoding="utf-8")
     )
     candidate_group_rows = json.loads(
-        (step9a_dir / "candidate_group_response_summary.json").read_text(encoding="utf-8")
+        source_group_summary_json.read_text(encoding="utf-8")
     )
     step9a_report = json.loads(
-        (step9a_dir / "candidate_response_surface_report.json").read_text(encoding="utf-8")
+        source_step9a_report_json.read_text(encoding="utf-8")
     )
     if not isinstance(run_population_rows, list):
         raise ValueError("run_population_summary.json must decode to a list")
@@ -1766,73 +1771,101 @@ def run_step9b_prepare_from_existing_step9a(
         run_population_rows,
         ranked_candidate_rows,
     )
-    source_step9a_report = step9a_dir / "candidate_response_surface_report.json"
     step9a_gate_report = {
         "status": step9a_report.get("status"),
         "candidate_id": step9a_report.get("candidate_id", candidate_id),
-        "source_candidate_response_surface_report": str(source_step9a_report),
+        "source_candidate_response_surface_report": str(source_step9a_report_json),
         **step9a_gate_metadata,
     }
 
     step9b_prepare_inputs_dir = run_root / "level1b" / "step9b_prepare_inputs"
     step9b_prepare_inputs_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(step9b_prepare_inputs_dir / "run_population_summary.json", run_population_rows)
-    _write_json(step9b_prepare_inputs_dir / "ranked_candidate_scales.json", ranked_candidate_rows)
-    _write_json(
-        step9b_prepare_inputs_dir / "candidate_response_surface_report.json",
-        step9a_gate_report,
-    )
+    ranked_view_json = step9b_prepare_inputs_dir / STEP9B_RANKED_VIEW_FILENAME
+    _write_json(ranked_view_json, ranked_candidate_rows)
 
     step9b_result = run_step9b_midpoint_support_probe(
         output_dir=run_root,
-        source_step9a_directory=step9b_prepare_inputs_dir,
+        source_step9a_directory=step9a_dir,
         step9a_gate_metadata=step9a_gate_report,
         ranked_candidate_rows=ranked_candidate_rows,
         run_population_rows=run_population_rows,
         perturbation_config=perturbation_config,
         midpoint_family_support_raw=None,
     )
-    step9b_prepare_result_json = step9b_prepare_inputs_dir / "step9b_prepare_result.json"
-    _write_json(step9b_prepare_result_json, step9b_result)
-
-    step9b_dir = Path(run_root) / "level1b" / "local_transition_refinement"
-    prepare_artifacts = {
-        "run_population_summary_json": step9b_prepare_inputs_dir
-        / "run_population_summary.json",
-        "ranked_candidate_scales_json": step9b_prepare_inputs_dir
-        / "ranked_candidate_scales.json",
-        "candidate_response_surface_gate_report_json": step9b_prepare_inputs_dir
-        / "candidate_response_surface_report.json",
-        "step9b_prepare_result_json": step9b_prepare_result_json,
-        "step9b_interval_preflight_json": step9b_dir
-        / STEP9B_OUTPUT_FILENAMES["preflight"],
-    }
     step9b_status = str(
         step9b_result.get("status") or step9b_result.get("step9b_status")
     )
+    step9b_dir = run_root / "level1b" / "local_transition_refinement"
+    produced_branch_artifacts = {
+        "step9b_interval_preflight_json": str(
+            step9b_dir / STEP9B_OUTPUT_FILENAMES["preflight"]
+        )
+    }
     if step9b_status == "step9b_midpoint_probe_ready":
-        prepare_artifacts.update(
+        produced_branch_artifacts.update(
             {
-                "midpoint_probe_candidate_json": step9b_dir
-                / STEP9B_OUTPUT_FILENAMES["midpoint_probe_json"],
-                "midpoint_perturbation_candidates_json": step9b_dir
-                / STEP9B_OUTPUT_FILENAMES["midpoint_perturbations_json"],
+                "midpoint_probe_candidate_csv": str(
+                    step9b_dir / STEP9B_OUTPUT_FILENAMES["midpoint_probe_csv"]
+                ),
+                "midpoint_probe_candidate_json": str(
+                    step9b_dir / STEP9B_OUTPUT_FILENAMES["midpoint_probe_json"]
+                ),
+                "midpoint_perturbation_candidates_csv": str(
+                    step9b_dir / STEP9B_OUTPUT_FILENAMES["midpoint_perturbations_csv"]
+                ),
+                "midpoint_perturbation_candidates_json": str(
+                    step9b_dir / STEP9B_OUTPUT_FILENAMES["midpoint_perturbations_json"]
+                ),
             }
         )
     elif step9b_status == "step9b_user_choice_required_bimodal_or_multimodal":
-        prepare_artifacts["supported_scale_alternatives_json"] = (
-            step9b_dir / STEP9B_OUTPUT_FILENAMES["supported_alternatives_json"]
+        produced_branch_artifacts.update(
+            {
+                "supported_scale_alternatives_csv": str(
+                    step9b_dir / STEP9B_OUTPUT_FILENAMES["supported_alternatives_csv"]
+                ),
+                "supported_scale_alternatives_json": str(
+                    step9b_dir / STEP9B_OUTPUT_FILENAMES["supported_alternatives_json"]
+                ),
+            }
         )
+
+    step9b_prepare_manifest_json = (
+        step9b_prepare_inputs_dir / STEP9B_PREPARE_MANIFEST_FILENAME
+    )
+    step9b_prepare_manifest = {
+        "schema": "level1b_step9b_prepare_manifest",
+        "schema_version": 1,
+        "status": step9b_status,
+        "candidate_id": candidate_id,
+        "source_step9a_directory": str(step9a_dir),
+        "source_artifacts": {
+            "run_population_summary_json": str(source_run_population_json),
+            "candidate_group_response_summary_json": str(source_group_summary_json),
+            "candidate_response_surface_report_json": str(source_step9a_report_json),
+        },
+        "ranked_candidate_scales_json": str(ranked_view_json),
+        "gate_metadata": step9a_gate_metadata,
+        "produced_branch_artifacts": produced_branch_artifacts,
+    }
+    _write_json(step9b_prepare_manifest_json, step9b_prepare_manifest)
+
+    prepare_artifacts = {
+        "step9b_prepare_manifest_json": step9b_prepare_manifest_json,
+        "ranked_candidate_scales_view_json": ranked_view_json,
+        **{
+            name: Path(value)
+            for name, value in produced_branch_artifacts.items()
+        },
+    }
     write_step_manifest(
         run_root,
         step="step9b_prepare",
         status=step9b_status,
         inputs={
-            "step9a_run_population_summary_json": step9a_dir
-            / "run_population_summary.json",
-            "step9a_candidate_group_response_summary_json": step9a_dir
-            / "candidate_group_response_summary.json",
-            "step9a_candidate_response_surface_report_json": source_step9a_report,
+            "step9a_run_population_summary_json": source_run_population_json,
+            "step9a_candidate_group_response_summary_json": source_group_summary_json,
+            "step9a_candidate_response_surface_report_json": source_step9a_report_json,
         },
         artifacts=prepare_artifacts,
         candidate_id=candidate_id,
@@ -1844,10 +1877,9 @@ def run_step9b_prepare_from_existing_step9a(
         "candidate_id": candidate_id,
         "step9a_dir": str(step9a_dir),
         "step9b_prepare_inputs_dir": str(step9b_prepare_inputs_dir),
-        "local_transition_refinement_dir": str(
-            Path(run_root) / "level1b" / "local_transition_refinement"
-        ),
-        "step9b_prepare_result_json": str(step9b_prepare_result_json),
+        "local_transition_refinement_dir": str(step9b_dir),
+        "step9b_prepare_manifest_json": str(step9b_prepare_manifest_json),
+        "ranked_candidate_scales_view_json": str(ranked_view_json),
         "step9b_result": step9b_result,
     }
 
@@ -1856,29 +1888,41 @@ def run_step9b_midpoint_response_surface_and_handoff_from_prepare(
     run_root: Path,
     candidate_id: str,
     candidate_response_surface_config: Level1BCandidateResponseSurfaceConfig,
+    step9b_prepare_manifest_path: Path,
 ) -> dict:
     run_root = Path(run_root)
-    step9b_prepare_inputs_dir = run_root / "level1b" / "step9b_prepare_inputs"
+    step9b_prepare_manifest_path = Path(step9b_prepare_manifest_path)
+    prepare_manifest = json.loads(
+        step9b_prepare_manifest_path.read_text(encoding="utf-8")
+    )
+    if not isinstance(prepare_manifest, dict):
+        raise ValueError("Step-9b Prepare manifest must decode to a dict")
+    if prepare_manifest.get("schema") != "level1b_step9b_prepare_manifest":
+        raise ValueError("Invalid Step-9b Prepare manifest schema")
+    if prepare_manifest.get("status") != "step9b_midpoint_probe_ready":
+        raise ValueError("Step-9b Prepare manifest is not midpoint-ready")
+    ranked_candidate_json = Path(prepare_manifest["ranked_candidate_scales_json"])
+    branch_artifacts = prepare_manifest["produced_branch_artifacts"]
+    if not isinstance(branch_artifacts, dict):
+        raise ValueError("Step-9b Prepare branch artifacts must be a dict")
+    midpoint_probe_candidate_json = Path(
+        branch_artifacts["midpoint_probe_candidate_json"]
+    )
+    midpoint_perturbation_candidates_json = Path(
+        branch_artifacts["midpoint_perturbation_candidates_json"]
+    )
+    ranked_candidate_rows = json.loads(
+        ranked_candidate_json.read_text(encoding="utf-8")
+    )
+    midpoint_probe_candidate = json.loads(
+        midpoint_probe_candidate_json.read_text(encoding="utf-8")
+    )
+    json.loads(midpoint_perturbation_candidates_json.read_text(encoding="utf-8"))
+
     local_transition_refinement_dir = run_root / "level1b" / "local_transition_refinement"
     midpoint_response_surface_output_dir = (
         local_transition_refinement_dir / "midpoint_response_surface_eval"
     )
-
-    ranked_candidate_rows = json.loads(
-        (step9b_prepare_inputs_dir / "ranked_candidate_scales.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    midpoint_probe_candidate = json.loads(
-        (local_transition_refinement_dir / "step9b_midpoint_probe_candidate.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    midpoint_perturbation_candidates_json = (
-        local_transition_refinement_dir / "step9b_midpoint_perturbation_candidates.json"
-    )
-    json.loads(midpoint_perturbation_candidates_json.read_text(encoding="utf-8"))
-
     midpoint_response_surface_config = deepcopy(candidate_response_surface_config)
     midpoint_response_surface_config.output_dir = midpoint_response_surface_output_dir
     midpoint_response_surface_config.perturbation_candidates_json_path = (
@@ -1951,10 +1995,9 @@ def run_step9b_midpoint_response_surface_and_handoff_from_prepare(
         step="step9b_midpoint_handoff",
         status="step9b_midpoint_response_surface_and_handoff_ready",
         inputs={
-            "prepared_ranked_candidate_scales_json": step9b_prepare_inputs_dir
-            / "ranked_candidate_scales.json",
-            "midpoint_probe_candidate_json": local_transition_refinement_dir
-            / "step9b_midpoint_probe_candidate.json",
+            "step9b_prepare_manifest_json": step9b_prepare_manifest_path,
+            "prepared_ranked_candidate_scales_json": ranked_candidate_json,
+            "midpoint_probe_candidate_json": midpoint_probe_candidate_json,
             "midpoint_perturbation_candidates_json": midpoint_perturbation_candidates_json,
         },
         artifacts={
@@ -1973,6 +2016,7 @@ def run_step9b_midpoint_response_surface_and_handoff_from_prepare(
         "status": "step9b_midpoint_response_surface_and_handoff_ready",
         "run_root": str(run_root),
         "candidate_id": candidate_id,
+        "step9b_prepare_manifest_json": str(step9b_prepare_manifest_path),
         "midpoint_response_surface_output_dir": str(
             midpoint_response_surface_output_dir
         ),

@@ -322,10 +322,8 @@ def run_level1b_dumb_chain(
         "step9b_prepare",
         step9b_prepare_manifest,
         (
-            "run_population_summary_json",
-            "ranked_candidate_scales_json",
-            "candidate_response_surface_gate_report_json",
-            "step9b_prepare_result_json",
+            "step9b_prepare_manifest_json",
+            "ranked_candidate_scales_view_json",
             "step9b_interval_preflight_json",
         ),
     )
@@ -364,6 +362,9 @@ def run_level1b_dumb_chain(
             run_root=output_dir,
             candidate_id=candidate_id,
             candidate_response_surface_config=candidate_response_surface_config,
+            step9b_prepare_manifest_path=step9b_prepare_artifacts[
+                "step9b_prepare_manifest_json"
+            ],
         )
     )
     _raise_on_failed_status(
@@ -502,8 +503,8 @@ def run_level1b_dumb_chain(
             "scale_candidates_with_ranger": str(scale_candidates_with_ranger),
             "perturbation_candidates": str(perturbation_candidates),
             "step9a_report": str(step9a_report),
-            "step9b_prepare_result": str(
-                step9b_prepare_artifacts["step9b_prepare_result_json"]
+            "step9b_prepare_manifest": str(
+                step9b_prepare_artifacts["step9b_prepare_manifest_json"]
             ),
             "handoff": str(handoff),
             "step10_quality": str(step10_quality),

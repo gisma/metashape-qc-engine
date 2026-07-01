@@ -1627,14 +1627,51 @@ def test_58_step9b_stubbed_midpoint_support_writes_gain_share_handoff(tmp_path: 
     assert not any(term in user_facing for term in forbidden)
 
 
-def test_step9b_prepare_from_existing_step9a_writes_true_ranked_views_and_calls_probe(
+def _write_step9b_prepare_domain_manifest(
+    path: Path,
+    *,
+    ranked_path: Path,
+    midpoint_probe_path: Path,
+    midpoint_perturbations_path: Path,
+    status: str = "step9b_midpoint_probe_ready",
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "level1b_step9b_prepare_manifest",
+                "schema_version": 1,
+                "status": status,
+                "candidate_id": "opaque-candidate",
+                "source_step9a_directory": str(
+                    path.parents[1] / "candidate_response_surface"
+                ),
+                "source_artifacts": {},
+                "ranked_candidate_scales_json": str(ranked_path),
+                "gate_metadata": {},
+                "produced_branch_artifacts": {
+                    "midpoint_probe_candidate_json": str(midpoint_probe_path),
+                    "midpoint_perturbation_candidates_json": str(
+                        midpoint_perturbations_path
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_step9b_prepare_from_existing_step9a_writes_manifest_and_ranked_view(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     run_root = tmp_path / "run"
     step9a_dir = run_root / "level1b" / "candidate_response_surface"
     step9a_dir.mkdir(parents=True)
-    run_population_rows = [{"run_id": "run-1", "candidate_scale_group_id": "candidate-b"}]
+    run_population_rows = [
+        {"run_id": "run-1", "candidate_scale_group_id": "candidate-b"}
+    ]
     candidate_group_rows = [
         {"candidate_scale_group_id": "candidate-b", "test_raw": 2.0, "test_clamped": 0.0},
         {"candidate_scale_group_id": "candidate-a", "test_raw": 1.0, "test_clamped": 1.0},
@@ -1664,12 +1701,29 @@ def test_step9b_prepare_from_existing_step9a_writes_true_ranked_views_and_calls_
 
     def fake_probe(**kwargs):
         captured["probe"] = kwargs
-        (Path(kwargs["output_dir"]) / "level1b" / "local_transition_refinement").mkdir(
-            parents=True
+        step9b_dir = (
+            Path(kwargs["output_dir"])
+            / "level1b"
+            / "local_transition_refinement"
         )
-        return {"status": "step9b-probe-ready", "step9b_status": "step9b_midpoint_probe_ready"}
+        step9b_dir.mkdir(parents=True)
+        for filename, payload in (
+            ("step9b_interval_preflight.json", {}),
+            ("step9b_midpoint_probe_candidate.csv", "x\n"),
+            ("step9b_midpoint_probe_candidate.json", {}),
+            ("step9b_midpoint_perturbation_candidates.csv", "x\n"),
+            ("step9b_midpoint_perturbation_candidates.json", []),
+        ):
+            path = step9b_dir / filename
+            if path.suffix == ".json":
+                path.write_text(json.dumps(payload), encoding="utf-8")
+            else:
+                path.write_text(payload, encoding="utf-8")
+        return {"step9b_status": "step9b_midpoint_probe_ready"}
 
-    monkeypatch.setattr(rs, "compute_top_pair_scale_continuity_and_boundary_gate", fake_gate)
+    monkeypatch.setattr(
+        rs, "compute_top_pair_scale_continuity_and_boundary_gate", fake_gate
+    )
     monkeypatch.setattr(rs, "run_step9b_midpoint_support_probe", fake_probe)
     perturbation_config = _step9b_perturbation_config(tmp_path)
 
@@ -1681,12 +1735,11 @@ def test_step9b_prepare_from_existing_step9a_writes_true_ranked_views_and_calls_
 
     prepare_dir = run_root / "level1b" / "step9b_prepare_inputs"
     assert sorted(path.name for path in prepare_dir.iterdir()) == [
-        "candidate_response_surface_report.json",
-        "ranked_candidate_scales.json",
-        "run_population_summary.json",
-        "step9b_prepare_result.json",
+        "ranked_candidate_scales_view.json",
+        "step9b_prepare_manifest.json",
     ]
-    ranked = json.loads((prepare_dir / "ranked_candidate_scales.json").read_text(encoding="utf-8"))
+    ranked_path = prepare_dir / "ranked_candidate_scales_view.json"
+    ranked = json.loads(ranked_path.read_text(encoding="utf-8"))
     assert [row["candidate_scale_group_id"] for row in ranked] == [
         "candidate-b",
         "candidate-a",
@@ -1694,11 +1747,36 @@ def test_step9b_prepare_from_existing_step9a_writes_true_ranked_views_and_calls_
         "zulu",
         "candidate-c",
     ]
-    assert json.loads((prepare_dir / "run_population_summary.json").read_text(encoding="utf-8")) == run_population_rows
-    prepared_report = json.loads(
-        (prepare_dir / "candidate_response_surface_report.json").read_text(encoding="utf-8")
-    )
-    assert prepared_report == {
+    manifest_path = prepare_dir / "step9b_prepare_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schema"] == "level1b_step9b_prepare_manifest"
+    assert manifest["schema_version"] == 1
+    assert manifest["status"] == "step9b_midpoint_probe_ready"
+    assert manifest["source_step9a_directory"] == str(step9a_dir)
+    assert manifest["source_artifacts"] == {
+        "run_population_summary_json": str(step9a_dir / "run_population_summary.json"),
+        "candidate_group_response_summary_json": str(
+            step9a_dir / "candidate_group_response_summary.json"
+        ),
+        "candidate_response_surface_report_json": str(
+            step9a_dir / "candidate_response_surface_report.json"
+        ),
+    }
+    assert manifest["ranked_candidate_scales_json"] == str(ranked_path)
+    assert manifest["gate_metadata"] == {
+        "top_pair_scale_continuity_status": "adjacent_top_pair_confirmed"
+    }
+    assert set(manifest["produced_branch_artifacts"]) == {
+        "step9b_interval_preflight_json",
+        "midpoint_probe_candidate_csv",
+        "midpoint_probe_candidate_json",
+        "midpoint_perturbation_candidates_csv",
+        "midpoint_perturbation_candidates_json",
+    }
+    probe = captured["probe"]
+    assert probe["output_dir"] == run_root
+    assert probe["source_step9a_directory"] == step9a_dir
+    assert probe["step9a_gate_metadata"] == {
         "status": "step9a-complete",
         "candidate_id": "opaque-candidate-id",
         "source_candidate_response_surface_report": str(
@@ -1706,13 +1784,6 @@ def test_step9b_prepare_from_existing_step9a_writes_true_ranked_views_and_calls_
         ),
         "top_pair_scale_continuity_status": "adjacent_top_pair_confirmed",
     }
-    assert json.loads((prepare_dir / "step9b_prepare_result.json").read_text(encoding="utf-8")) == result[
-        "step9b_result"
-    ]
-    probe = captured["probe"]
-    assert probe["output_dir"] == run_root
-    assert probe["source_step9a_directory"] == prepare_dir
-    assert probe["step9a_gate_metadata"] == prepared_report
     assert probe["ranked_candidate_rows"] == ranked
     assert probe["run_population_rows"] == run_population_rows
     assert probe["perturbation_config"] is perturbation_config
@@ -1724,14 +1795,91 @@ def test_step9b_prepare_from_existing_step9a_writes_true_ranked_views_and_calls_
         "step9a_dir",
         "step9b_prepare_inputs_dir",
         "local_transition_refinement_dir",
-        "step9b_prepare_result_json",
+        "step9b_prepare_manifest_json",
+        "ranked_candidate_scales_view_json",
         "step9b_result",
     }
-    assert result["status"] == "step9b-probe-ready"
-    assert result["candidate_id"] == "opaque-candidate-id"
-    assert result["local_transition_refinement_dir"] == str(
-        run_root / "level1b" / "local_transition_refinement"
+    assert result["status"] is None
+    assert result["step9b_prepare_manifest_json"] == str(manifest_path)
+    assert result["ranked_candidate_scales_view_json"] == str(ranked_path)
+
+
+def test_step9b_prepare_manifest_records_non_adjacent_branch_without_source_copies(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_root = tmp_path / "run"
+    step9a_dir = run_root / "level1b" / "candidate_response_surface"
+    step9a_dir.mkdir(parents=True)
+    (step9a_dir / "run_population_summary.json").write_text("[]", encoding="utf-8")
+    (step9a_dir / "candidate_group_response_summary.json").write_text(
+        json.dumps(
+            [
+                {"candidate_scale_group_id": "one"},
+                {"candidate_scale_group_id": "two"},
+            ]
+        ),
+        encoding="utf-8",
     )
+    (step9a_dir / "candidate_response_surface_report.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    monkeypatch.setattr(rs, "stability_score_raw", lambda row: 0.0)
+    monkeypatch.setattr(rs, "stability_score", lambda row: 0.0)
+    monkeypatch.setattr(
+        rs,
+        "compute_top_pair_scale_continuity_and_boundary_gate",
+        lambda run_rows, ranked_rows: {
+            "top_pair_scale_continuity_status": (
+                "non_adjacent_top_pair_possible_bimodal_or_multimodal"
+            )
+        },
+    )
+
+    def fake_probe(**kwargs):
+        step9b_dir = (
+            Path(kwargs["output_dir"])
+            / "level1b"
+            / "local_transition_refinement"
+        )
+        step9b_dir.mkdir(parents=True)
+        (step9b_dir / "step9b_interval_preflight.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        (step9b_dir / "step9b_supported_scale_alternatives.csv").write_text(
+            "rank\n", encoding="utf-8"
+        )
+        (step9b_dir / "step9b_supported_scale_alternatives.json").write_text(
+            "[]", encoding="utf-8"
+        )
+        return {
+            "step9b_status": (
+                "step9b_user_choice_required_bimodal_or_multimodal"
+            )
+        }
+
+    monkeypatch.setattr(rs, "run_step9b_midpoint_support_probe", fake_probe)
+    result = rs.run_step9b_prepare_from_existing_step9a(
+        run_root,
+        "opaque",
+        _step9b_perturbation_config(tmp_path),
+    )
+    prepare_dir = run_root / "level1b" / "step9b_prepare_inputs"
+    manifest = json.loads(
+        (prepare_dir / "step9b_prepare_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["status"] == (
+        "step9b_user_choice_required_bimodal_or_multimodal"
+    )
+    assert set(manifest["produced_branch_artifacts"]) == {
+        "step9b_interval_preflight_json",
+        "supported_scale_alternatives_csv",
+        "supported_scale_alternatives_json",
+    }
+    assert result["status"] is None
+    assert not (prepare_dir / "run_population_summary.json").exists()
+    assert not (prepare_dir / "candidate_response_surface_report.json").exists()
+    assert not (prepare_dir / "step9b_prepare_result.json").exists()
 
 
 def test_step9b_prepare_from_existing_step9a_does_not_search_for_missing_inputs(
@@ -1764,18 +1912,27 @@ def test_midpoint_response_surface_and_handoff_from_prepare_runs_nested_surface_
     step9b_dir = run_root / "level1b" / "local_transition_refinement"
     prepare_dir.mkdir(parents=True)
     step9b_dir.mkdir(parents=True)
+    ranked_path = prepare_dir / "ranked-candidates-at-explicit-path.json"
+    midpoint_probe_path = step9b_dir / "probe-at-explicit-path.json"
+    midpoint_perturbations_path = step9b_dir / "family-at-explicit-path.json"
     ranked_rows = [
         {"candidate_scale_group_id": "opaque-no1", "stability_score_raw": 1.0},
         {"candidate_scale_group_id": "opaque-no2", "stability_score_raw": 0.0},
     ]
-    (prepare_dir / "ranked_candidate_scales.json").write_text(
-        json.dumps(ranked_rows), encoding="utf-8"
+    ranked_path.write_text(json.dumps(ranked_rows), encoding="utf-8")
+    midpoint_probe_path.write_text(
+        json.dumps({"candidate_scale_group_id": "opaque-midpoint"}),
+        encoding="utf-8",
     )
-    (step9b_dir / "step9b_midpoint_probe_candidate.json").write_text(
-        json.dumps({"candidate_scale_group_id": "opaque-midpoint"}), encoding="utf-8"
+    midpoint_perturbations_path.write_text(
+        json.dumps([{"candidate_scale_group_id": "opaque-midpoint"}]),
+        encoding="utf-8",
     )
-    (step9b_dir / "step9b_midpoint_perturbation_candidates.json").write_text(
-        json.dumps([{"candidate_scale_group_id": "opaque-midpoint"}]), encoding="utf-8"
+    manifest_path = _write_step9b_prepare_domain_manifest(
+        prepare_dir / "step9b_prepare_manifest.json",
+        ranked_path=ranked_path,
+        midpoint_probe_path=midpoint_probe_path,
+        midpoint_perturbations_path=midpoint_perturbations_path,
     )
 
     original_config = Level1BCandidateResponseSurfaceConfig(
@@ -1810,7 +1967,9 @@ def test_midpoint_response_surface_and_handoff_from_prepare_runs_nested_surface_
             encoding="utf-8",
         )
         (nested_dir / "run_population_summary.json").write_text(
-            json.dumps([{"candidate_scale_group_id": "opaque-midpoint", "run_id": "run-1"}]),
+            json.dumps(
+                [{"candidate_scale_group_id": "opaque-midpoint", "run_id": "run-1"}]
+            ),
             encoding="utf-8",
         )
         return {"status": "ok"}
@@ -1825,15 +1984,14 @@ def test_midpoint_response_surface_and_handoff_from_prepare_runs_nested_surface_
         run_root,
         "requested-candidate",
         original_config,
+        manifest_path,
     )
 
     assert len(calls) == 1
     nested_config = calls[0]
     expected_output_dir = step9b_dir / "midpoint_response_surface_eval"
     assert nested_config.output_dir == expected_output_dir
-    assert nested_config.perturbation_candidates_json_path == (
-        step9b_dir / "step9b_midpoint_perturbation_candidates.json"
-    )
+    assert nested_config.perturbation_candidates_json_path == midpoint_perturbations_path
     assert nested_config.candidate_id == "requested-candidate"
     for field, value in original_values.items():
         if field not in {"output_dir", "perturbation_candidates_json_path", "candidate_id"}:
@@ -1841,6 +1999,7 @@ def test_midpoint_response_surface_and_handoff_from_prepare_runs_nested_surface_
     assert vars(original_config) == original_values
 
     nested_summary_dir = rs.response_surface_output_dir(expected_output_dir)
+    assert result["step9b_prepare_manifest_json"] == str(manifest_path)
     assert result["midpoint_candidate_group_summary_json"] == str(
         nested_summary_dir / "candidate_group_response_summary.json"
     )
@@ -1869,7 +2028,10 @@ def test_midpoint_response_surface_and_handoff_from_prepare_rejects_unmatched_mu
     step9b_dir = run_root / "level1b" / "local_transition_refinement"
     prepare_dir.mkdir(parents=True)
     step9b_dir.mkdir(parents=True)
-    (prepare_dir / "ranked_candidate_scales.json").write_text(
+    ranked_path = prepare_dir / "ranked.json"
+    midpoint_probe_path = step9b_dir / "probe.json"
+    midpoint_perturbations_path = step9b_dir / "perturbations.json"
+    ranked_path.write_text(
         json.dumps(
             [
                 {"candidate_scale_group_id": "no1", "stability_score_raw": 1.0},
@@ -1878,11 +2040,16 @@ def test_midpoint_response_surface_and_handoff_from_prepare_rejects_unmatched_mu
         ),
         encoding="utf-8",
     )
-    (step9b_dir / "step9b_midpoint_probe_candidate.json").write_text(
-        json.dumps({"candidate_scale_group_id": "expected-midpoint"}), encoding="utf-8"
+    midpoint_probe_path.write_text(
+        json.dumps({"candidate_scale_group_id": "expected-midpoint"}),
+        encoding="utf-8",
     )
-    (step9b_dir / "step9b_midpoint_perturbation_candidates.json").write_text(
-        json.dumps([]), encoding="utf-8"
+    midpoint_perturbations_path.write_text("[]", encoding="utf-8")
+    manifest_path = _write_step9b_prepare_domain_manifest(
+        prepare_dir / "manifest.json",
+        ranked_path=ranked_path,
+        midpoint_probe_path=midpoint_probe_path,
+        midpoint_perturbations_path=midpoint_perturbations_path,
     )
 
     def fake_run_candidate_response_surface_step(config):
@@ -1898,7 +2065,7 @@ def test_midpoint_response_surface_and_handoff_from_prepare_rejects_unmatched_mu
             encoding="utf-8",
         )
         (nested_dir / "run_population_summary.json").write_text(
-            json.dumps([]), encoding="utf-8"
+            "[]", encoding="utf-8"
         )
         return {"status": "ok"}
 
@@ -1918,6 +2085,7 @@ def test_midpoint_response_surface_and_handoff_from_prepare_rejects_unmatched_mu
             run_root,
             "requested-candidate",
             config,
+            manifest_path,
         )
 
 
@@ -1930,7 +2098,10 @@ def test_midpoint_connector_stops_on_failed_nested_response_surface(
     step9b_dir = run_root / "level1b" / "local_transition_refinement"
     prepare_dir.mkdir(parents=True)
     step9b_dir.mkdir(parents=True)
-    (prepare_dir / "ranked_candidate_scales.json").write_text(
+    ranked_path = prepare_dir / "ranked.json"
+    midpoint_probe_path = step9b_dir / "probe.json"
+    midpoint_perturbations_path = step9b_dir / "perturbations.json"
+    ranked_path.write_text(
         json.dumps(
             [
                 {"candidate_scale_group_id": "no1", "stability_score_raw": 1.0},
@@ -1939,11 +2110,17 @@ def test_midpoint_connector_stops_on_failed_nested_response_surface(
         ),
         encoding="utf-8",
     )
-    (step9b_dir / "step9b_midpoint_probe_candidate.json").write_text(
+    midpoint_probe_path.write_text(
         json.dumps({"candidate_scale_group_id": "midpoint"}), encoding="utf-8"
     )
-    (step9b_dir / "step9b_midpoint_perturbation_candidates.json").write_text(
+    midpoint_perturbations_path.write_text(
         json.dumps([{"candidate_scale_group_id": "midpoint"}]), encoding="utf-8"
+    )
+    manifest_path = _write_step9b_prepare_domain_manifest(
+        prepare_dir / "manifest.json",
+        ranked_path=ranked_path,
+        midpoint_probe_path=midpoint_probe_path,
+        midpoint_perturbations_path=midpoint_perturbations_path,
     )
     monkeypatch.setattr(
         rs,
@@ -1963,4 +2140,5 @@ def test_midpoint_connector_stops_on_failed_nested_response_surface(
             run_root,
             "candidate",
             config,
+            manifest_path,
         )

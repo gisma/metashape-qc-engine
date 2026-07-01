@@ -185,21 +185,19 @@ def _install_stubs(
             "blocked": "step9b_blocked_cannot_determine_scale_continuity",
         }[branch]
         prepared = level1b / "step9b_prepare_inputs"
-        if omit_step != "step9b_prepare":
-            _write(prepared / "run_population_summary.json", [])
-            _write(prepared / "ranked_candidate_scales.json", [])
-            _write(prepared / "candidate_response_surface_report.json")
-            _write(prepared / "step9b_prepare_result.json", {"step9b_status": status})
-
         local = level1b / "local_transition_refinement"
+        ranked_view = prepared / "ranked_candidate_scales_view.json"
+        domain_manifest = prepared / "step9b_prepare_manifest.json"
         prepare_artifacts = {
-            "run_population_summary_json": prepared / "run_population_summary.json",
-            "ranked_candidate_scales_json": prepared / "ranked_candidate_scales.json",
-            "candidate_response_surface_gate_report_json": prepared
-            / "candidate_response_surface_report.json",
-            "step9b_prepare_result_json": prepared / "step9b_prepare_result.json",
+            "step9b_prepare_manifest_json": domain_manifest,
+            "ranked_candidate_scales_view_json": ranked_view,
             "step9b_interval_preflight_json": local
             / "step9b_interval_preflight.json",
+        }
+        branch_artifacts = {
+            "step9b_interval_preflight_json": str(
+                local / "step9b_interval_preflight.json"
+            )
         }
         _write(local / "step9b_interval_preflight.json", {"step9b_status": status})
         if branch == "adjacent":
@@ -213,23 +211,62 @@ def _install_stubs(
                     / "step9b_midpoint_perturbation_candidates.json",
                 }
             )
+            branch_artifacts.update(
+                {
+                    "midpoint_probe_candidate_json": str(
+                        local / "step9b_midpoint_probe_candidate.json"
+                    ),
+                    "midpoint_perturbation_candidates_json": str(
+                        local / "step9b_midpoint_perturbation_candidates.json"
+                    ),
+                }
+            )
         elif branch == "non_adjacent":
             _write(local / "step9b_supported_scale_alternatives.json", [])
             prepare_artifacts["supported_scale_alternatives_json"] = (
                 local / "step9b_supported_scale_alternatives.json"
             )
+            branch_artifacts["supported_scale_alternatives_json"] = str(
+                local / "step9b_supported_scale_alternatives.json"
+            )
         if omit_step != "step9b_prepare":
+            _write(ranked_view, [])
+            _write(
+                domain_manifest,
+                {
+                    "schema": "level1b_step9b_prepare_manifest",
+                    "schema_version": 1,
+                    "status": status,
+                    "source_step9a_directory": str(
+                        level1b / "candidate_response_surface"
+                    ),
+                    "source_artifacts": {},
+                    "ranked_candidate_scales_json": str(ranked_view),
+                    "gate_metadata": {},
+                    "produced_branch_artifacts": branch_artifacts,
+                },
+            )
             manifest("step9b_prepare", status, prepare_artifacts)
-        return {"status": None, "step9b_result": {"step9b_status": status}}
+        return {
+            "status": None,
+            "step9b_prepare_manifest_json": str(domain_manifest),
+            "ranked_candidate_scales_view_json": str(ranked_view),
+            "step9b_result": {"step9b_status": status},
+        }
 
     def midpoint_handoff(
-        *, run_root, candidate_id, candidate_response_surface_config
+        *,
+        run_root,
+        candidate_id,
+        candidate_response_surface_config,
+        step9b_prepare_manifest_path,
     ):
         calls.append("step9b_midpoint_handoff")
         captured["step9b_midpoint_handoff"] = {
             "run_root": run_root,
             "candidate_id": candidate_id,
             "candidate_response_surface_config": candidate_response_surface_config,
+            "step9b_prepare_manifest_path": step9b_prepare_manifest_path,
         }
         local = level1b / "local_transition_refinement"
         nested = (
@@ -459,6 +496,15 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert isinstance(prepare["perturbation_config"], Level1BPerturbationConfig)
     connector = captured["step9b_midpoint_handoff"]
     assert connector["candidate_response_surface_config"] is step9a_config
+    assert connector["step9b_prepare_manifest_path"] == (
+        output_dir
+        / "level1b"
+        / "step9b_prepare_inputs"
+        / "step9b_prepare_manifest.json"
+    )
+    assert result["artifacts"]["step9b_prepare_manifest"] == str(
+        connector["step9b_prepare_manifest_path"]
+    )
     assert result["status"] == "level1b_dumb_chain_complete"
     assert result["step_results"]["step9a"] == {
         "status": "ok",
