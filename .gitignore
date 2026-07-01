@@ -131,3 +131,4 @@ settings.json
 .Rproj.user/
 metashape_qc_engine.egg-info/
 *.py[cod]
+.aider*

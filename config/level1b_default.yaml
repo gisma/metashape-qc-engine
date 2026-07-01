@@ -1,0 +1,51 @@
+level1b:
+  feature_band_count: 5
+
+  channels:
+    input_type: "rgb"
+    rgb_band_indices: [1, 2, 3]
+    # Historical names:
+    # tex_100m_radius_m and tex_200m_radius_m do NOT mean 100 m / 200 m.
+    # They are generic texture radii in metres.
+    # Current defaults are 1.0 m and 2.0 m.
+    tex_100m_radius_m: 0.25
+    tex_200m_radius_m: 0.5
+    report_filename: "channel_report.json"
+
+  scale_distribution:
+    scale_mode: "structure_derived_scale_distribution"
+
+    metric_radius_m: null
+    structure_radius_m: null
+
+    proxy_structure_mode: "texture_preferred"
+    proxy_band_indices: null
+    texture_band_indices: null
+
+    infer_texture_support_from_proxy: true
+    infer_structure_support_from_proxy: true
+    sampling_regime: "auto"
+
+    structure_support_max_m: null
+    texture_support_max_m: null
+    target_structure_max_m: null
+    segment_similarity_radius_max_m: null
+
+    upper_radius_factor: 2.5
+    max_radius_m: null
+    patch_radius_quantiles: [0.25, 0.4, 0.55, 0.7, 0.85, 0.95]
+    min_radius_m: null
+    max_candidate_radius_fraction: 0.775
+
+    output_csv_filename: "scale_candidates.csv"
+    output_json_filename: "scale_candidates.json"
+
+  feature_range:
+    feature_space_source: "scaled"
+    sample_n: 50000
+    knn_k: 10
+    max_distance_sample_n: 8000
+    quantile_probs: [0.25, 0.5, 0.75, 0.9]
+
+  candidate_response_surface:
+    segmentation_stack_source: "scaled_proxy_stack"
