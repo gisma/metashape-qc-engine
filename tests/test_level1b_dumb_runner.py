@@ -507,29 +507,15 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert result["status"] == "level1b_dumb_chain_complete"
     assert result["step_results"]["step9a"] == {
         "status": "ok",
-        "artifacts": {
-            "run_population_json": str(
-                output_dir
-                / "level1b"
-                / "candidate_response_surface"
-                / "run_population_summary.json"
-            ),
-            "group_json": str(
-                output_dir
-                / "level1b"
-                / "candidate_response_surface"
-                / "candidate_group_response_summary.json"
-            ),
-            "report": str(
-                output_dir
-                / "level1b"
-                / "candidate_response_surface"
-                / "candidate_response_surface_report.json"
-            ),
-        },
+        "manifest": str(
+            output_dir
+            / "level1b"
+            / "manifests"
+            / "candidate_response_surface.json"
+        ),
     }
     assert all(
-        set(step_result) == {"status", "artifacts"}
+        set(step_result) == {"status", "manifest"}
         for step_result in result["step_results"].values()
     )
 
@@ -644,3 +630,80 @@ def test_manual_prepare_directory_is_not_a_fallback(
 
     assert "manifests/step9b_prepare.json" in str(exc_info.value)
     assert str(manual) not in str(exc_info.value)
+
+
+def test_cli_writes_one_compact_report_without_dumping_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_dir = tmp_path / "run"
+    chain_result = {
+        "status": "level1b_dumb_chain_complete",
+        "candidate_id": "candidate",
+        "output_dir": str(output_dir),
+        "branch": "adjacent_midpoint",
+        "artifacts": {"step10_quality": "/quality.json"},
+        "step_results": {
+            "preflight": {
+                "status": "ok",
+                "manifest": "/manifests/preflight.json",
+            }
+        },
+    }
+    monkeypatch.setattr(
+        runner,
+        "run_level1b_dumb_chain",
+        lambda **kwargs: chain_result,
+    )
+
+    exit_code = runner.main(
+        ["--rgb-ortho", "/tmp/ortho.tif", "--out-dir", str(output_dir)]
+    )
+
+    report_path = (
+        output_dir / "level1b_dumb_chain_report.json"
+    )
+    assert exit_code == 0
+    assert json.loads(report_path.read_text(encoding="utf-8")) == chain_result
+    captured = capsys.readouterr()
+    assert captured.out.strip() == (
+        f"level1b_dumb_chain_complete report={report_path}"
+    )
+    assert captured.err == ""
+    assert "step_results" not in captured.out
+
+
+def test_cli_writes_same_report_path_for_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_dir = tmp_path / "run"
+
+    def fail(**kwargs):
+        raise RuntimeError("synthetic failure")
+
+    monkeypatch.setattr(runner, "run_level1b_dumb_chain", fail)
+
+    exit_code = runner.main(
+        ["--rgb-ortho", "/tmp/ortho.tif", "--out-dir", str(output_dir)]
+    )
+
+    report_path = (
+        output_dir / "level1b_dumb_chain_report.json"
+    )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert not (output_dir / "level1b").exists()
+    assert exit_code == 1
+    assert report == {
+        "status": "level1b_dumb_chain_failed",
+        "output_dir": str(output_dir),
+        "error_type": "RuntimeError",
+        "error": "synthetic failure",
+    }
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.strip() == (
+        f"level1b_dumb_chain_failed report={report_path}"
+    )

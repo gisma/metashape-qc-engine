@@ -58,6 +58,7 @@ from metashape_qc_engine.level1b_step_manifest import (
 
 
 FEATURE_BAND_COUNT = 5
+CHAIN_REPORT_FILENAME = "level1b_dumb_chain_report.json"
 
 
 def _filename_token(value: object) -> str:
@@ -108,10 +109,15 @@ def _manifest_artifacts(
     return paths
 
 
-def _compact_step_result(manifest: dict[str, object]) -> dict[str, object]:
+def _compact_step_result(
+    output_dir: Path,
+    manifest: dict[str, object],
+) -> dict[str, object]:
     return {
         "status": manifest["status"],
-        "artifacts": dict(manifest["artifacts"]),
+        "manifest": str(
+            step_manifest_path(output_dir, str(manifest["step"]))
+        ),
     }
 
 
@@ -146,7 +152,7 @@ def run_level1b_dumb_chain(
     _manifest_artifacts(
         "preflight", preflight_manifest, ("preflight_report",)
     )
-    step_results["preflight"] = _compact_step_result(preflight_manifest)
+    step_results["preflight"] = _compact_step_result(output_dir, preflight_manifest)
 
     valid_mask_result = run_valid_mask_step(
         Level1BValidMaskConfig(
@@ -164,7 +170,7 @@ def run_level1b_dumb_chain(
         "valid_mask", valid_mask_manifest, ("valid_mask", "report")
     )
     valid_mask = valid_mask_artifacts["valid_mask"]
-    step_results["valid_mask"] = _compact_step_result(valid_mask_manifest)
+    step_results["valid_mask"] = _compact_step_result(output_dir, valid_mask_manifest)
 
     pixel_size_m = _pixel_size_m(rgb_ortho)
     channels_result = run_channel_construction_step(
@@ -185,7 +191,7 @@ def run_level1b_dumb_chain(
     )
     proxy_stack = channels_artifacts["proxy_stack"]
     channel_report = channels_artifacts["report"]
-    step_results["channels"] = _compact_step_result(channels_manifest)
+    step_results["channels"] = _compact_step_result(output_dir, channels_manifest)
 
     scaling_result = run_scaling_step(
         Level1BScalingConfig(
@@ -203,7 +209,7 @@ def run_level1b_dumb_chain(
         "scaling", scaling_manifest, ("scaled_feature_stack", "report")
     )
     scaled_feature_stack = scaling_artifacts["scaled_feature_stack"]
-    step_results["scaling"] = _compact_step_result(scaling_manifest)
+    step_results["scaling"] = _compact_step_result(output_dir, scaling_manifest)
 
     scale_distribution_result = run_scale_distribution_step(
         Level1BScaleDistributionConfig(
@@ -233,7 +239,7 @@ def run_level1b_dumb_chain(
     )
     scale_candidates = scale_distribution_artifacts["scale_candidates_json"]
     step_results["scale_distribution"] = _compact_step_result(
-        scale_distribution_manifest
+        output_dir, scale_distribution_manifest
     )
 
     feature_range_result = run_feature_range_assignment_step(
@@ -260,7 +266,7 @@ def run_level1b_dumb_chain(
     scale_candidates_with_ranger = feature_range_artifacts[
         "scale_candidates_with_ranger_json"
     ]
-    step_results["feature_range"] = _compact_step_result(feature_range_manifest)
+    step_results["feature_range"] = _compact_step_result(output_dir, feature_range_manifest)
 
     perturbation_config = Level1BPerturbationConfig(
         candidate_id=candidate_id,
@@ -281,7 +287,7 @@ def run_level1b_dumb_chain(
     perturbation_candidates = perturbation_artifacts[
         "perturbation_candidates_json"
     ]
-    step_results["perturbations"] = _compact_step_result(perturbations_manifest)
+    step_results["perturbations"] = _compact_step_result(output_dir, perturbations_manifest)
 
     candidate_response_surface_config = Level1BCandidateResponseSurfaceConfig(
         candidate_id=candidate_id,
@@ -307,7 +313,7 @@ def run_level1b_dumb_chain(
     step9a_run_population = step9a_artifacts["run_population_json"]
     step9a_group_summary = step9a_artifacts["group_json"]
     step9a_report = step9a_artifacts["report"]
-    step_results["step9a"] = _compact_step_result(step9a_manifest)
+    step_results["step9a"] = _compact_step_result(output_dir, step9a_manifest)
 
     step9b_prepare_result = run_step9b_prepare_from_existing_step9a(
         run_root=output_dir,
@@ -327,7 +333,7 @@ def run_level1b_dumb_chain(
             "step9b_interval_preflight_json",
         ),
     )
-    step_results["step9b_prepare"] = _compact_step_result(step9b_prepare_manifest)
+    step_results["step9b_prepare"] = _compact_step_result(output_dir, step9b_prepare_manifest)
 
     if (
         step9b_prepare_manifest["status"]
@@ -392,7 +398,7 @@ def run_level1b_dumb_chain(
     ]
     handoff = midpoint_artifacts["step9b_midpoint_gain_share_handoff_json"]
     step_results["step9b_midpoint_handoff"] = _compact_step_result(
-        step9b_midpoint_manifest
+        output_dir, step9b_midpoint_manifest
     )
 
     step10_collect_result = run_level1b_step10_collect_finalist_evidence(
@@ -409,7 +415,7 @@ def run_level1b_dumb_chain(
     )
     step10_evidence = step10_collect_artifacts["finalist_evidence_json"]
     step_results["step10_collect"] = _compact_step_result(
-        step10_collect_manifest
+        output_dir, step10_collect_manifest
     )
 
     step10_aggregate_result = run_level1b_step10_aggregate_finalist_evidence(
@@ -425,7 +431,7 @@ def run_level1b_dumb_chain(
         ("finalist_evidence_json",),
     )
     step_results["step10_aggregate"] = _compact_step_result(
-        step10_aggregate_manifest
+        output_dir, step10_aggregate_manifest
     )
 
     step10_figures_result = run_level1b_step10_make_finalist_figures(output_dir)
@@ -437,7 +443,7 @@ def run_level1b_dumb_chain(
         "step10_figures", step10_figures_manifest, ("figure_manifest_json",)
     )
     step_results["step10_figures"] = _compact_step_result(
-        step10_figures_manifest
+        output_dir, step10_figures_manifest
     )
 
     step10_materialize_result = run_level1b_step10_materialize_selected_segments(
@@ -462,7 +468,7 @@ def run_level1b_dumb_chain(
     selected_segments = materialize_artifacts["selected_segments_gpkg"]
     selected_labels = materialize_artifacts["selected_labels_tif"]
     step_results["step10_materialize"] = _compact_step_result(
-        step10_materialize_manifest
+        output_dir, step10_materialize_manifest
     )
 
     step10_quality_result = (
@@ -485,7 +491,7 @@ def run_level1b_dumb_chain(
     )
     step10_quality = quality_artifacts["ortho_segmentation_quality_info_json"]
     step_results["step10_quality"] = _compact_step_result(
-        step10_quality_manifest
+        output_dir, step10_quality_manifest
     )
 
     return {
@@ -520,28 +526,45 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _write_chain_report(output_dir: Path, report: dict[str, object]) -> Path:
+    report_path = output_dir / CHAIN_REPORT_FILENAME
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(report, indent=2, default=str),
+        encoding="utf-8",
+    )
+    return report_path
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        result = run_level1b_dumb_chain(
+        report = run_level1b_dumb_chain(
             rgb_ortho=args.rgb_ortho,
             output_dir=args.out_dir,
             overwrite=args.overwrite,
         )
-        report_path = (
-            args.out_dir / "level1b" / "level1b_dumb_chain_report.json"
+        exit_code = (
+            2
+            if report["status"] == "step9b_non_adjacent_choice_required"
+            else 0
         )
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(
-            json.dumps(result, indent=2, default=str), encoding="utf-8"
-        )
-        print(json.dumps(result, indent=2, default=str))
-        if result["status"] == "step9b_non_adjacent_choice_required":
-            return 2
-        return 0
     except Exception as exc:  # noqa: BLE001 - CLI converts processing failures to exit 1.
-        print(str(exc), file=sys.stderr)
-        return 1
+        report = {
+            "status": "level1b_dumb_chain_failed",
+            "output_dir": str(args.out_dir),
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        }
+        exit_code = 1
+
+    report_path = _write_chain_report(args.out_dir, report)
+    stream = sys.stderr if exit_code == 1 else sys.stdout
+    print(
+        f"{report['status']} report={report_path}",
+        file=stream,
+    )
+    return exit_code
 
 
 if __name__ == "__main__":
