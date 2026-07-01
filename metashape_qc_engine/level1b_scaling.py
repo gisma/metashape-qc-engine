@@ -8,6 +8,9 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 
+import numpy as np
+from osgeo import gdal
+
 from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 
@@ -243,14 +246,52 @@ def parse_scaling_statistics_xml(xml_path, band_count) -> dict[str, list[float]]
     return {"means": means, "standard_deviations": standard_deviations}
 
 
-def build_zscore_scaling_command(config, apps, layout, stats) -> list[str]:
+def compute_quantile_scaling_parameters(masked_stack_path, config) -> dict[str, list[float]]:
+    dataset = gdal.Open(str(masked_stack_path))
+    if dataset is None:
+        raise ValueError(f"could not open masked feature stack: {masked_stack_path}")
+
+    background_value = float(config.background_value)
+    lower_values = []
+    upper_values = []
+    centers = []
+    scales = []
+
+    for band_index in range(1, config.band_count + 1):
+        array = dataset.GetRasterBand(band_index).ReadAsArray().astype("float64")
+        valid_values = array[(array != background_value) & np.isfinite(array)]
+        if valid_values.size == 0:
+            raise ValueError(f"band {band_index}: no valid pixels for robust scaling")
+
+        lower, upper = np.quantile(valid_values, [0.02, 0.98])
+        if upper <= lower:
+            raise ValueError(f"band {band_index}: robust scaling upper <= lower")
+
+        center = (float(lower) + float(upper)) / 2.0
+        scale = (float(upper) - float(lower)) / 2.0
+        lower_values.append(float(lower))
+        upper_values.append(float(upper))
+        centers.append(center)
+        scales.append(scale)
+
+    return {
+        "lower_values": lower_values,
+        "upper_values": upper_values,
+        "centers": centers,
+        "scales": scales,
+    }
+
+
+def build_quantile_scaling_command(config, apps, layout, stats) -> list[str]:
     expressions = []
-    for band_index, (mean, standard_deviation) in enumerate(
-        zip(stats["means"], stats["standard_deviations"], strict=True),
+    for band_index, (center, scale) in enumerate(
+        zip(stats["centers"], stats["scales"], strict=True),
         start=1,
     ):
+        raw = f"((im1b{band_index} - {center}) / {scale})"
+        clipped = f"({raw} < -1.0 ? -1.0 : ({raw} > 1.0 ? 1.0 : {raw}))"
         expressions.append(
-            f"(im2b1 > 0 ? ((im1b{band_index} - {mean}) / {standard_deviation}) : {float(config.background_value)})"
+            f"(im2b1 > 0 ? {clipped} : {float(config.background_value)})"
         )
     return [
         apps["BandMathX"],
@@ -263,6 +304,31 @@ def build_zscore_scaling_command(config, apps, layout, stats) -> list[str]:
         "-exp",
         "{" + ";".join(expressions) + "}",
     ]
+
+
+# LEGACY Z-SCORE SCALING COMMAND, intentionally commented out.
+# Kept here during the robust-scaling test so the old implementation is not lost.
+#
+# def build_zscore_scaling_command(config, apps, layout, stats) -> list[str]:
+#     expressions = []
+#     for band_index, (mean, standard_deviation) in enumerate(
+#         zip(stats["means"], stats["standard_deviations"], strict=True),
+#         start=1,
+#     ):
+#         expressions.append(
+#             f"(im2b1 > 0 ? ((im1b{band_index} - {mean}) / {standard_deviation}) : {float(config.background_value)})"
+#         )
+#     return [
+#         apps["BandMathX"],
+#         "-il",
+#         str(Path(config.feature_stack_path)),
+#         str(Path(config.valid_mask_path)),
+#         "-out",
+#         str(layout["scaling_dir"] / config.output_filename),
+#         "float",
+#         "-exp",
+#         "{" + ";".join(expressions) + "}",
+#     ]
 
 
 def run_scaling_step(config) -> dict[str, object]:
@@ -297,7 +363,10 @@ def run_scaling_step(config) -> dict[str, object]:
 
     _refresh_artifact_flags(report)
     try:
-        stats = parse_scaling_statistics_xml(layout["scaling_dir"] / config.parameters_xml_filename, config.band_count)
+        stats = compute_quantile_scaling_parameters(
+            layout["runtime_scaling_tmp_dir"] / "masked_feature_stack_tmp.tif",
+            config,
+        )
     except ValueError as exc:
         report["status"] = "failed"
         report["failure_reasons"].append(str(exc))
@@ -305,26 +374,72 @@ def run_scaling_step(config) -> dict[str, object]:
         return report
 
     parameters = {
+        "method": "robust_percentile_clipped",
+        "lower_quantile": 0.02,
+        "upper_quantile": 0.98,
+        "output_min": -1.0,
+        "output_max": 1.0,
         "band_count": config.band_count,
         "background_value": float(config.background_value),
-        "means": stats["means"],
-        "standard_deviations": stats["standard_deviations"],
-        "source_xml": str(layout["scaling_dir"] / config.parameters_xml_filename),
+        "lower_values": stats["lower_values"],
+        "upper_values": stats["upper_values"],
+        "centers": stats["centers"],
+        "scales": stats["scales"],
+        "source_masked_stack": str(
+            layout["runtime_scaling_tmp_dir"] / "masked_feature_stack_tmp.tif"
+        ),
     }
+    report.update(parameters)
     with (layout["scaling_dir"] / config.parameters_json_filename).open("w", encoding="utf-8") as handle:
         json.dump(parameters, handle, indent=2, sort_keys=True)
         handle.write("\n")
     report["scaling_parameters_json_written"] = True
 
-    zscore_command = build_zscore_scaling_command(config, apps, layout, stats)
-    report["otb_commands"].append(zscore_command)
-    result = subprocess.run(zscore_command, capture_output=True, text=True)
-    report["command_results"].append(_command_result(zscore_command, result))
+    robust_command = build_quantile_scaling_command(config, apps, layout, stats)
+    report["otb_commands"].append(robust_command)
+    result = subprocess.run(robust_command, capture_output=True, text=True)
+    report["command_results"].append(_command_result(robust_command, result))
     if result.returncode != 0:
         report["status"] = "failed"
-        report["failure_reasons"].append(f"command failed: {Path(zscore_command[0]).name}")
+        report["failure_reasons"].append(f"command failed: {Path(robust_command[0]).name}")
     else:
         report["status"] = "ok"
+
+    # LEGACY Z-SCORE RUN BLOCK, intentionally commented out.
+    # Kept here during the robust-scaling test so the old implementation is not lost.
+    #
+    # try:
+    #     stats = parse_scaling_statistics_xml(
+    #         layout["scaling_dir"] / config.parameters_xml_filename,
+    #         config.band_count,
+    #     )
+    # except ValueError as exc:
+    #     report["status"] = "failed"
+    #     report["failure_reasons"].append(str(exc))
+    #     _write_report(report)
+    #     return report
+    #
+    # parameters = {
+    #     "band_count": config.band_count,
+    #     "background_value": float(config.background_value),
+    #     "means": stats["means"],
+    #     "standard_deviations": stats["standard_deviations"],
+    #     "source_xml": str(layout["scaling_dir"] / config.parameters_xml_filename),
+    # }
+    # with (layout["scaling_dir"] / config.parameters_json_filename).open("w", encoding="utf-8") as handle:
+    #     json.dump(parameters, handle, indent=2, sort_keys=True)
+    #     handle.write("\n")
+    # report["scaling_parameters_json_written"] = True
+    #
+    # zscore_command = build_zscore_scaling_command(config, apps, layout, stats)
+    # report["otb_commands"].append(zscore_command)
+    # result = subprocess.run(zscore_command, capture_output=True, text=True)
+    # report["command_results"].append(_command_result(zscore_command, result))
+    # if result.returncode != 0:
+    #     report["status"] = "failed"
+    #     report["failure_reasons"].append(f"command failed: {Path(zscore_command[0]).name}")
+    # else:
+    #     report["status"] = "ok"
 
     _refresh_artifact_flags(report)
     _write_report(report)

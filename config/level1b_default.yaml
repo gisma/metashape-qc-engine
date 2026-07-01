@@ -8,8 +8,8 @@ level1b:
     # tex_100m_radius_m and tex_200m_radius_m do NOT mean 100 m / 200 m.
     # They are generic texture radii in metres.
     # Current defaults are 1.0 m and 2.0 m.
-    tex_100m_radius_m: 1.0
-    tex_200m_radius_m: 2.0
+    tex_100m_radius_m: 0.25
+    tex_200m_radius_m: 0.5
     report_filename: "channel_report.json"
 
   scale_distribution:
