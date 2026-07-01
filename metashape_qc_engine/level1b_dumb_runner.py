@@ -7,6 +7,7 @@ import re
 from collections.abc import Sequence
 import sys
 from typing import Any
+import yaml
 
 from metashape_qc_engine.level1b_candidate_response_surface import (
     Level1BCandidateResponseSurfaceConfig,
@@ -57,7 +58,6 @@ from metashape_qc_engine.level1b_step_manifest import (
 )
 
 
-FEATURE_BAND_COUNT = 5
 CHAIN_REPORT_FILENAME = "level1b_dumb_chain_report.json"
 
 
@@ -131,6 +131,16 @@ def run_level1b_dumb_chain(
     output_dir = Path(output_dir)
     candidate_id = _candidate_id(rgb_ortho)
     level1b_dir = output_dir / "level1b"
+    level1b_dir.mkdir(parents=True, exist_ok=True)
+    
+    config_path = Path(__file__).resolve().parent / "config" / "level1b_default.yaml"
+    with config_path.open("r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)["level1b"]
+
+    resolved_config_path = level1b_dir / "resolved_level1b_config.yaml"
+    with resolved_config_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump({"level1b": cfg}, f, default_flow_style=False)
+
     if level1b_dir.exists() and not overwrite:
         raise RuntimeError(
             f"level1b_dumb_chain: output directory already exists: {level1b_dir}"
@@ -178,7 +188,7 @@ def run_level1b_dumb_chain(
             candidate_id=candidate_id,
             input_path=rgb_ortho,
             output_dir=output_dir,
-            input_type="rgb",
+            input_type=cfg["channels"]["input_type"],
             valid_mask_path=valid_mask,
             pixel_size_m=pixel_size_m,
             overwrite=overwrite,
@@ -199,7 +209,7 @@ def run_level1b_dumb_chain(
             feature_stack_path=proxy_stack,
             valid_mask_path=valid_mask,
             output_dir=output_dir,
-            band_count=FEATURE_BAND_COUNT,
+            band_count=cfg["feature_band_count"],
             overwrite=overwrite,
         )
     )
@@ -216,15 +226,15 @@ def run_level1b_dumb_chain(
             candidate_id=candidate_id,
             output_dir=output_dir,
             pixel_size_m=pixel_size_m,
-            scale_mode="structure_derived_scale_distribution",
+            scale_mode=cfg["scale_distribution"]["scale_mode"],
             proxy_stack_path=proxy_stack,
             valid_mask_path=valid_mask,
             channel_report_path=channel_report,
-            proxy_structure_mode="texture_preferred",
-            sampling_regime="auto",
-            infer_structure_support_from_proxy=True,
-            infer_texture_support_from_proxy=True,
-            upper_radius_factor=2.5,
+            proxy_structure_mode=cfg["scale_distribution"]["proxy_structure_mode"],
+            sampling_regime=cfg["scale_distribution"]["sampling_regime"],
+            infer_structure_support_from_proxy=cfg["scale_distribution"]["infer_structure_support_from_proxy"],
+            infer_texture_support_from_proxy=cfg["scale_distribution"]["infer_texture_support_from_proxy"],
+            upper_radius_factor=cfg["scale_distribution"]["upper_radius_factor"],
             overwrite=overwrite,
         )
     )
@@ -249,8 +259,8 @@ def run_level1b_dumb_chain(
             feature_space_stack_path=scaled_feature_stack,
             valid_mask_path=valid_mask,
             scale_candidates_json_path=scale_candidates,
-            feature_space_source="scaled",
-            band_count=FEATURE_BAND_COUNT,
+            feature_space_source=cfg["feature_range"]["feature_space_source"],
+            band_count=cfg["feature_band_count"],
             overwrite=overwrite,
         )
     )
@@ -295,7 +305,7 @@ def run_level1b_dumb_chain(
         perturbation_candidates_json_path=perturbation_candidates,
         valid_mask_path=valid_mask,
         segmentation_stack_path=scaled_feature_stack,
-        segmentation_stack_source="scaled_proxy_stack",
+        segmentation_stack_source=cfg["candidate_response_surface"]["segmentation_stack_source"],
         overwrite=overwrite,
     )
     step9a_result = run_candidate_response_surface_step(

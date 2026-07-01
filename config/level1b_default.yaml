@@ -1,0 +1,15 @@
+level1b:
+  feature_band_count: 5
+  channels:
+    input_type: "rgb"
+  scale_distribution:
+    scale_mode: "structure_derived_scale_distribution"
+    proxy_structure_mode: "texture_preferred"
+    sampling_regime: "auto"
+    infer_structure_support_from_proxy: true
+    infer_texture_support_from_proxy: true
+    upper_radius_factor: 2.5
+  feature_range:
+    feature_space_source: "scaled"
+  candidate_response_surface:
+    segmentation_stack_source: "scaled_proxy_stack"
