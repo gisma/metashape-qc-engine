@@ -1634,6 +1634,8 @@ def _write_step9b_prepare_domain_manifest(
     midpoint_probe_path: Path,
     midpoint_perturbations_path: Path,
     status: str = "step9b_midpoint_probe_ready",
+    lower_candidate_id: str = "opaque-no2",
+    upper_candidate_id: str = "opaque-no1",
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -1648,7 +1650,10 @@ def _write_step9b_prepare_domain_manifest(
                 ),
                 "source_artifacts": {},
                 "ranked_candidate_scales_json": str(ranked_path),
-                "gate_metadata": {},
+                "gate_metadata": {
+                    "top_pair_lower_scale_candidate_group_id": lower_candidate_id,
+                    "top_pair_upper_scale_candidate_group_id": upper_candidate_id,
+                },
                 "produced_branch_artifacts": {
                     "midpoint_probe_candidate_json": str(midpoint_probe_path),
                     "midpoint_perturbation_candidates_json": str(
@@ -2014,9 +2019,26 @@ def test_midpoint_response_surface_and_handoff_from_prepare_runs_nested_surface_
     assert handoff["S2"] == 0.0
     assert handoff["SM"] == 0.75
     assert handoff["handoff_candidate_id"] == "opaque-midpoint"
+    assert handoff["top_pair_lower_scale_candidate_group_id"] == "opaque-no2"
+    assert handoff["top_pair_upper_scale_candidate_group_id"] == "opaque-no1"
     handoff_path = step9b_dir / "step9b_midpoint_gain_share_handoff.json"
     assert json.loads(handoff_path.read_text(encoding="utf-8")) == handoff
     assert result["step9b_midpoint_gain_share_handoff_json"] == str(handoff_path)
+
+
+def test_select_step9_handoff_candidate_uses_numeric_boundary_metadata() -> None:
+    handoff = {
+        "handoff_candidate_id": "opaque-no1",
+        "midpoint_candidate_id": "opaque-midpoint",
+        "no1_candidate_scale_group_id": "opaque-no1",
+        "top_pair_lower_scale_candidate_group_id": "opaque-no1",
+        "top_pair_upper_scale_candidate_group_id": "opaque-no2",
+    }
+
+    selected = rs.select_step9_handoff_candidate(handoff)
+
+    assert selected["selected_candidate_id"] == "opaque-no1"
+    assert selected["selected_source"] == "lower_bound"
 
 
 def test_midpoint_response_surface_and_handoff_from_prepare_rejects_unmatched_multiple_rows(

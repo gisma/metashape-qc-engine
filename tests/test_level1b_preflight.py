@@ -818,7 +818,6 @@ def test_source_contains_no_forbidden_runner_or_import_symbols() -> None:
         "link" + "2GI",
         "raster" + "io",
         "os" + "geo",
-        "g" + "dal",
         "num" + "py",
     ]
 
@@ -956,6 +955,28 @@ def test_missing_any_non_legacy_required_otb_app_fails(tmp_path: Path, monkeypat
     assert any(missing_app in reason for reason in report["failure_reasons"])
 
 
+def test_missing_gdal_edit_fails_preflight(tmp_path: Path, monkeypatch) -> None:
+    def missing_gdal_edit(executable_name: str) -> str | None:
+        if executable_name == "gdal_edit.py":
+            return None
+        return fake_otb_path(executable_name)
+
+    monkeypatch.setattr("shutil.which", missing_gdal_edit)
+
+    report = run_preflight(
+        Level1BPreflightConfig(
+            candidate_id="candidate-1",
+            input_path=make_input(tmp_path),
+            output_dir=tmp_path / "out",
+            input_type="rgb",
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["checks"]["gdal_edit_discoverable"] is False
+    assert "missing required executable: gdal_edit.py" in report["failure_reasons"]
+
+
 def test_module_source_omits_forbidden_controller_symbols() -> None:
     source = (REPO_ROOT / "metashape_qc_engine" / "level1b_preflight.py").read_text(
         encoding="utf-8"
@@ -979,7 +1000,6 @@ def test_module_source_omits_forbidden_controller_symbols() -> None:
         "link" + "2GI",
         "raster" + "io",
         "os" + "geo",
-        "g" + "dal",
         "num" + "py",
     ]
 

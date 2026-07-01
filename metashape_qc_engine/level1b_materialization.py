@@ -105,18 +105,27 @@ def run_level1b_step10_collect_finalist_evidence(
     )
 
     finalist_ids = {
-        "lower_boundary": handoff["no2_candidate_scale_group_id"],
+        "lower_boundary": handoff["top_pair_lower_scale_candidate_group_id"],
         "midpoint": handoff["midpoint_candidate_id"],
-        "upper_boundary": handoff["no1_candidate_scale_group_id"],
+        "upper_boundary": handoff["top_pair_upper_scale_candidate_group_id"],
     }
     selected_candidate_id = handoff["handoff_candidate_id"]
     selected_role = next(
         role for role, candidate_id in finalist_ids.items() if candidate_id == selected_candidate_id
     )
-    ordered_roles = {
-        "midpoint": ["midpoint", "upper_boundary", "lower_boundary"],
-        "upper_boundary": ["upper_boundary", "midpoint", "lower_boundary"],
-    }[selected_role]
+    no1_role = next(
+        role for role, candidate_id in finalist_ids.items()
+        if candidate_id == handoff["no1_candidate_scale_group_id"]
+    )
+    no2_role = next(
+        role for role, candidate_id in finalist_ids.items()
+        if candidate_id == handoff["no2_candidate_scale_group_id"]
+    )
+    ordered_roles = (
+        ["midpoint", no1_role, no2_role]
+        if selected_role == "midpoint"
+        else [selected_role, "midpoint", no2_role]
+    )
     display_rank_by_role = {
         role: index for index, role in enumerate(ordered_roles, start=1)
     }
@@ -131,7 +140,10 @@ def run_level1b_step10_collect_finalist_evidence(
                 == selected_candidate_id,
                 "step10_selected_role": selected_role,
                 "step10_source_table": source_table,
-                "step10_lower_boundary_documentation_only": role == "lower_boundary",
+                "step10_lower_boundary_documentation_only": (
+                    role == "lower_boundary"
+                    and row["candidate_scale_group_id"] != selected_candidate_id
+                ),
             }
         )
         return annotated
@@ -613,9 +625,8 @@ def run_level1b_step10_make_finalist_figures(
         return None
 
     decision_values_by_role = {
-        "lower_boundary": first_existing_numeric("S2"),
-        "midpoint": first_existing_numeric("SM"),
-        "upper_boundary": first_existing_numeric("S1"),
+        role: group_by_role[role].get("stability_score_raw")
+        for role in display_roles
     }
     displayed_decision_values = [
         decision_values_by_role.get(role) for role in display_roles

@@ -569,6 +569,44 @@ def test_non_adjacent_artifact_branch_stops_before_midpoint_and_step10(
     assert not any(call.startswith("step10_") for call in calls)
 
 
+def test_partial_step9a_stops_before_step9b_and_step10(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output_dir = tmp_path / "run"
+    calls, _ = _install_stubs(monkeypatch, output_dir, branch="adjacent")
+
+    def partial_step9a(config):
+        calls.append("step9a-partial")
+        surface = output_dir / "level1b" / "candidate_response_surface"
+        _write(surface / "run_population_summary.json", [])
+        _write(surface / "candidate_group_response_summary.json", [])
+        _write(
+            surface / "candidate_response_surface_report.json",
+            {"status": "partial", "failed_runs": [{"run_id": "failed-run"}]},
+        )
+        write_step_manifest(
+            output_dir,
+            step="candidate_response_surface",
+            status="partial",
+            inputs={},
+            artifacts={
+                "run_population_json": surface / "run_population_summary.json",
+                "group_json": surface / "candidate_group_response_summary.json",
+                "report": surface / "candidate_response_surface_report.json",
+            },
+            candidate_id="test-candidate",
+        )
+        return {"status": "partial", "failed_runs": [{"run_id": "failed-run"}]}
+
+    monkeypatch.setattr(runner, "run_candidate_response_surface_step", partial_step9a)
+
+    with pytest.raises(RuntimeError, match="Step-9b and Step-10 were not run"):
+        runner.run_level1b_dumb_chain(Path("/tmp/ortho.tif"), output_dir)
+
+    assert "step9b_prepare" not in calls
+    assert not any(call.startswith("step10_") for call in calls)
+
+
 def test_missing_step9b_branch_artifacts_fail_fast(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

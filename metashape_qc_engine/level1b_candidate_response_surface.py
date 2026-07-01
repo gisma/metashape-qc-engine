@@ -1356,12 +1356,14 @@ def select_step9_handoff_candidate(handoff: dict) -> dict:
 
     if selected == handoff["midpoint_candidate_id"]:
         selected_source = "midpoint"
-    elif selected == handoff["no1_candidate_scale_group_id"]:
+    elif selected == handoff["top_pair_lower_scale_candidate_group_id"]:
+        selected_source = "lower_bound"
+    elif selected == handoff["top_pair_upper_scale_candidate_group_id"]:
         selected_source = "upper_bound"
     else:
         raise ValueError(
             f"Invalid Step-9 handoff candidate: {selected!r}. "
-            "Expected midpoint_candidate_id or no1_candidate_scale_group_id."
+            "Expected midpoint_candidate_id or a top-pair scale boundary."
         )
 
     return {
@@ -1717,6 +1719,8 @@ def run_step9b_midpoint_support_probe(
             s2,
             midpoint_family_support_raw,
         )
+        handoff["top_pair_lower_scale_candidate_group_id"] = lower_id
+        handoff["top_pair_upper_scale_candidate_group_id"] = upper_id
         result["gain_share_handoff"] = handoff
         _write_json(step9b_dir / STEP9B_OUTPUT_FILENAMES["gain_share_handoff"], handoff)
         return finish(handoff["status"], handoff["handoff_reason"])
@@ -1984,6 +1988,15 @@ def run_step9b_midpoint_response_surface_and_handoff_from_prepare(
         S2=s2,
         SM=sm,
     )
+    gate_metadata = prepare_manifest["gate_metadata"]
+    if not isinstance(gate_metadata, dict):
+        raise ValueError("Step-9b Prepare gate metadata must be a dict")
+    handoff["top_pair_lower_scale_candidate_group_id"] = gate_metadata[
+        "top_pair_lower_scale_candidate_group_id"
+    ]
+    handoff["top_pair_upper_scale_candidate_group_id"] = gate_metadata[
+        "top_pair_upper_scale_candidate_group_id"
+    ]
 
     step9b_midpoint_gain_share_handoff_json = (
         local_transition_refinement_dir / "step9b_midpoint_gain_share_handoff.json"

@@ -72,6 +72,8 @@ def _seed_step9_evidence(
             "no2_candidate_scale_group_id": "lower-id",
             "midpoint_candidate_id": "midpoint-id",
             "no1_candidate_scale_group_id": "upper-id",
+            "top_pair_lower_scale_candidate_group_id": "lower-id",
+            "top_pair_upper_scale_candidate_group_id": "upper-id",
             "handoff_candidate_id": selected_candidate_id,
         },
     )
@@ -185,6 +187,38 @@ def test_step10_canonical_evidence_preserves_upper_selected_display_order(
     assert [
         row["step10_display_rank"] for row in evidence["finalist_group_rows"]
     ] == [1, 2, 3]
+
+
+def test_step10_roles_follow_scale_order_when_no1_is_lower(
+    tmp_path: Path,
+) -> None:
+    paths = _seed_step9_evidence(tmp_path, selected_candidate_id="lower-id")
+    handoff = json.loads(paths["handoff"].read_text(encoding="utf-8"))
+    handoff.update(
+        {
+            "no1_candidate_scale_group_id": "lower-id",
+            "no2_candidate_scale_group_id": "upper-id",
+            "top_pair_lower_scale_candidate_group_id": "lower-id",
+            "top_pair_upper_scale_candidate_group_id": "upper-id",
+        }
+    )
+    _write_json(paths["handoff"], handoff)
+
+    result = run_level1b_step10_collect_finalist_evidence(tmp_path)
+    evidence = json.loads(
+        Path(result["finalist_evidence_json"]).read_text(encoding="utf-8")
+    )
+
+    assert evidence["selected_candidate_id"] == "lower-id"
+    assert evidence["selected_role"] == "lower_boundary"
+    assert evidence["display_order"] == [
+        "lower_boundary",
+        "midpoint",
+        "upper_boundary",
+    ]
+    selected_row = evidence["finalist_group_rows"][0]
+    assert selected_row["step10_selected_candidate"] is True
+    assert selected_row["step10_lower_boundary_documentation_only"] is False
 
 
 def test_step10_parts_share_canonical_evidence_without_step9_reread(

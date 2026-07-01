@@ -301,7 +301,14 @@ def run_level1b_dumb_chain(
     step9a_result = run_candidate_response_surface_step(
         candidate_response_surface_config
     )
-    _raise_on_failed_status("step9a", step9a_result)
+    step9a_status = (
+        step9a_result.get("status") if isinstance(step9a_result, dict) else None
+    )
+    if step9a_status != "ok":
+        raise RuntimeError(
+            "step9a: incomplete response surface with status "
+            f"{step9a_status!r}; Step-9b and Step-10 were not run"
+        )
     step9a_manifest = _consume_step_manifest(
         output_dir, "candidate_response_surface", step9a_result
     )

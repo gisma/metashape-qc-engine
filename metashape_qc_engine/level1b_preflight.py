@@ -368,6 +368,11 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
     if missing_apps:
         failure_reasons.append("missing required OTB app(s): " + ", ".join(missing_apps))
 
+    gdal_edit_path = shutil.which("gdal_edit.py")
+    checks["gdal_edit_discoverable"] = gdal_edit_path is not None
+    if gdal_edit_path is None:
+        failure_reasons.append("missing required executable: gdal_edit.py")
+
     (
         input_contract,
         normalized_band_roles,
@@ -405,6 +410,7 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
         "required_otb_apps": list(required_apps),
         "app_availability": app_availability,
         "small_regions_merging_app": small_regions_merging_app,
+        "gdal_edit_path": gdal_edit_path,
         "checks": checks,
         "input_contract": input_contract,
         "mask_contract": normalized_mask_contract,
