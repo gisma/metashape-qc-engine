@@ -109,6 +109,12 @@ def _manifest_artifacts(
     return paths
 
 
+def _tuple_or_none(values: object) -> tuple | None:
+    if values is None:
+        return None
+    return tuple(values)
+
+
 def _compact_step_result(
     output_dir: Path,
     manifest: dict[str, object],
@@ -139,7 +145,7 @@ def run_level1b_dumb_chain(
 
     level1b_dir.mkdir(parents=True, exist_ok=True)
 
-    config_path = Path(__file__).resolve().parent / "config" / "level1b_default.yaml"
+    config_path = Path(__file__).resolve().parent.parent / "config" / "level1b_default.yaml"
     with config_path.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)["level1b"]
 
@@ -227,20 +233,66 @@ def run_level1b_dumb_chain(
     scaled_feature_stack = scaling_artifacts["scaled_feature_stack"]
     step_results["scaling"] = _compact_step_result(output_dir, scaling_manifest)
 
+    scale_distribution_cfg = cfg["scale_distribution"]
     scale_distribution_result = run_scale_distribution_step(
         Level1BScaleDistributionConfig(
             candidate_id=candidate_id,
             output_dir=output_dir,
             pixel_size_m=pixel_size_m,
-            scale_mode=cfg["scale_distribution"]["scale_mode"],
+            scale_mode=scale_distribution_cfg["scale_mode"],
+
+            metric_radius_m=_tuple_or_none(
+                scale_distribution_cfg["metric_radius_m"]
+            ),
+            structure_radius_m=_tuple_or_none(
+                scale_distribution_cfg["structure_radius_m"]
+            ),
+
             proxy_stack_path=proxy_stack,
             valid_mask_path=valid_mask,
             channel_report_path=channel_report,
-            proxy_structure_mode=cfg["scale_distribution"]["proxy_structure_mode"],
-            sampling_regime=cfg["scale_distribution"]["sampling_regime"],
-            infer_structure_support_from_proxy=cfg["scale_distribution"]["infer_structure_support_from_proxy"],
-            infer_texture_support_from_proxy=cfg["scale_distribution"]["infer_texture_support_from_proxy"],
-            upper_radius_factor=cfg["scale_distribution"]["upper_radius_factor"],
+
+            proxy_structure_mode=scale_distribution_cfg["proxy_structure_mode"],
+            proxy_band_indices=_tuple_or_none(
+                scale_distribution_cfg["proxy_band_indices"]
+            ),
+            texture_band_indices=_tuple_or_none(
+                scale_distribution_cfg["texture_band_indices"]
+            ),
+
+            infer_structure_support_from_proxy=scale_distribution_cfg[
+                "infer_structure_support_from_proxy"
+            ],
+            infer_texture_support_from_proxy=scale_distribution_cfg[
+                "infer_texture_support_from_proxy"
+            ],
+            sampling_regime=scale_distribution_cfg["sampling_regime"],
+
+            structure_support_max_m=scale_distribution_cfg[
+                "structure_support_max_m"
+            ],
+            texture_support_max_m=scale_distribution_cfg[
+                "texture_support_max_m"
+            ],
+            target_structure_max_m=scale_distribution_cfg[
+                "target_structure_max_m"
+            ],
+            segment_similarity_radius_max_m=scale_distribution_cfg[
+                "segment_similarity_radius_max_m"
+            ],
+
+            upper_radius_factor=scale_distribution_cfg["upper_radius_factor"],
+            max_radius_m=scale_distribution_cfg["max_radius_m"],
+            patch_radius_quantiles=tuple(
+                scale_distribution_cfg["patch_radius_quantiles"]
+            ),
+            min_radius_m=scale_distribution_cfg["min_radius_m"],
+            max_candidate_radius_fraction=scale_distribution_cfg[
+                "max_candidate_radius_fraction"
+            ],
+
+            output_csv_filename=scale_distribution_cfg["output_csv_filename"],
+            output_json_filename=scale_distribution_cfg["output_json_filename"],
             overwrite=overwrite,
         )
     )
