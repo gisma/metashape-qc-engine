@@ -72,7 +72,7 @@ See [RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) for dependencies, statuses, final prod
 
 ## External software
 
-Level-1A execution requires Agisoft Metashape. Its analyzer/evaluator also imports GDAL Python bindings. Level-1B requires OTB, GDAL Python/CLI components, and R packages used by exactextractr. These components must be installed compatibly with the local operating system and Python/R environments; the setup scripts report their availability but do not install the system software.
+Level-1A execution requires Agisoft Metashape. Its analyzer/evaluator also imports GDAL Python bindings. Level-1B requires OTB—including `DimensionalityReduction` and `HaralickTextureExtraction` for its deterministic six-band RGB proxy stack—GDAL Python/CLI components, and R packages used by exactextractr. These components must be installed compatibly with the local operating system and Python/R environments; the setup scripts report their availability but do not install the system software.
 
 The installation method for compatible GDAL Python bindings when `gdal-config` is unavailable is **UNRESOLVED** and system-specific.
 

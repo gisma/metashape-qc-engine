@@ -20,13 +20,13 @@
         <mxCell id="mask" value="Common valid support&lt;br&gt;&lt;font style='font-size: 11px'&gt;all later rasters are mask-gated&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="890" y="150" width="220" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="s4" value="Step 4&lt;br&gt;&lt;b&gt;RGB proxy stack&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;VIG · DRY · BRI · TEX_100M · TEX_200M&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="s4" value="Step 4&lt;br&gt;&lt;b&gt;RGB proxy stack&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;ExGR · ExR · BRI · DGLCM-PC1 small/large · ratio&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="190" y="300" width="270" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="s5a" value="Step 5a&lt;br&gt;&lt;b&gt;Mask-aware scaling&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;z-score / scaled feature stack&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="s5a" value="Step 5a&lt;br&gt;&lt;b&gt;Mask-aware scaling&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;robust percentile / scaled feature stack&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="540" y="300" width="220" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="s5b" value="Step 5b&lt;br&gt;&lt;b&gt;PCA feature space&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;compact segmentation/ranger feature space&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="s5b" value="Channel-internal&lt;br&gt;&lt;b&gt;RGB-PC1&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;DGLCM source only; not a separate workflow branch&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="840" y="300" width="240" height="90" as="geometry" />
         </mxCell>
         <mxCell id="s6" value="Step 6&lt;br&gt;&lt;b&gt;Scale distribution&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;current repository implementation stays authoritative&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">

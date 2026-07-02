@@ -201,8 +201,13 @@ def run_level1b_dumb_chain(
             valid_mask_path=valid_mask,
             pixel_size_m=pixel_size_m,
             rgb_band_indices=tuple(channels_cfg["rgb_band_indices"]),
-            tex_100m_radius_m=channels_cfg["tex_100m_radius_m"],
-            tex_200m_radius_m=channels_cfg["tex_200m_radius_m"],
+            dglcm_pc1_small_radius_m=channels_cfg[
+                "dglcm_pc1_small_radius_m"
+            ],
+            dglcm_pc1_large_radius_m=channels_cfg[
+                "dglcm_pc1_large_radius_m"
+            ],
+            background_value=channels_cfg["background_value"],
             report_filename=channels_cfg["report_filename"],
             overwrite=overwrite,
         )

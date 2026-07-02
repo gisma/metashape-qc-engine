@@ -21,25 +21,38 @@ Scientific decisions remain in step modules. The wrapper passes explicit paths a
 
 The mask is `level1b/mask/valid_mask.tif`; later steps receive this exact path. Pixels outside it are excluded from feature statistics, segmentation evidence, and selected-run quality evidence. Changing the mask changes the analyzed population, not merely display appearance.
 
-## 2. Proxy stack and historical texture names
+## 2. Deterministic six-band RGB proxy stack
 
-For RGB input, `level1b_channels.py` builds five channels:
+For RGB input, `level1b_channels.py` builds this exact normal-stack order:
 
-1. `VIG` — implemented ExGR vegetation-index expression
-2. `DRY` — implemented ExR expression
-3. `BRI` — RGB mean brightness
-4. `TEX_100M` — local texture statistic at the first metric radius
-5. `TEX_200M` — local texture statistic at the second metric radius
+1. `ExGR` — green/living-vegetation dominance
+2. `ExR` — dry, reddish, soil, and residue component
+3. `BRI` — shadow, illumination, and albedo baseline from RGB mean brightness
+4. `DGLCM_PC1_SMALL` — fine directional radiometric structure on RGB-PC1
+5. `DGLCM_PC1_LARGE` — coarse directional radiometric structure on RGB-PC1
+6. `RATIO_DGLCM_PC1` — fine-versus-coarse directional structure
 
-`TEX_100M`, `TEX_200M`, `tex_100m_radius_m`, and `tex_200m_radius_m` are historical names. They do not mean 100 m and 200 m. Active defaults in `config/level1b_default.yaml` are `0.25 m` and `0.5 m`; code converts them to pixel radii using orthomosaic pixel size.
+This is a deterministic RGB proxy stack for robust feature-space separation under variable UAV image quality. It is neither scene-trained nor scene-optimized. The spectral proxy bands are 1–3. Bands 4–5 are the structure-support bands used by scale distribution. Band 6 is a feature-space ratio and is not a support-radius source.
 
-Texture channels summarize local structure and constrain the structure-derived scale envelope. Their radii are a methodological risk: values poorly matched to target patterns bias the candidate ladder. The normal CLI does not expose overrides.
+The structure path is:
 
-Outputs are `level1b/channels/proxy_stack.tif` and `channel_report.json`.
+1. mask RGB; valid pixels retain RGB values and invalid pixels receive the configured background value
+2. reuse the repository PCA implementation with three input bands and one component
+3. derive valid-PC1 2nd and 98th percentiles, clip to them, and rescale to `[0, 255]`
+4. run OTB `HaralickTextureExtraction` with `texture=simple`, 32 bins, and Inertia from output band 5
+5. evaluate offsets `[1,0]`, `[1,1]`, `[0,1]`, and `[-1,1]` at each metric radius
+6. take the pixelwise maximum Inertia across directions separately for the small and large bands
+7. compute `DGLCM_PC1_SMALL / (DGLCM_PC1_LARGE + 1e-6)`
+
+Active radii are `dglcm_pc1_small_radius_m: 0.25` and `dglcm_pc1_large_radius_m: 0.5`. They are converted with `max(1, round(radius_m / pixel_size_m))`. Radius choice remains a methodological risk because it defines structural support visible to scale generation.
+
+The previous five-channel ExGR neighborhood-variance stack and its historical `TEX_*` labels are legacy and are not the current normal RGB path. Current RGB structure is directional GLCM/Haralick Inertia on RGB-PC1, not undirected neighborhood variance.
+
+Outputs are `level1b/channels/proxy_stack.tif` and `channel_report.json`. The report records band order, PCA quantization, offsets, radii, aggregation, and ratio metadata.
 
 ## 3. Robust feature scaling
 
-`level1b_scaling.py` masks the five-band stack, derives each band's 2nd and 98th percentiles, centers on their midpoint, scales by half their range, and clips valid values to `[-1, 1]`. Background remains separate from valid scaled values.
+`level1b_scaling.py` masks the six-band stack, derives each band's 2nd and 98th percentiles, centers on their midpoint, scales by half their range, and clips valid values to `[-1, 1]`. Background remains separate from valid scaled values.
 
 This reduces extreme-value influence on feature-space distances, ranger derivation, and segmentation stability. It is robust-percentile scaling, not PCA and not the commented legacy z-score branch.
 
@@ -47,7 +60,7 @@ Outputs include `scaled_feature_stack.tif`, `scaling_parameters.json`, `scaling_
 
 ## 4. Candidate scale distribution
 
-The active default is `structure_derived_scale_distribution`. `level1b_scale_distribution.py` uses channel metadata and texture roles to establish an explicit envelope:
+The active default is `structure_derived_scale_distribution`. `level1b_scale_distribution.py` uses channel metadata and the two DGLCM structure roles (bands 4–5) to establish an explicit envelope. The ratio in band 6 remains a feature-space input and is excluded from support-radius inference:
 
 - explicit `min_radius_m`, or one tenth of inferred texture support, defines the lower bound
 - explicit `max_radius_m`, explicit segment-similarity maximum, or inferred texture/target support multiplied by `upper_radius_factor` defines the upper envelope
@@ -173,7 +186,7 @@ Each contains `step`, `status`, `inputs`, `artifacts`, and `provenance.candidate
 ## Methodological levers and risks
 
 - valid-mask rules define the population
-- texture radii define structural support visible to scale generation
+- DGLCM small/large radii define structural support visible to scale generation; the ratio band does not
 - robust scaling controls outlier influence
 - scale-envelope controls define tested metric radii
 - ranger quantiles define feature-space similarity ranges

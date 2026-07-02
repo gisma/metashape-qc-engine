@@ -68,7 +68,7 @@ orthomosaic
 
 ### Analysis domain and features
 
-The runner derives orthomosaic pixel size, creates `valid_mask.tif`, builds the five-band proxy stack, and robustly scales the proxy features. The active fixed defaults come from `config/level1b_default.yaml`.
+The runner derives orthomosaic pixel size, creates `valid_mask.tif`, builds the deterministic six-band RGB proxy stack (`ExGR`, `ExR`, `BRI`, fine/coarse directional GLCM Inertia on RGB-PC1, and their ratio), and robustly scales the proxy features. Bands 4–5 provide structure support; band 6 is feature-space input only. The active fixed defaults come from `config/level1b_default.yaml`.
 
 ### Candidate population
 

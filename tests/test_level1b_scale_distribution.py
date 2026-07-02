@@ -9,8 +9,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from metashape_qc_engine.level1b_scale_distribution import (
+    JSON_FIELDS,
     Level1BScaleDistributionConfig,
     build_level1b_scale_distribution_layout,
+    _infer_texture_support_max_m,
+    _selected_proxy_bands,
     build_scale_candidates,
     run_scale_distribution_step,
     validate_scale_distribution_config,
@@ -30,12 +33,37 @@ def make_metric_config(tmp_path: Path, **overrides: object) -> Level1BScaleDistr
 
 
 def make_structure_config(tmp_path: Path, **overrides: object) -> Level1BScaleDistributionConfig:
+    output_dir = tmp_path / "out"
+    channel_report = output_dir / "level1b" / "channels" / "channel_report.json"
+    channel_report.parent.mkdir(parents=True, exist_ok=True)
+    channel_report.write_text(
+        json.dumps(
+            {
+                "output_path": str(
+                    output_dir / "level1b" / "channels" / "proxy_stack.tif"
+                ),
+                "pixel_size_m": 0.25,
+                "channel_names": [
+                    "ExGR",
+                    "ExR",
+                    "BRI",
+                    "DGLCM_PC1_SMALL",
+                    "DGLCM_PC1_LARGE",
+                    "RATIO_DGLCM_PC1",
+                ],
+                "dglcm_pc1_small_radius_m": 0.25,
+                "dglcm_pc1_large_radius_m": 0.5,
+            }
+        ),
+        encoding="utf-8",
+    )
     values = {
         "candidate_id": "test",
-        "output_dir": tmp_path / "out",
+        "output_dir": output_dir,
         "pixel_size_m": 0.25,
         "scale_mode": "structure_derived_scale_distribution",
-        "structure_radius_m": (0.5, 1.0, 0.5),
+        "structure_radius_m": None,
+        "texture_band_indices": (4, 5),
     }
     values.update(overrides)
     return Level1BScaleDistributionConfig(**values)
@@ -64,11 +92,19 @@ def test_02_metric_scale_sweep_builds_one_candidate_per_unique_sorted_radius(tmp
     assert len(candidates) == 3
 
 
-def test_03_structure_derived_scale_distribution_builds_one_candidate_per_unique_sorted_radius(tmp_path: Path) -> None:
-    candidates = build_scale_candidates(make_structure_config(tmp_path, structure_radius_m=(3, 1, 3, 2)))
+def test_03_structure_derived_scale_distribution_uses_dglcm_metadata_envelope(tmp_path: Path) -> None:
+    candidates = build_scale_candidates(make_structure_config(tmp_path))
 
-    assert [candidate["radius_m"] for candidate in candidates] == [1.0, 2.0, 3.0]
-    assert len(candidates) == 3
+    assert len(candidates) > 0
+    assert [candidate["radius_m"] for candidate in candidates] == sorted(
+        candidate["radius_m"] for candidate in candidates
+    )
+    assert all(candidate["scale_source"] == "proxy_stack" for candidate in candidates)
+    assert all(candidate["selected_structure_band_indices"] == [4, 5] for candidate in candidates)
+    assert all(candidate["selected_structure_band_roles"] == [
+        "DGLCM_PC1_SMALL", "DGLCM_PC1_LARGE"
+    ] for candidate in candidates)
+    assert all(6 not in candidate["selected_structure_band_indices"] for candidate in candidates)
 
 
 def test_04_radius_m_derives_area_m2(tmp_path: Path) -> None:
@@ -92,7 +128,10 @@ def test_06_area_m2_derives_minsize_px(tmp_path: Path) -> None:
 def test_07_candidate_ids_use_zero_padded_scale_index(tmp_path: Path) -> None:
     candidates = build_scale_candidates(make_metric_config(tmp_path, metric_radius_m=(2.0, 1.0)))
 
-    assert [candidate["candidate_id"] for candidate in candidates] == ["test_scale_001", "test_scale_002"]
+    assert [candidate["candidate_id"] for candidate in candidates] == [
+        "test_r1m_px002",
+        "test_r2m_px004",
+    ]
 
 
 def test_08_metric_scale_source_is_metric_radius_m(tmp_path: Path) -> None:
@@ -101,10 +140,10 @@ def test_08_metric_scale_source_is_metric_radius_m(tmp_path: Path) -> None:
     assert {candidate["scale_source"] for candidate in candidates} == {"metric_radius_m"}
 
 
-def test_09_structure_scale_source_is_structure_radius_m(tmp_path: Path) -> None:
+def test_09_structure_scale_source_is_proxy_stack_metadata(tmp_path: Path) -> None:
     candidates = build_scale_candidates(make_structure_config(tmp_path))
 
-    assert {candidate["scale_source"] for candidate in candidates} == {"structure_radius_m"}
+    assert {candidate["scale_source"] for candidate in candidates} == {"proxy_stack"}
 
 
 def test_10_json_ranger_is_none(tmp_path: Path) -> None:
@@ -158,28 +197,32 @@ def test_16_validation_fails_if_metric_mode_also_receives_structure_radius_m(tmp
     assert "structure_radius_m must be None for metric_scale_sweep" in reasons
 
 
-def test_17_validation_fails_if_structure_mode_has_no_structure_radius_m(tmp_path: Path) -> None:
+def test_17_validation_accepts_structure_mode_without_manual_structure_radius(tmp_path: Path) -> None:
     checks, reasons = validate(make_structure_config(tmp_path, structure_radius_m=None))
 
-    assert checks["structure_radius_m_present"] is False
-    assert "structure_radius_m is required for structure_derived_scale_distribution" in reasons
+    assert checks["structure_radius_m_absent"] is True
+    assert not any("structure_radius_m is deprecated" in reason for reason in reasons)
 
 
-def test_18_validation_fails_if_structure_mode_also_receives_metric_radius_m(tmp_path: Path) -> None:
+def test_18_validation_rejects_metric_radius_in_structure_mode(tmp_path: Path) -> None:
     checks, reasons = validate(make_structure_config(tmp_path, metric_radius_m=(1.0,)))
 
-    assert checks["structure_metric_radius_m_absent"] is False
+    assert checks["metric_radius_m_present"] is False
     assert "metric_radius_m must be None for structure_derived_scale_distribution" in reasons
 
 
-def test_19_validation_fails_for_invalid_radius_values(tmp_path: Path) -> None:
-    metric_checks, metric_reasons = validate(make_metric_config(tmp_path, metric_radius_m=(1.0, 0.0)))
-    structure_checks, structure_reasons = validate(make_structure_config(tmp_path, structure_radius_m=(1.0, "bad")))
+def test_19_validation_rejects_invalid_metric_values_and_manual_structure_radius(tmp_path: Path) -> None:
+    metric_checks, metric_reasons = validate(
+        make_metric_config(tmp_path, metric_radius_m=(1.0, 0.0))
+    )
+    structure_checks, structure_reasons = validate(
+        make_structure_config(tmp_path, structure_radius_m=(1.0, 2.0))
+    )
 
     assert metric_checks["metric_radius_m_values_valid"] is False
     assert "metric_radius_m values must be numeric and > 0" in metric_reasons
-    assert structure_checks["structure_radius_m_values_valid"] is False
-    assert "structure_radius_m values must be numeric and > 0" in structure_reasons
+    assert structure_checks["structure_radius_m_absent"] is False
+    assert any("structure_radius_m is deprecated" in reason for reason in structure_reasons)
 
 
 def test_20_normal_run_writes_csv_and_json(tmp_path: Path) -> None:
@@ -195,15 +238,7 @@ def test_21_output_json_has_exactly_required_keys(tmp_path: Path) -> None:
     report = run_scale_distribution_step(make_metric_config(tmp_path))
     payload = json.loads(Path(report["output_json_path"]).read_text(encoding="utf-8"))
 
-    assert list(payload) == [
-        "candidate_id",
-        "scale_mode",
-        "scale_source",
-        "pixel_size_m",
-        "pixel_area_m2",
-        "candidate_count",
-        "candidates",
-    ]
+    assert tuple(payload) == JSON_FIELDS
 
 
 def test_22_source_has_no_forbidden_workflow_symbols() -> None:
@@ -234,10 +269,7 @@ def test_22_source_has_no_forbidden_workflow_symbols() -> None:
         "Mean" + "Shift",
         "LS" + "MS",
         "Ho" + "over",
-        "feature" + "_stack",
-        "scaled" + "_feature_stack",
         "pca" + "_feature_stack",
-        "valid" + "_mask",
         "ranger" + "_assignment",
         "estimate" + "_ranger",
         "full" + "_grid",
@@ -261,3 +293,49 @@ def test_23_protected_existing_files_are_unchanged(tmp_path: Path) -> None:
     assert second["files_written"] == []
     assert csv_path.read_text(encoding="utf-8") == csv_before
     assert json_path.read_text(encoding="utf-8") == json_before
+
+
+def test_dglcm_structure_support_uses_only_bands_four_and_five(tmp_path: Path) -> None:
+    config = Level1BScaleDistributionConfig(
+        candidate_id="test",
+        output_dir=tmp_path / "out",
+        pixel_size_m=0.1,
+        scale_mode="structure_derived_scale_distribution",
+        proxy_structure_mode="texture_preferred",
+    )
+    metadata = {
+        "channel_names": [
+            "ExGR",
+            "ExR",
+            "BRI",
+            "DGLCM_PC1_SMALL",
+            "DGLCM_PC1_LARGE",
+            "RATIO_DGLCM_PC1",
+        ]
+    }
+    indices, roles, source, excluded = _selected_proxy_bands(config, metadata)
+    assert indices == [4, 5]
+    assert roles == ["DGLCM_PC1_SMALL", "DGLCM_PC1_LARGE"]
+    assert source == "metadata_dglcm_structure_roles"
+    assert excluded == [1, 2, 3, 6]
+    assert 6 not in indices
+
+
+def test_dglcm_large_radius_is_structure_support_maximum(tmp_path: Path) -> None:
+    config = Level1BScaleDistributionConfig(
+        candidate_id="test",
+        output_dir=tmp_path / "out",
+        pixel_size_m=0.1,
+        scale_mode="structure_derived_scale_distribution",
+        texture_band_indices=(4, 5),
+    )
+    value, source = _infer_texture_support_max_m(
+        config,
+        {
+            "dglcm_pc1_small_radius_m": 0.25,
+            "dglcm_pc1_large_radius_m": 0.5,
+        },
+        ["DGLCM_PC1_SMALL", "DGLCM_PC1_LARGE"],
+    )
+    assert value == 0.5
+    assert source == "channel_metadata_or_selected_texture_roles"

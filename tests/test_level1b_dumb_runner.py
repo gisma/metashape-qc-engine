@@ -466,8 +466,16 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
         "step10_materialize",
         "step10_quality",
     ]
+    channel_config = captured["channels"]
+    assert channel_config.dglcm_pc1_small_radius_m == 0.25
+    assert channel_config.dglcm_pc1_large_radius_m == 0.5
+    assert channel_config.background_value == -999999.0
+    assert captured["scaling"].band_count == 6
+    assert captured["feature_range"].band_count == 6
+
     scale_config = captured["scale_distribution"]
     assert isinstance(scale_config, Level1BScaleDistributionConfig)
+    assert scale_config.texture_band_indices == (4, 5)
     assert scale_config.scale_mode == "structure_derived_scale_distribution"
     assert scale_config.metric_radius_m is None
     assert scale_config.proxy_stack_path == (
@@ -705,11 +713,24 @@ def test_cli_writes_one_compact_report_without_dumping_json(
     assert exit_code == 0
     assert json.loads(report_path.read_text(encoding="utf-8")) == chain_result
     captured = capsys.readouterr()
-    assert captured.out.strip() == (
-        f"level1b_dumb_chain_complete report={report_path}"
-    )
     assert captured.err == ""
-    assert "step_results" not in captured.out
+    lines = captured.out.splitlines()
+    assert lines[0] == f"level1b_dumb_chain_complete report={report_path}"
+    assert lines[1] == "Next commands:"
+    assert f"  jq . {report_path}" in lines
+    assert f"  tail -n 80 {output_dir / 'level1b_chain.log'}" in lines
+    assert any(
+        line.startswith("  ORTHO=/tmp/ortho.tif RUN_ROOT=")
+        and "OVERWRITE=1" in line
+        and "run_level1b_dumb_with_user_header.sh" in line
+        for line in lines
+    )
+    assert f"  REPORT={report_path}" in lines
+    assert any("MATERIALIZE_MANIFEST=$(jq -r" in line for line in lines)
+    assert any("QUALITY_MANIFEST=$(jq -r" in line for line in lines)
+    assert any("FIGURE_STEP_MANIFEST=$(jq -r" in line for line in lines)
+    assert '"step_results":' not in captured.out
+    assert "large_embedded_report" not in captured.out
 
 
 def test_cli_writes_same_report_path_for_failure(
@@ -742,6 +763,11 @@ def test_cli_writes_same_report_path_for_failure(
     }
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err.strip() == (
-        f"level1b_dumb_chain_failed report={report_path}"
-    )
+    lines = captured.err.splitlines()
+    assert lines == [
+        f"level1b_dumb_chain_failed report={report_path}",
+        "Next commands:",
+        f"  jq . {report_path}",
+        f"  tail -n 80 {output_dir / 'level1b_chain.log'}",
+        f"  ls -la {output_dir / 'level1b' / 'manifests'}",
+    ]

@@ -982,11 +982,14 @@ def test_module_source_omits_forbidden_controller_symbols() -> None:
         encoding="utf-8"
     )
     assert {
+        "DimensionalityReduction",
+        "HaralickTextureExtraction",
         "MeanShiftSmoothing",
         "LSMSSegmentation",
         "LSMSVectorization",
         "HooverCompareSegmentation",
     } <= set(DEFAULT_REQUIRED_OTB_APPS)
+    assert "LocalStatisticExtraction" not in DEFAULT_REQUIRED_OTB_APPS
     assert LEGACY_SMALL_REGIONS_MERGING_APP == "LSMSSmallRegionsMerging"
 
     forbidden = [

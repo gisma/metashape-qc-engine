@@ -1,15 +1,12 @@
 level1b:
-  feature_band_count: 5
+  feature_band_count: 6
 
   channels:
     input_type: "rgb"
     rgb_band_indices: [1, 2, 3]
-    # Historical names:
-    # tex_100m_radius_m and tex_200m_radius_m do NOT mean 100 m / 200 m.
-    # They are generic texture radii in metres.
-    # Current defaults are 1.0 m and 2.0 m.
-    tex_100m_radius_m: 0.25
-    tex_200m_radius_m: 0.5
+    dglcm_pc1_small_radius_m: 0.25
+    dglcm_pc1_large_radius_m: 0.5
+    background_value: -999999.0
     report_filename: "channel_report.json"
 
   scale_distribution:
@@ -20,7 +17,7 @@ level1b:
 
     proxy_structure_mode: "texture_preferred"
     proxy_band_indices: null
-    texture_band_indices: null
+    texture_band_indices: [4, 5]
 
     infer_texture_support_from_proxy: true
     infer_structure_support_from_proxy: true

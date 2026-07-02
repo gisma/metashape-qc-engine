@@ -18,6 +18,7 @@ STRUCTURE_RADIUS_DEPRECATED_REASON = (
 )
 DEFAULT_PATCH_RADIUS_QUANTILES = (0.25, 0.4, 0.55, 0.7, 0.85, 0.95)
 TEXTURE_BAND_PATTERNS = ("TEX", "texture", "TEXTURE")
+DGLCM_STRUCTURE_BAND_ROLES = ("DGLCM_PC1_SMALL", "DGLCM_PC1_LARGE")
 
 ROW_FIELDS = (
     "candidate_id",
@@ -182,6 +183,23 @@ def _selected_proxy_bands(config: Level1BScaleDistributionConfig, metadata: dict
     if config.proxy_structure_mode == "all_bands":
         count = len(channel_names) or 1
         return list(range(1, count + 1)), channel_names or ["band_1"], "all_bands_explicit", []
+    dglcm_indices = [
+        index
+        for index, name in enumerate(channel_names, start=1)
+        if name in DGLCM_STRUCTURE_BAND_ROLES
+    ]
+    if dglcm_indices:
+        excluded = [
+            index
+            for index in range(1, len(channel_names) + 1)
+            if index not in dglcm_indices
+        ]
+        return (
+            dglcm_indices,
+            [channel_names[index - 1] for index in dglcm_indices],
+            "metadata_dglcm_structure_roles",
+            excluded,
+        )
     texture_indices = [
         index
         for index, name in enumerate(channel_names, start=1)
@@ -199,7 +217,12 @@ def _infer_texture_support_max_m(config: Level1BScaleDistributionConfig, metadat
     if _is_positive_number(config.texture_support_max_m):
         return float(config.texture_support_max_m), "config.texture_support_max_m"
     values: list[float] = []
-    for key in ("tex_100m_radius_m", "tex_200m_radius_m", "texture_support_max_m", "effective_structure_support_max_m"):
+    for key in (
+        "dglcm_pc1_small_radius_m",
+        "dglcm_pc1_large_radius_m",
+        "texture_support_max_m",
+        "effective_structure_support_max_m",
+    ):
         value = metadata.get(key)
         if _is_positive_number(value):
             values.append(float(value))

@@ -20,7 +20,8 @@ from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 DEFAULT_REQUIRED_OTB_APPS = (
     "BandMathX",
-    "LocalStatisticExtraction",
+    "DimensionalityReduction",
+    "HaralickTextureExtraction",
     "ComputeImagesStatistics",
     "MeanShiftSmoothing",
     "LSMSSegmentation",

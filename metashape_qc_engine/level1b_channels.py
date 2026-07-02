@@ -6,12 +6,34 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+from types import SimpleNamespace
 
+from metashape_qc_engine.level1b_pca import (
+    Level1BPCAConfig,
+    build_level1b_pca_layout,
+    build_pca_command,
+    build_pca_remask_command,
+    run_pca_step,
+)
+from metashape_qc_engine.level1b_scaling import compute_quantile_scaling_parameters
 from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
-RGB_CHANNEL_NAMES = ["VIG", "DRY", "BRI", "TEX_100M", "TEX_200M"]
+RGB_CHANNEL_NAMES = [
+    "ExGR",
+    "ExR",
+    "BRI",
+    "DGLCM_PC1_SMALL",
+    "DGLCM_PC1_LARGE",
+    "RATIO_DGLCM_PC1",
+]
+GLCM_DIRECTIONS = ((1, 0), (1, 1), (0, 1), (-1, 1))
+PC1_CLIP_QUANTILES = (0.02, 0.98)
+PC1_OUTPUT_MIN = 0.0
+PC1_OUTPUT_MAX = 255.0
+PC1_NBBIN = 32
+RATIO_EPS = 1e-6
 REPORT_KEYS = (
     "candidate_id",
     "input_path",
@@ -30,8 +52,24 @@ REPORT_KEYS = (
     "declared_channels",
     "declared_band_indices",
     "pixel_size_m",
-    "tex_100m_radius_m",
-    "tex_200m_radius_m",
+    "normal_stack",
+    "band_count",
+    "band_names",
+    "structure_operator",
+    "structure_feature",
+    "structure_feature_band",
+    "structure_source",
+    "direction_aggregation",
+    "glcm_directions",
+    "pc1_quantization",
+    "dglcm_pc1_small_radius_m",
+    "dglcm_pc1_large_radius_m",
+    "small_radius_m",
+    "large_radius_m",
+    "small_radius_px",
+    "large_radius_px",
+    "ratio_formula",
+    "ratio_eps",
     "derived_radius_px",
     "intermediate_paths",
     "mask_application",
@@ -67,7 +105,8 @@ CHECK_KEYS = (
     "texture_radius_order_valid",
     "derived_radius_px_valid",
     "otb_bandmathx_discoverable",
-    "otb_local_statistic_extraction_discoverable",
+    "otb_dimensionality_reduction_discoverable",
+    "otb_haralick_texture_extraction_discoverable",
 )
 
 
@@ -83,8 +122,9 @@ class Level1BChannelConfig:
     rgb_band_indices: tuple[int, int, int] = (1, 2, 3)
     declared_channels: tuple[str, ...] | None = None
     declared_band_indices: tuple[int, ...] | None = None
-    tex_100m_radius_m: float = 1.0
-    tex_200m_radius_m: float = 2.0
+    dglcm_pc1_small_radius_m: float = 0.25
+    dglcm_pc1_large_radius_m: float = 0.5
+    background_value: float = -999999.0
     output_filename: str | None = None
     report_filename: str = "channel_report.json"
     overwrite: bool = False
@@ -110,17 +150,30 @@ def build_level1b_channel_layout(output_dir, tmp_dir=None) -> dict[str, Path]:
 def discover_channel_otb_apps(input_type) -> dict[str, str | None]:
     apps = {"BandMathX": shutil.which("otbcli_BandMathX")}
     if input_type == "rgb":
-        apps["LocalStatisticExtraction"] = shutil.which("otbcli_LocalStatisticExtraction")
+        apps["DimensionalityReduction"] = shutil.which(
+            "otbcli_DimensionalityReduction"
+        )
+        apps["HaralickTextureExtraction"] = shutil.which(
+            "otbcli_HaralickTextureExtraction"
+        )
     return apps
 
 
 def validate_channel_config(config, layout) -> tuple[dict[str, bool], list[str], dict[str, object]]:
     def is_positive_number(value: object) -> bool:
-        return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and value > 0
+        )
 
     output_filename = config.output_filename
     if output_filename is None:
-        output_filename = "channel_stack.tif" if config.input_type == "multichannel" else "proxy_stack.tif"
+        output_filename = (
+            "channel_stack.tif"
+            if config.input_type == "multichannel"
+            else "proxy_stack.tif"
+        )
 
     normalized_channels = None
     if config.declared_channels is not None:
@@ -151,7 +204,9 @@ def validate_channel_config(config, layout) -> tuple[dict[str, bool], list[str],
         failure_reasons.append("input_path does not exist")
     if input_path.suffix.lower() not in RASTER_SUFFIXES:
         checks["input_suffix_raster_like"] = False
-        failure_reasons.append("input_path suffix must be one of .tif, .tiff, .vrt, .img, .jp2")
+        failure_reasons.append(
+            "input_path suffix must be one of .tif, .tiff, .vrt, .img, .jp2"
+        )
     if not valid_mask_path.exists():
         checks["valid_mask_path_exists"] = False
         failure_reasons.append("valid_mask_path does not exist")
@@ -169,10 +224,15 @@ def validate_channel_config(config, layout) -> tuple[dict[str, bool], list[str],
         if (
             not isinstance(config.rgb_band_indices, tuple)
             or len(config.rgb_band_indices) != 3
-            or any(not isinstance(index, int) or index <= 0 for index in config.rgb_band_indices)
+            or any(
+                not isinstance(index, int) or index <= 0
+                for index in config.rgb_band_indices
+            )
         ):
             checks["rgb_band_indices_valid"] = False
-            failure_reasons.append("rgb_band_indices must contain exactly three positive integers")
+            failure_reasons.append(
+                "rgb_band_indices must contain exactly three positive integers"
+            )
         if config.declared_channels is not None:
             checks["rgb_declared_channels_absent"] = False
             failure_reasons.append("rgb input must not receive declared_channels")
@@ -186,9 +246,13 @@ def validate_channel_config(config, layout) -> tuple[dict[str, bool], list[str],
         if normalized_channels is None:
             checks["multichannel_declared_channels_present"] = False
             failure_reasons.append("multichannel input requires declared_channels")
-        elif not normalized_channels or any(channel == "" for channel in normalized_channels):
+        elif not normalized_channels or any(
+            channel == "" for channel in normalized_channels
+        ):
             checks["multichannel_declared_channels_non_empty"] = False
-            failure_reasons.append("declared_channels must be non-empty after stripping")
+            failure_reasons.append(
+                "declared_channels must be non-empty after stripping"
+            )
         elif len(set(normalized_channels)) != len(normalized_channels):
             checks["multichannel_declared_channels_unique"] = False
             failure_reasons.append("declared_channels must be unique after stripping")
@@ -196,120 +260,290 @@ def validate_channel_config(config, layout) -> tuple[dict[str, bool], list[str],
         if normalized_indices is None:
             checks["multichannel_declared_band_indices_present"] = False
             failure_reasons.append("multichannel input requires declared_band_indices")
-        elif normalized_channels is not None and len(normalized_indices) != len(normalized_channels):
+        elif normalized_channels is not None and len(normalized_indices) != len(
+            normalized_channels
+        ):
             checks["multichannel_declared_band_indices_length"] = False
-            failure_reasons.append("declared_band_indices length must equal declared_channels length")
-        if normalized_indices is not None and any(not isinstance(index, int) or index <= 0 for index in normalized_indices):
+            failure_reasons.append(
+                "declared_band_indices length must equal declared_channels length"
+            )
+        if normalized_indices is not None and any(
+            not isinstance(index, int) or index <= 0
+            for index in normalized_indices
+        ):
             checks["multichannel_declared_band_indices_valid"] = False
-            failure_reasons.append("declared_band_indices must be positive integers")
+            failure_reasons.append(
+                "declared_band_indices must be positive integers"
+            )
 
-    if not is_positive_number(config.tex_100m_radius_m) or not is_positive_number(config.tex_200m_radius_m):
+    if not is_positive_number(
+        config.dglcm_pc1_small_radius_m
+    ) or not is_positive_number(config.dglcm_pc1_large_radius_m):
         checks["texture_radii_valid"] = False
-        failure_reasons.append("tex_100m_radius_m and tex_200m_radius_m must be positive numbers")
-    elif config.tex_100m_radius_m >= config.tex_200m_radius_m:
+        failure_reasons.append(
+            "dglcm_pc1_small_radius_m and dglcm_pc1_large_radius_m must be positive numbers"
+        )
+    elif config.dglcm_pc1_small_radius_m >= config.dglcm_pc1_large_radius_m:
         checks["texture_radius_order_valid"] = False
-        failure_reasons.append("tex_100m_radius_m must be smaller than tex_200m_radius_m")
+        failure_reasons.append(
+            "dglcm_pc1_small_radius_m must be smaller than dglcm_pc1_large_radius_m"
+        )
 
     if checks["pixel_size_m_valid"] and checks["texture_radii_valid"]:
-        radius_100 = round(config.tex_100m_radius_m / config.pixel_size_m)
-        radius_200 = round(config.tex_200m_radius_m / config.pixel_size_m)
-        derived["derived_radius_px"] = {"TEX_100M": radius_100, "TEX_200M": radius_200}
-        if radius_100 < 1 or radius_200 < 1:
-            checks["derived_radius_px_valid"] = False
-            failure_reasons.append("derived texture radii must be >= 1 px")
+        radius_small = max(
+            1, round(config.dglcm_pc1_small_radius_m / config.pixel_size_m)
+        )
+        radius_large = max(
+            1, round(config.dglcm_pc1_large_radius_m / config.pixel_size_m)
+        )
+        derived["derived_radius_px"] = {
+            "DGLCM_PC1_SMALL": radius_small,
+            "DGLCM_PC1_LARGE": radius_large,
+        }
 
     return checks, failure_reasons, derived
 
 
-def build_rgb_proxy_commands(config, apps, layout, output_path) -> tuple[list[list[str]], dict[str, object]]:
+def _rgb_intermediate_paths(config, layout) -> dict[str, object]:
     runtime_channel_tmp = layout["runtime_tmp_dir"] / "channels"
     runtime_channel_tmp.mkdir(parents=True, exist_ok=True)
-    exgr_tmp = runtime_channel_tmp / "exgr_tmp.tif"
-    tex_100m_stats_tmp = runtime_channel_tmp / "tex_100m_stats_tmp.tif"
-    tex_200m_stats_tmp = runtime_channel_tmp / "tex_200m_stats_tmp.tif"
-    radius_100 = round(config.tex_100m_radius_m / config.pixel_size_m)
-    radius_200 = round(config.tex_200m_radius_m / config.pixel_size_m)
+    pca_work_root = runtime_channel_tmp / "rgb_pc1_work"
+    pca_config = Level1BPCAConfig(
+        candidate_id=f"{str(config.candidate_id).strip()}__rgb_pc1",
+        scaled_feature_stack_path=runtime_channel_tmp / "masked_rgb.tif",
+        valid_mask_path=config.valid_mask_path,
+        output_dir=pca_work_root,
+        band_count=3,
+        pca_components=1,
+        background_value=config.background_value,
+        output_filename="rgb_pc1.tif",
+        report_filename="rgb_pc1_pca_report.json",
+        overwrite=config.overwrite,
+        dry_run=config.dry_run,
+    )
+    pca_layout = build_level1b_pca_layout(pca_work_root)
+    direction_paths = {
+        scale: [
+            runtime_channel_tmp / f"dglcm_pc1_{scale}_direction_{index}.tif"
+            for index in range(len(GLCM_DIRECTIONS))
+        ]
+        for scale in ("small", "large")
+    }
+    return {
+        "masked_rgb": runtime_channel_tmp / "masked_rgb.tif",
+        "pca_config": pca_config,
+        "pca_layout": pca_layout,
+        "pc1": pca_layout["pca_dir"] / pca_config.output_filename,
+        "pc1_haralick_input": runtime_channel_tmp / "pc1_haralick_input.tif",
+        "direction_paths": direction_paths,
+        "small_max": runtime_channel_tmp / "dglcm_pc1_small_max.tif",
+        "large_max": runtime_channel_tmp / "dglcm_pc1_large_max.tif",
+    }
+
+
+def _masked_rgb_command(config, apps, paths) -> list[str]:
+    expression = "{" + ";".join(
+        f"(im2b1 > 0 ? im1b{index} : {float(config.background_value)})"
+        for index in config.rgb_band_indices
+    ) + "}"
+    return [
+        str(apps["BandMathX"]),
+        "-il",
+        str(config.input_path),
+        str(config.valid_mask_path),
+        "-out",
+        str(paths["masked_rgb"]),
+        "float",
+        "-exp",
+        expression,
+    ]
+
+
+def _pc1_quantization_command(config, apps, paths, lower, upper) -> list[str]:
+    clipped = (
+        f"(im1b1 < {lower} ? {lower} : "
+        f"(im1b1 > {upper} ? {upper} : im1b1))"
+    )
+    scaled = (
+        f"(({clipped} - {lower}) * {PC1_OUTPUT_MAX} / ({upper} - {lower}))"
+    )
+    expression = f"(im2b1 > 0 ? {scaled} : {PC1_OUTPUT_MIN})"
+    return [
+        str(apps["BandMathX"]),
+        "-il",
+        str(paths["pc1"]),
+        str(config.valid_mask_path),
+        "-out",
+        str(paths["pc1_haralick_input"]),
+        "float",
+        "-exp",
+        expression,
+    ]
+
+
+def _haralick_commands(apps, paths, radius_small, radius_large) -> list[list[str]]:
+    commands: list[list[str]] = []
+    for scale, radius in (("small", radius_small), ("large", radius_large)):
+        for output_path, (xoff, yoff) in zip(
+            paths["direction_paths"][scale], GLCM_DIRECTIONS, strict=True
+        ):
+            commands.append(
+                [
+                    str(apps["HaralickTextureExtraction"]),
+                    "-in",
+                    str(paths["pc1_haralick_input"]),
+                    "-channel",
+                    "1",
+                    "-step",
+                    "1",
+                    "-parameters.xrad",
+                    str(radius),
+                    "-parameters.yrad",
+                    str(radius),
+                    "-parameters.xoff",
+                    str(xoff),
+                    "-parameters.yoff",
+                    str(yoff),
+                    "-parameters.min",
+                    str(int(PC1_OUTPUT_MIN)),
+                    "-parameters.max",
+                    str(int(PC1_OUTPUT_MAX)),
+                    "-parameters.nbbin",
+                    str(PC1_NBBIN),
+                    "-texture",
+                    "simple",
+                    "-out",
+                    str(output_path),
+                    "float",
+                ]
+            )
+    return commands
+
+
+def _direction_max_command(apps, input_paths, output_path) -> list[str]:
+    return [
+        str(apps["BandMathX"]),
+        "-il",
+        *(str(path) for path in input_paths),
+        "-out",
+        str(output_path),
+        "float",
+        "-exp",
+        "max(max(im1b5,im2b5),max(im3b5,im4b5))",
+    ]
+
+
+def _final_rgb_stack_command(config, apps, paths, output_path) -> tuple[list[str], dict[str, str]]:
     red_index, green_index, blue_index = config.rgb_band_indices
     red = f"im1b{red_index}"
     green = f"im1b{green_index}"
     blue = f"im1b{blue_index}"
-    mask_from_second_input = "im2b1"
-    mask_from_fourth_input = "im4b1"
+    mask = "im4b1"
     exg = f"(2*{green} - {red} - {blue})"
     exr = f"(1.4*{red} - {blue})"
     exgr = f"({exg} - {exr})"
     bri = f"(({red} + {green} + {blue}) / 3)"
-    expressions = {"ExG": exg, "ExR": exr, "ExGR": exgr, "VIG": exgr, "DRY": exr, "BRI": bri}
-    masked_exgr = f"({mask_from_second_input} > 0 ? {expressions['ExGR']} : 0)"
+    expressions = {"ExG": exg, "ExR": exr, "ExGR": exgr, "BRI": bri}
     final_expression = (
         "{"
-        f"({mask_from_fourth_input} > 0 ? {expressions['VIG']} : 0);"
-        f"({mask_from_fourth_input} > 0 ? {expressions['DRY']} : 0);"
-        f"({mask_from_fourth_input} > 0 ? {expressions['BRI']} : 0);"
-        f"({mask_from_fourth_input} > 0 ? im2b2 : 0);"
-        f"({mask_from_fourth_input} > 0 ? im3b2 : 0)"
+        f"({mask} > 0 ? {exgr} : 0);"
+        f"({mask} > 0 ? {exr} : 0);"
+        f"({mask} > 0 ? {bri} : 0);"
+        f"({mask} > 0 ? im2b1 : 0);"
+        f"({mask} > 0 ? im3b1 : 0);"
+        f"({mask} > 0 ? (im2b1 / (im3b1 + {RATIO_EPS})) : 0)"
         "}"
     )
-    commands = [
-        [
-            str(apps["BandMathX"]),
-            "-il",
-            str(config.input_path),
-            str(config.valid_mask_path),
-            "-out",
-            str(exgr_tmp),
-            "float",
-            "-exp",
-            masked_exgr,
-        ],
-        [
-            str(apps["LocalStatisticExtraction"]),
-            "-in",
-            str(exgr_tmp),
-            "-out",
-            str(tex_100m_stats_tmp),
-            "-radius",
-            str(radius_100),
-        ],
-        [
-            str(apps["LocalStatisticExtraction"]),
-            "-in",
-            str(exgr_tmp),
-            "-out",
-            str(tex_200m_stats_tmp),
-            "-radius",
-            str(radius_200),
-        ],
-        [
-            str(apps["BandMathX"]),
-            "-il",
-            str(config.input_path),
-            str(tex_100m_stats_tmp),
-            str(tex_200m_stats_tmp),
-            str(config.valid_mask_path),
-            "-out",
-            str(output_path),
-            "float",
-            "-exp",
-            final_expression,
-        ],
+    command = [
+        str(apps["BandMathX"]),
+        "-il",
+        str(config.input_path),
+        str(paths["small_max"]),
+        str(paths["large_max"]),
+        str(config.valid_mask_path),
+        "-out",
+        str(output_path),
+        "float",
+        "-exp",
+        final_expression,
     ]
+    return command, expressions
+
+
+def build_rgb_proxy_commands(
+    config,
+    apps,
+    layout,
+    output_path,
+    pc1_lower="PC1_Q02",
+    pc1_upper="PC1_Q98",
+) -> tuple[list[list[str]], dict[str, object]]:
+    paths = _rgb_intermediate_paths(config, layout)
+    radius_small = max(
+        1, round(config.dglcm_pc1_small_radius_m / config.pixel_size_m)
+    )
+    radius_large = max(
+        1, round(config.dglcm_pc1_large_radius_m / config.pixel_size_m)
+    )
+    pca_apps = {
+        "DimensionalityReduction": apps["DimensionalityReduction"],
+        "BandMathX": apps["BandMathX"],
+    }
+    pca_commands = [
+        build_pca_command(paths["pca_config"], pca_apps, paths["pca_layout"]),
+        build_pca_remask_command(
+            paths["pca_config"], pca_apps, paths["pca_layout"]
+        ),
+    ]
+    commands = [
+        _masked_rgb_command(config, apps, paths),
+        *pca_commands,
+        _pc1_quantization_command(
+            config, apps, paths, pc1_lower, pc1_upper
+        ),
+        *_haralick_commands(apps, paths, radius_small, radius_large),
+        _direction_max_command(
+            apps, paths["direction_paths"]["small"], paths["small_max"]
+        ),
+        _direction_max_command(
+            apps, paths["direction_paths"]["large"], paths["large_max"]
+        ),
+    ]
+    final_command, expressions = _final_rgb_stack_command(
+        config, apps, paths, output_path
+    )
+    commands.append(final_command)
     metadata = {
         "channel_names": list(RGB_CHANNEL_NAMES),
-        "derived_radius_px": {"TEX_100M": radius_100, "TEX_200M": radius_200},
+        "derived_radius_px": {
+            "DGLCM_PC1_SMALL": radius_small,
+            "DGLCM_PC1_LARGE": radius_large,
+        },
         "intermediate_paths": {
-            "exgr_tmp": str(exgr_tmp),
-            "tex_100m_stats_tmp": str(tex_100m_stats_tmp),
-            "tex_200m_stats_tmp": str(tex_200m_stats_tmp),
+            "masked_rgb": str(paths["masked_rgb"]),
+            "rgb_pc1": str(paths["pc1"]),
+            "pc1_haralick_input": str(paths["pc1_haralick_input"]),
+            "dglcm_pc1_small_directions": [
+                str(path) for path in paths["direction_paths"]["small"]
+            ],
+            "dglcm_pc1_large_directions": [
+                str(path) for path in paths["direction_paths"]["large"]
+            ],
+            "dglcm_pc1_small_max": str(paths["small_max"]),
+            "dglcm_pc1_large_max": str(paths["large_max"]),
+            "rgb_pc1_pca_report": str(
+                paths["pca_layout"]["pca_dir"]
+                / paths["pca_config"].report_filename
+            ),
         },
         "expressions": expressions,
+        "pca_config": paths["pca_config"],
+        "paths": paths,
         "mask_application": {
-            "valid_mask_applied_to_exgr_intermediate": True,
+            "valid_mask_applied_to_rgb_before_pca": True,
+            "invalid_rgb_value": float(config.background_value),
+            "valid_mask_applied_to_pc1_after_pca": True,
             "valid_mask_applied_to_final_stack": True,
-            "texture_neighborhood_note": (
-                "LocalStatisticExtraction runs on the masked ExGR intermediate; outside-support pixels are zeroed "
-                "before texture computation and final texture bands are masked again."
-            ),
         },
     }
     return commands, metadata
@@ -322,7 +556,10 @@ def build_multichannel_stack_command(
     normalized_declared_channels,
     normalized_declared_band_indices,
 ) -> tuple[list[str], dict[str, object]]:
-    expression = "{" + ";".join(f"(im2b1 > 0 ? im1b{index} : 0)" for index in normalized_declared_band_indices) + "}"
+    expression = "{" + ";".join(
+        f"(im2b1 > 0 ? im1b{index} : 0)"
+        for index in normalized_declared_band_indices
+    ) + "}"
     command = [
         str(apps["BandMathX"]),
         "-il",
@@ -338,11 +575,22 @@ def build_multichannel_stack_command(
         "channel_names": list(normalized_declared_channels),
         "declared_band_indices": list(normalized_declared_band_indices),
         "expression": expression,
-        "mask_application": {
-            "valid_mask_applied_to_final_stack": True,
-        },
+        "mask_application": {"valid_mask_applied_to_final_stack": True},
     }
     return command, metadata
+
+
+def _run_command(command) -> tuple[dict[str, object], bool]:
+    result = subprocess.run(command, capture_output=True, text=True)
+    return (
+        {
+            "command": command,
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        },
+        result.returncode == 0,
+    )
 
 
 def run_channel_construction_step(config) -> dict[str, object]:
@@ -355,20 +603,26 @@ def run_channel_construction_step(config) -> dict[str, object]:
     command_results: list[dict[str, object]] = []
     commands: list[list[str]] = []
     channel_names: list[str] = []
-    intermediate_paths: dict[str, str] = {}
+    intermediate_paths: dict[str, object] = {}
     mask_application: dict[str, object] = {}
+    pc1_clip_values = {"lower": None, "upper": None}
     output_created = False
 
     if apps.get("BandMathX") is None:
         checks["otb_bandmathx_discoverable"] = False
         failure_reasons.append("no OTB BandMathX app discoverable")
-    if config.input_type == "rgb" and apps.get("LocalStatisticExtraction") is None:
-        checks["otb_local_statistic_extraction_discoverable"] = False
-        failure_reasons.append("no OTB LocalStatisticExtraction app discoverable")
+    if config.input_type == "rgb" and apps.get("DimensionalityReduction") is None:
+        checks["otb_dimensionality_reduction_discoverable"] = False
+        failure_reasons.append("no OTB DimensionalityReduction app discoverable")
+    if config.input_type == "rgb" and apps.get("HaralickTextureExtraction") is None:
+        checks["otb_haralick_texture_extraction_discoverable"] = False
+        failure_reasons.append("no OTB HaralickTextureExtraction app discoverable")
 
     if not failure_reasons:
         if config.input_type == "rgb":
-            commands, metadata = build_rgb_proxy_commands(config, apps, layout, output_path)
+            commands, metadata = build_rgb_proxy_commands(
+                config, apps, layout, output_path
+            )
             channel_names = list(metadata["channel_names"])
             intermediate_paths = dict(metadata["intermediate_paths"])
             derived["derived_radius_px"] = metadata["derived_radius_px"]
@@ -387,23 +641,60 @@ def run_channel_construction_step(config) -> dict[str, object]:
 
         if config.dry_run:
             status = "dry_run"
+        elif config.input_type == "multichannel":
+            result_record, succeeded = _run_command(commands[0])
+            command_results.append(result_record)
+            status = "ok" if succeeded else "failed"
+            if not succeeded:
+                failure_reasons.append("OTB execution failed")
+            output_created = succeeded
         else:
-            status = "ok"
-            for command in commands:
-                result = subprocess.run(command, capture_output=True, text=True)
-                command_results.append(
-                    {
-                        "command": command,
-                        "returncode": result.returncode,
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
-                    }
-                )
-                if result.returncode != 0:
+            result_record, succeeded = _run_command(commands[0])
+            command_results.append(result_record)
+            if not succeeded:
+                status = "failed"
+                failure_reasons.append("OTB execution failed")
+            else:
+                pca_result = run_pca_step(metadata["pca_config"])
+                command_results.extend(pca_result.get("command_results", []))
+                if pca_result.get("status") != "ok":
                     status = "failed"
-                    failure_reasons.append("OTB execution failed")
-                    break
-            output_created = status == "ok"
+                    failure_reasons.append("RGB-PC1 construction failed")
+                else:
+                    stats_config = SimpleNamespace(
+                        band_count=1,
+                        background_value=float(config.background_value),
+                    )
+                    try:
+                        stats = compute_quantile_scaling_parameters(
+                            metadata["paths"]["pc1"], stats_config
+                        )
+                        lower = float(stats["lower_values"][0])
+                        upper = float(stats["upper_values"][0])
+                        pc1_clip_values = {"lower": lower, "upper": upper}
+                        commands, metadata = build_rgb_proxy_commands(
+                            config,
+                            apps,
+                            layout,
+                            output_path,
+                            pc1_lower=lower,
+                            pc1_upper=upper,
+                        )
+                        intermediate_paths = dict(metadata["intermediate_paths"])
+                        mask_application = dict(metadata["mask_application"])
+                    except ValueError as exc:
+                        status = "failed"
+                        failure_reasons.append(str(exc))
+                    else:
+                        status = "ok"
+                        for command in commands[3:]:
+                            result_record, succeeded = _run_command(command)
+                            command_results.append(result_record)
+                            if not succeeded:
+                                status = "failed"
+                                failure_reasons.append("OTB execution failed")
+                                break
+                        output_created = status == "ok"
     else:
         status = "failed"
         if config.input_type == "rgb":
@@ -411,6 +702,10 @@ def run_channel_construction_step(config) -> dict[str, object]:
         elif derived["normalized_declared_channels"] is not None:
             channel_names = list(derived["normalized_declared_channels"])
 
+    radius_px = derived["derived_radius_px"]
+    small_radius_px = radius_px.get("DGLCM_PC1_SMALL")
+    large_radius_px = radius_px.get("DGLCM_PC1_LARGE")
+    is_rgb = config.input_type == "rgb"
     report = {
         "candidate_id": str(config.candidate_id).strip(),
         "input_path": str(config.input_path),
@@ -423,14 +718,44 @@ def run_channel_construction_step(config) -> dict[str, object]:
         "output_filename": output_filename,
         "report_path": str(report_path),
         "valid_mask_path": str(config.valid_mask_path),
-        "channel_mode": config.input_type if config.input_type in {"rgb", "multichannel"} else "invalid",
+        "channel_mode": config.input_type
+        if config.input_type in {"rgb", "multichannel"}
+        else "invalid",
         "channel_names": channel_names,
         "rgb_band_indices": list(config.rgb_band_indices),
         "declared_channels": derived["normalized_declared_channels"],
         "declared_band_indices": derived["normalized_declared_band_indices"],
         "pixel_size_m": config.pixel_size_m,
-        "tex_100m_radius_m": config.tex_100m_radius_m,
-        "tex_200m_radius_m": config.tex_200m_radius_m,
+        "normal_stack": "exgr_exr_bri_directional_glcm_pc1" if is_rgb else None,
+        "band_count": 6 if is_rgb else len(channel_names),
+        "band_names": list(RGB_CHANNEL_NAMES) if is_rgb else channel_names,
+        "structure_operator": "HaralickTextureExtraction" if is_rgb else None,
+        "structure_feature": "simple.inertia" if is_rgb else None,
+        "structure_feature_band": 5 if is_rgb else None,
+        "structure_source": "RGB_PC1" if is_rgb else None,
+        "direction_aggregation": "max_over_0_45_90_135" if is_rgb else None,
+        "glcm_directions": [list(value) for value in GLCM_DIRECTIONS]
+        if is_rgb
+        else None,
+        "pc1_quantization": {
+            "clip_quantiles": list(PC1_CLIP_QUANTILES),
+            "output_min": int(PC1_OUTPUT_MIN),
+            "output_max": int(PC1_OUTPUT_MAX),
+            "nbbin": PC1_NBBIN,
+            "valid_pixel_clip_values": pc1_clip_values,
+        }
+        if is_rgb
+        else None,
+        "dglcm_pc1_small_radius_m": config.dglcm_pc1_small_radius_m,
+        "dglcm_pc1_large_radius_m": config.dglcm_pc1_large_radius_m,
+        "small_radius_m": config.dglcm_pc1_small_radius_m,
+        "large_radius_m": config.dglcm_pc1_large_radius_m,
+        "small_radius_px": small_radius_px,
+        "large_radius_px": large_radius_px,
+        "ratio_formula": "DGLCM_PC1_SMALL / (DGLCM_PC1_LARGE + eps)"
+        if is_rgb
+        else None,
+        "ratio_eps": RATIO_EPS if is_rgb else None,
         "derived_radius_px": derived["derived_radius_px"],
         "intermediate_paths": intermediate_paths,
         "mask_application": mask_application,
@@ -447,7 +772,9 @@ def run_channel_construction_step(config) -> dict[str, object]:
     }
     report = {key: report[key] for key in REPORT_KEYS}
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+    report_path.write_text(
+        json.dumps(report, indent=2, sort_keys=False) + "\n", encoding="utf-8"
+    )
     write_step_manifest(
         config.output_dir,
         step="channels",

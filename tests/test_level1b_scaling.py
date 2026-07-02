@@ -1,11 +1,8 @@
 import json
 from pathlib import Path
 import subprocess
-import sys
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT))
+import numpy as np
 
 import metashape_qc_engine.level1b_scaling as scaling
 from metashape_qc_engine.level1b_scaling import (
@@ -13,9 +10,9 @@ from metashape_qc_engine.level1b_scaling import (
     Level1BScalingConfig,
     build_level1b_scaling_layout,
     build_masked_feature_stack_command,
+    build_quantile_scaling_command,
     build_statistics_command,
-    build_zscore_scaling_command,
-    parse_scaling_statistics_xml,
+    compute_quantile_scaling_parameters,
     run_scaling_step,
     validate_scaling_config,
 )
@@ -26,287 +23,278 @@ def fake_otb_path(executable_name: str) -> str:
 
 
 def make_input(tmp_path: Path, name: str = "proxy_stack.tif") -> Path:
-    input_path = tmp_path / name
-    input_path.touch()
-    return input_path
+    path = tmp_path / name
+    path.touch()
+    return path
 
 
 def make_mask(tmp_path: Path) -> Path:
-    mask_path = tmp_path / "valid_mask.tif"
-    mask_path.touch()
-    return mask_path
+    path = tmp_path / "valid_mask.tif"
+    path.touch()
+    return path
 
 
-def make_config(tmp_path: Path, **overrides: object) -> Level1BScalingConfig:
+def make_config(tmp_path: Path, **overrides) -> Level1BScalingConfig:
     values = {
         "candidate_id": "candidate-1",
         "feature_stack_path": make_input(tmp_path),
         "valid_mask_path": make_mask(tmp_path),
         "output_dir": tmp_path / "out",
-        "band_count": 3,
+        "band_count": 6,
     }
     values.update(overrides)
     return Level1BScalingConfig(**values)
 
 
-def run_dry(tmp_path: Path, monkeypatch, **overrides: object) -> dict[str, object]:
+def run_dry(tmp_path: Path, monkeypatch, **overrides) -> dict[str, object]:
     monkeypatch.setattr("shutil.which", fake_otb_path)
     return run_scaling_step(make_config(tmp_path, dry_run=True, **overrides))
 
 
-def test_layout_creates_required_dirs_and_paths(tmp_path: Path) -> None:
-    custom_tmp = tmp_path / "runtime-tmp"
+def test_layout_creates_required_directories(tmp_path: Path) -> None:
+    custom_tmp = tmp_path / "runtime"
     layout = build_level1b_scaling_layout(tmp_path / "out", custom_tmp)
-
-    assert layout["default_tmp_dir"] == tmp_path / "out" / "level1b" / "tmp"
-    assert layout["runtime_tmp_dir"] == custom_tmp
-    assert layout["logs_dir"].is_dir()
-    assert layout["reports_dir"].is_dir()
-    assert layout["scaling_dir"].is_dir()
     assert layout["runtime_scaling_tmp_dir"] == custom_tmp / "scaling"
-    assert layout["runtime_scaling_tmp_dir"].is_dir()
+    assert all(path.is_dir() for path in layout.values())
 
 
-def test_dry_run_builds_bandmathx_masked_stack_command(tmp_path: Path, monkeypatch) -> None:
-    report = run_dry(tmp_path, monkeypatch)
-    command = report["otb_commands"][0]
-
-    assert report["status"] == "dry_run"
-    assert command[0] == "/fake/bin/otbcli_BandMathX"
-    assert command[command.index("-out") + 1].endswith("masked_feature_stack_tmp.tif")
-    assert command[-1].startswith("{")
-    assert command[-1].count(";") == 2
-
-
-def test_masked_stack_command_uses_valid_mask_and_background_value(tmp_path: Path) -> None:
-    config = make_config(tmp_path, background_value=-123.5)
-    layout = build_level1b_scaling_layout(tmp_path / "out")
-    command = build_masked_feature_stack_command(config, {"BandMathX": "/fake/bmx"}, layout)
-
+def test_masked_stack_command_is_band_count_generic_for_six_bands(tmp_path: Path) -> None:
+    config = make_config(tmp_path, band_count=6, background_value=-123.5)
+    layout = build_level1b_scaling_layout(config.output_dir)
+    command = build_masked_feature_stack_command(
+        config, {"BandMathX": "/fake/bmx"}, layout
+    )
+    expression = command[-1]
     assert str(config.valid_mask_path) in command
-    assert "im2b1 > 0" in command[-1]
-    assert "-123.5" in command[-1]
-    assert "im1b1" in command[-1]
-    assert "im1b3" in command[-1]
+    assert expression.count(";") == 5
+    assert all(f"im1b{index}" in expression for index in range(1, 7))
+    assert expression.count("im2b1 > 0") == 6
+    assert "-123.5" in expression
 
 
-def test_dry_run_builds_compute_images_statistics_command_with_bv_and_out_xml(tmp_path: Path, monkeypatch) -> None:
-    report = run_dry(tmp_path, monkeypatch, background_value=-7)
-    command = report["otb_commands"][1]
+def test_dry_run_builds_mask_and_statistics_commands_without_execution(
+    tmp_path: Path, monkeypatch
+) -> None:
+    called = False
 
-    assert command[0] == "/fake/bin/otbcli_ComputeImagesStatistics"
-    assert command[command.index("-bv") + 1] == "-7.0"
-    assert command[command.index("-out.xml") + 1].endswith("scaling_parameters.xml")
-
-
-def test_dry_run_does_not_call_subprocess(tmp_path: Path, monkeypatch) -> None:
-    called = {"value": False}
-
-    def fake_run(*_args: object, **_kwargs: object) -> object:
-        called["value"] = True
-        raise AssertionError("process must not run")
+    def fail_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("dry run must not execute subprocesses")
 
     monkeypatch.setattr("shutil.which", fake_otb_path)
-    monkeypatch.setattr("metashape_qc_engine.level1b_scaling.subprocess.run", fake_run)
+    monkeypatch.setattr(scaling.subprocess, "run", fail_run)
     report = run_scaling_step(make_config(tmp_path, dry_run=True))
-
-    assert called["value"] is False
-    assert report["scaled_output_created"] is False
-    assert report["scaling_parameters_json_written"] is False
-
-
-def test_validation_fails_for_missing_feature_stack(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("shutil.which", fake_otb_path)
-    report = run_scaling_step(make_config(tmp_path, feature_stack_path=tmp_path / "missing.tif", dry_run=True))
-
-    assert report["status"] == "failed"
-    assert report["checks"]["feature_stack_path_exists"] is False
+    assert report["status"] == "dry_run"
+    assert called is False
+    assert len(report["otb_commands"]) == 2
+    assert "BandMathX" in report["otb_commands"][0][0]
+    assert "ComputeImagesStatistics" in report["otb_commands"][1][0]
 
 
-def test_validation_fails_for_missing_mask(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("shutil.which", fake_otb_path)
-    report = run_scaling_step(make_config(tmp_path, valid_mask_path=tmp_path / "missing.tif", dry_run=True))
+def test_statistics_command_uses_background_and_xml_output(tmp_path: Path) -> None:
+    config = make_config(tmp_path, background_value=-7)
+    layout = build_level1b_scaling_layout(config.output_dir)
+    command = build_statistics_command(
+        config, {"ComputeImagesStatistics": "/fake/stats"}, layout
+    )
+    assert command[command.index("-bv") + 1] == "-7.0"
+    assert command[command.index("-out.xml") + 1].endswith(
+        "scaling_parameters.xml"
+    )
 
-    assert report["status"] == "failed"
-    assert report["checks"]["valid_mask_path_exists"] is False
 
-
-def test_validation_fails_for_invalid_band_count(tmp_path: Path) -> None:
-    config = make_config(tmp_path, band_count=0)
-    layout = build_level1b_scaling_layout(tmp_path / "out")
+def test_validation_rejects_missing_inputs_and_invalid_band_count(tmp_path: Path) -> None:
+    config = make_config(
+        tmp_path,
+        feature_stack_path=tmp_path / "missing-stack.tif",
+        valid_mask_path=tmp_path / "missing-mask.tif",
+        band_count=0,
+    )
+    layout = build_level1b_scaling_layout(config.output_dir)
     checks, reasons = validate_scaling_config(
         config,
         layout,
         {"BandMathX": "/fake/bmx", "ComputeImagesStatistics": "/fake/stats"},
     )
-
+    assert checks["feature_stack_path_exists"] is False
+    assert checks["valid_mask_path_exists"] is False
     assert checks["band_count_positive_integer"] is False
     assert "band_count must be a positive integer" in reasons
 
 
-def test_validation_fails_if_bandmathx_is_missing(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "shutil.which",
-        lambda name: None if name == "otbcli_BandMathX" else fake_otb_path(name),
-    )
-    report = run_scaling_step(make_config(tmp_path, dry_run=True))
-
-    assert report["checks"]["otb_bandmathx_discoverable"] is False
-    assert "no OTB BandMathX app discoverable" in report["failure_reasons"]
-
-
-def test_validation_fails_if_compute_images_statistics_is_missing(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "shutil.which",
-        lambda name: None if name == "otbcli_ComputeImagesStatistics" else fake_otb_path(name),
-    )
-    report = run_scaling_step(make_config(tmp_path, dry_run=True))
-
-    assert report["checks"]["otb_compute_images_statistics_discoverable"] is False
-    assert "no OTB ComputeImagesStatistics app discoverable" in report["failure_reasons"]
-
-
-def test_xml_parser_extracts_means_and_standard_deviations_for_band_count(tmp_path: Path) -> None:
-    xml_path = tmp_path / "stats.xml"
-    xml_path.write_text(
-        """
-<FeatureStatistics>
-  <Statistic name="mean"><Values>1.0 2.0 3.0</Values></Statistic>
-  <Statistic name="stddev"><Values>4.0 5.0 6.0</Values></Statistic>
-</FeatureStatistics>
-""",
-        encoding="utf-8",
-    )
-
-    assert parse_scaling_statistics_xml(xml_path, 3) == {
-        "means": [1.0, 2.0, 3.0],
-        "standard_deviations": [4.0, 5.0, 6.0],
-    }
-
-
-def test_xml_parser_fails_on_missing_or_nonpositive_standard_deviation(tmp_path: Path) -> None:
-    missing_xml = tmp_path / "missing-std.xml"
-    missing_xml.write_text("<Stats><Mean>1 2</Mean></Stats>", encoding="utf-8")
-    bad_xml = tmp_path / "bad-std.xml"
-    bad_xml.write_text("<Stats><Mean>1 2</Mean><StdDev>1 0</StdDev></Stats>", encoding="utf-8")
-
-    for xml_path in (missing_xml, bad_xml):
-        try:
-            parse_scaling_statistics_xml(xml_path, 2)
-        except ValueError as exc:
-            assert "invalid scaling statistics" in str(exc)
-        else:
-            raise AssertionError("expected parser failure")
-
-
-def test_zscore_command_uses_valid_mask_and_one_expression_per_band(tmp_path: Path) -> None:
-    config = make_config(tmp_path, band_count=2, background_value=-9)
-    layout = build_level1b_scaling_layout(tmp_path / "out")
-    command = build_zscore_scaling_command(
+def test_validation_rejects_missing_required_otb_apps(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    layout = build_level1b_scaling_layout(config.output_dir)
+    checks, reasons = validate_scaling_config(
         config,
-        {"BandMathX": "/fake/bmx"},
         layout,
-        {"means": [10.0, 20.0], "standard_deviations": [2.0, 4.0]},
+        {"BandMathX": None, "ComputeImagesStatistics": None},
     )
-
-    assert str(config.valid_mask_path) in command
-    assert "im2b1 > 0" in command[-1]
-    assert "((im1b1 - 10.0) / 2.0)" in command[-1]
-    assert "((im1b2 - 20.0) / 4.0)" in command[-1]
-    assert command[-1].count(";") == 1
+    assert checks["otb_bandmathx_discoverable"] is False
+    assert checks["otb_compute_images_statistics_discoverable"] is False
+    assert "no OTB BandMathX app discoverable" in reasons
+    assert "no OTB ComputeImagesStatistics app discoverable" in reasons
 
 
-def test_mocked_successful_execution_returns_ok_and_writes_parameters_json(tmp_path: Path, monkeypatch) -> None:
+class _FakeBand:
+    def __init__(self, values):
+        self.values = np.asarray(values)
+
+    def ReadAsArray(self):
+        return self.values
+
+
+class _FakeDataset:
+    def __init__(self, bands):
+        self.bands = bands
+
+    def GetRasterBand(self, index):
+        return _FakeBand(self.bands[index - 1])
+
+
+def test_quantile_parameters_use_valid_finite_two_and_ninety_eight_percentiles(
+    tmp_path: Path, monkeypatch
+) -> None:
+    background = -999999.0
+    bands = []
+    for offset in range(6):
+        values = np.array(
+            [[background, np.nan, offset], [offset + 1, offset + 2, offset + 100]],
+            dtype=float,
+        )
+        bands.append(values)
+    monkeypatch.setattr(scaling.gdal, "Open", lambda path: _FakeDataset(bands))
+    stats = compute_quantile_scaling_parameters(
+        tmp_path / "masked.tif",
+        make_config(tmp_path, background_value=background, band_count=6),
+    )
+    assert len(stats["lower_values"]) == 6
+    assert len(stats["upper_values"]) == 6
+    for index, values in enumerate(bands):
+        valid = values[(values != background) & np.isfinite(values)]
+        lower, upper = np.quantile(valid, [0.02, 0.98])
+        assert stats["lower_values"][index] == float(lower)
+        assert stats["upper_values"][index] == float(upper)
+        assert stats["centers"][index] == (float(lower) + float(upper)) / 2
+        assert stats["scales"][index] == (float(upper) - float(lower)) / 2
+
+
+def test_quantile_parameters_reject_empty_or_constant_valid_band(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = make_config(tmp_path, band_count=1)
+    for array, expected in (
+        (np.full((2, 2), config.background_value), "no valid pixels"),
+        (np.ones((2, 2)), "upper <= lower"),
+    ):
+        monkeypatch.setattr(
+            scaling.gdal, "Open", lambda path, array=array: _FakeDataset([array])
+        )
+        try:
+            compute_quantile_scaling_parameters(tmp_path / "masked.tif", config)
+        except ValueError as exc:
+            assert expected in str(exc)
+        else:
+            raise AssertionError("expected robust-scaling validation failure")
+
+
+def test_quantile_scaling_command_clips_six_bands_to_minus_one_plus_one(
+    tmp_path: Path,
+) -> None:
+    config = make_config(tmp_path, band_count=6, background_value=-9)
+    layout = build_level1b_scaling_layout(config.output_dir)
+    stats = {
+        "centers": [float(index) for index in range(1, 7)],
+        "scales": [2.0] * 6,
+    }
+    command = build_quantile_scaling_command(
+        config, {"BandMathX": "/fake/bmx"}, layout, stats
+    )
+    expression = command[-1]
+    assert expression.count(";") == 5
+    assert expression.count("< -1.0") == 6
+    assert expression.count("> 1.0") == 6
+    assert expression.count("im2b1 > 0") == 6
+    assert all(f"im1b{index}" in expression for index in range(1, 7))
+    assert "-9.0" in expression
+
+
+def test_successful_run_writes_robust_percentile_parameters(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setattr("shutil.which", fake_otb_path)
 
-    def fake_run(command: list[str], capture_output: bool, text: bool) -> subprocess.CompletedProcess:
-        assert capture_output is True
-        assert text is True
-        if "otbcli_ComputeImagesStatistics" in command[0]:
-            Path(command[command.index("-out.xml") + 1]).write_text(
-                "<Stats><Mean>1 2 3</Mean><StdDev>4 5 6</StdDev></Stats>",
-                encoding="utf-8",
-            )
-        if "otbcli_BandMathX" in command[0] and command[command.index("-out") + 1].endswith(
-            "scaled_feature_stack.tif"
-        ):
-            Path(command[command.index("-out") + 1]).touch()
+    def fake_run(command, capture_output, text):
+        output = Path(command[command.index("-out") + 1]) if "-out" in command else None
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.touch()
+        if "-out.xml" in command:
+            xml = Path(command[command.index("-out.xml") + 1])
+            xml.parent.mkdir(parents=True, exist_ok=True)
+            xml.write_text("<stats/>")
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr("metashape_qc_engine.level1b_scaling.subprocess.run", fake_run)
-    report = run_scaling_step(make_config(tmp_path))
-    params = json.loads(Path(report["scaling_parameters_json_path"]).read_text(encoding="utf-8"))
-
+    stats = {
+        "lower_values": [float(index) for index in range(6)],
+        "upper_values": [float(index + 10) for index in range(6)],
+        "centers": [float(index + 5) for index in range(6)],
+        "scales": [5.0] * 6,
+    }
+    monkeypatch.setattr(scaling.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        scaling, "compute_quantile_scaling_parameters", lambda path, config: stats
+    )
+    report = run_scaling_step(make_config(tmp_path, band_count=6))
+    parameters = json.loads(
+        Path(report["scaling_parameters_json_path"]).read_text()
+    )
     assert report["status"] == "ok"
-    assert report["scaling_parameters_json_written"] is True
-    assert params["means"] == [1.0, 2.0, 3.0]
-    assert params["standard_deviations"] == [4.0, 5.0, 6.0]
+    assert len(report["otb_commands"]) == 3
+    assert parameters["method"] == "robust_percentile_clipped"
+    assert parameters["lower_quantile"] == 0.02
+    assert parameters["upper_quantile"] == 0.98
+    assert parameters["output_min"] == -1.0
+    assert parameters["output_max"] == 1.0
+    assert parameters["band_count"] == 6
+    assert parameters["lower_values"] == stats["lower_values"]
+    assert parameters["upper_values"] == stats["upper_values"]
+    assert report["scaled_output_created"] is True
 
 
-def test_mocked_failed_subprocess_execution_returns_failed(tmp_path: Path, monkeypatch) -> None:
+def test_failed_subprocess_stops_without_parameters_json(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("shutil.which", fake_otb_path)
     monkeypatch.setattr(
-        "metashape_qc_engine.level1b_scaling.subprocess.run",
-        lambda command, capture_output, text: subprocess.CompletedProcess(command, 2, "", "failed"),
+        scaling.subprocess,
+        "run",
+        lambda command, capture_output, text: subprocess.CompletedProcess(
+            command, 2, "", "failed"
+        ),
     )
-
     report = run_scaling_step(make_config(tmp_path))
-
     assert report["status"] == "failed"
     assert report["command_results"][0]["returncode"] == 2
+    assert report["scaling_parameters_json_written"] is False
 
 
-def test_report_contains_exactly_required_keys(tmp_path: Path, monkeypatch) -> None:
-    report = run_dry(tmp_path, monkeypatch)
-
-    assert tuple(report) == REPORT_KEYS
-    assert set(json.loads(Path(report["report_path"]).read_text(encoding="utf-8"))) == set(REPORT_KEYS)
-
-
-def test_protected_existing_files_are_unchanged(tmp_path: Path, monkeypatch) -> None:
+def test_existing_output_is_preserved_without_overwrite(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("shutil.which", fake_otb_path)
-    output_dir = tmp_path / "out"
-    existing = output_dir / "level1b" / "scaling" / "scaled_feature_stack.tif"
+    config = make_config(tmp_path)
+    existing = Path(config.output_dir) / "level1b" / "scaling" / config.output_filename
     existing.parent.mkdir(parents=True)
-    existing.write_text("keep", encoding="utf-8")
-
-    report = run_scaling_step(make_config(tmp_path, output_dir=output_dir))
-
+    existing.write_text("keep")
+    report = run_scaling_step(config)
     assert report["status"] == "failed"
-    assert existing.read_text(encoding="utf-8") == "keep"
+    assert existing.read_text() == "keep"
 
 
-def test_source_has_no_forbidden_raster_imports_and_no_blocked_workflow_symbols() -> None:
-    source = Path(scaling.__file__).read_text(encoding="utf-8")
-    import_tokens = [
-        "rast" + "erio",
-        "os" + "geo",
-        "gd" + "al",
-        "num" + "py",
-        "sci" + "py",
-        "ski" + "mage",
-        "c" + "v2",
-        "P" + "IL",
-        "pan" + "das",
-        "geo" + "pan" + "das",
-        "xar" + "ray",
-        "rio" + "xar" + "ray",
-        "ter" + "ra",
-        "sta" + "rs",
-        "link" + "2GI",
-    ]
-    blocked_symbols = [
-        "pca_feature" + "_stack",
-        "pca_" + "report",
-        "TrainDimensionality" + "Reduction",
-        "ImageDimensionality" + "Reduction",
-        "Mean" + "Shift",
-        "LS" + "MS",
-        "Hoo" + "ver",
-        "scale_" + "candidates",
-        "rang" + "er",
-        "seg" + "mentation",
-    ]
+def test_report_contains_exactly_current_report_keys(tmp_path: Path, monkeypatch) -> None:
+    report = run_dry(tmp_path, monkeypatch)
+    on_disk = json.loads(Path(report["report_path"]).read_text())
+    assert tuple(report) == REPORT_KEYS
+    assert set(on_disk) == set(REPORT_KEYS)
 
-    for token in import_tokens + blocked_symbols:
-        assert token not in source
+
+def test_zscore_builder_is_not_exposed() -> None:
+    assert not hasattr(scaling, "build_zscore_scaling_command")

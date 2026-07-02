@@ -8,7 +8,7 @@ The repository layout is historical. Processing code is mostly in `metashape_qc_
 
 - an RGB orthomosaic readable by GDAL
 - the repository's Python environment
-- OTB command-line applications available through the configured OTB installation
+- OTB command-line applications available through the configured OTB installation, including `DimensionalityReduction` for RGB-PC1 and `HaralickTextureExtraction` for directional GLCM Inertia
 - GDAL, including `gdal_edit.py`
 - `Rscript` with `sf`, `terra`, `exactextractr`, and `jsonlite`
 - sufficient storage for response-surface candidate runs
@@ -133,7 +133,8 @@ These commands use exact manifests recorded in a successful chain report. On non
 Under `RUN_ROOT/level1b/`:
 
 - `mask/valid_mask.tif`
-- `channels/proxy_stack.tif`
+- `channels/proxy_stack.tif` — six bands in order: `ExGR`, `ExR`, `BRI`, `DGLCM_PC1_SMALL`, `DGLCM_PC1_LARGE`, `RATIO_DGLCM_PC1`
+- `channels/channel_report.json` — band order, PC1 quantization, Haralick directions/radii, aggregation, and ratio contract
 - `scaling/scaled_feature_stack.tif`
 - `scales/scale_candidates.json`
 - `ranger/scale_candidates_with_ranger.json`
@@ -185,7 +186,7 @@ It lists six PNGs covering decision scores, stability/support distributions, seg
 1. Read `RUN_ROOT/level1b_dumb_chain_report.json` for status and exception text.
 2. Read the end of `RUN_ROOT/level1b_chain.log` and identify the last completed step.
 3. Inspect `RUN_ROOT/level1b/manifests/<step>.json` for that step's status, inputs, and artifacts.
-4. For preflight failure, verify OTB applications and `gdal_edit.py` in the wrapper's effective `PATH`.
+4. For preflight failure, verify required OTB applications—including `DimensionalityReduction` and `HaralickTextureExtraction`—and `gdal_edit.py` in the wrapper's effective `PATH`.
 5. For Step-9a failure, inspect `candidate_response_surface_report.json` and referenced per-run reports. Do not treat a partial response surface as complete.
 6. For a non-adjacent exit, inspect `step9b_supported_scale_alternatives.json`; this is an analyst-choice branch, not a crash.
 7. For Step-10 quality failure, verify selected segments, the selected masked value raster, `Rscript`, and required R packages.
