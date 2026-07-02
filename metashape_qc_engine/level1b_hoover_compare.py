@@ -5,6 +5,8 @@ import re
 import shutil
 import subprocess
 
+from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+
 
 HOOVER_APP_NAME = "otbcli_HooverCompareSegmentation"
 RASTER_SUFFIXES = {".tif", ".tiff"}
@@ -203,7 +205,12 @@ def run_hoover_compare(config: Level1BHooverCompareConfig) -> dict[str, object]:
         return report
 
     layout["compare_dir"].mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        **otb_subprocess_kwargs(command),
+    )
     raw_text = result.stdout
     if result.stderr:
         raw_text = f"{raw_text}\n[stderr]\n{result.stderr}" if raw_text else f"[stderr]\n{result.stderr}"

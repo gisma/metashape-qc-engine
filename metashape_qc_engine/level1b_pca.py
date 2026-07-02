@@ -7,6 +7,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
 REPORT_KEYS = (
@@ -217,7 +219,12 @@ def run_pca_step(config) -> dict[str, object]:
         _write_report(report)
         return report
 
-    result = subprocess.run(pca_command, capture_output=True, text=True)
+    result = subprocess.run(
+        pca_command,
+        capture_output=True,
+        text=True,
+        **otb_subprocess_kwargs(pca_command),
+    )
     report["command_results"].append(_command_result(pca_command, result))
     report["pca_tmp_created"] = result.returncode == 0
     if result.returncode != 0:
@@ -226,7 +233,12 @@ def run_pca_step(config) -> dict[str, object]:
         _write_report(report)
         return report
 
-    result = subprocess.run(remask_command, capture_output=True, text=True)
+    result = subprocess.run(
+        remask_command,
+        capture_output=True,
+        text=True,
+        **otb_subprocess_kwargs(remask_command),
+    )
     report["command_results"].append(_command_result(remask_command, result))
     if result.returncode != 0:
         report["status"] = "failed"

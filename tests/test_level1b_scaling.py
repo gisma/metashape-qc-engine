@@ -225,7 +225,8 @@ def test_successful_run_writes_robust_percentile_parameters(
 ) -> None:
     monkeypatch.setattr("shutil.which", fake_otb_path)
 
-    def fake_run(command, capture_output, text):
+    def fake_run(command, capture_output, text, **kwargs):
+        assert kwargs["env"]["PATH"]
         output = Path(command[command.index("-out") + 1]) if "-out" in command else None
         if output is not None:
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -268,7 +269,7 @@ def test_failed_subprocess_stops_without_parameters_json(tmp_path: Path, monkeyp
     monkeypatch.setattr(
         scaling.subprocess,
         "run",
-        lambda command, capture_output, text: subprocess.CompletedProcess(
+        lambda command, capture_output, text, **kwargs: subprocess.CompletedProcess(
             command, 2, "", "failed"
         ),
     )

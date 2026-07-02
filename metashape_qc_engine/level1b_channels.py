@@ -8,6 +8,8 @@ import shutil
 import subprocess
 from types import SimpleNamespace
 
+from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+
 from metashape_qc_engine.level1b_pca import (
     Level1BPCAConfig,
     build_level1b_pca_layout,
@@ -581,7 +583,12 @@ def build_multichannel_stack_command(
 
 
 def _run_command(command) -> tuple[dict[str, object], bool]:
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        **otb_subprocess_kwargs(command),
+    )
     return (
         {
             "command": command,

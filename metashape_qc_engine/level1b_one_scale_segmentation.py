@@ -5,6 +5,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
 OTB_APP_CLI_NAMES = {
@@ -484,7 +486,12 @@ def prepare_canonical_masked_segmentation_stack(
     command_results = []
     failure_reasons = []
     for command in commands:
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            **otb_subprocess_kwargs(command),
+        )
         command_results.append(
             {
                 "command": command,
@@ -783,7 +790,12 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
         return _write_report(report, layout)
 
     for command, expected_artifacts, completion_flag in command_steps:
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            **otb_subprocess_kwargs(command),
+        )
         report["command_results"].append(
             {
                 "command": command,

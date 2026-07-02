@@ -5,6 +5,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+
 from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 
@@ -257,7 +259,12 @@ def run_valid_mask_step(config: Level1BValidMaskConfig) -> dict[str, object]:
                 if config.dry_run:
                     status = "dry_run"
                 else:
-                    result = subprocess.run(command, capture_output=True, text=True)
+                    result = subprocess.run(
+                        command,
+                        capture_output=True,
+                        text=True,
+                        **otb_subprocess_kwargs(command),
+                    )
                     stdout = result.stdout
                     stderr = result.stderr
                     returncode = result.returncode

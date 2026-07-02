@@ -232,7 +232,8 @@ def test_actual_rgb_execution_calls_existing_pca_and_valid_quantiles(tmp_path, m
     monkeypatch.setattr("shutil.which", fake_otb_path)
     pca_configs = []
 
-    def fake_subprocess(command, capture_output, text):
+    def fake_subprocess(command, capture_output, text, **kwargs):
+        assert kwargs["env"]["PATH"]
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
     def fake_pca(config):

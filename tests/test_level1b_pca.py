@@ -225,7 +225,7 @@ def test_validation_fails_if_bandmathx_is_missing(tmp_path: Path, monkeypatch) -
 def test_mocked_successful_execution_returns_ok(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("shutil.which", fake_otb_path)
 
-    def fake_run(command: list[str], capture_output: bool, text: bool) -> subprocess.CompletedProcess:
+    def fake_run(command: list[str], capture_output: bool, text: bool, **kwargs) -> subprocess.CompletedProcess:
         assert capture_output is True
         assert text is True
         return subprocess.CompletedProcess(command, 0, "ok", "")
@@ -243,7 +243,7 @@ def test_mocked_failed_dimensionality_reduction_returns_failed(tmp_path: Path, m
     monkeypatch.setattr("shutil.which", fake_otb_path)
     monkeypatch.setattr(
         "metashape_qc_engine.level1b_pca.subprocess.run",
-        lambda command, capture_output, text: subprocess.CompletedProcess(command, 2, "", "failed"),
+        lambda command, capture_output, text, **kwargs: subprocess.CompletedProcess(command, 2, "", "failed"),
     )
     report = run_pca_step(make_config(tmp_path))
 
@@ -257,7 +257,7 @@ def test_mocked_failed_remask_returns_failed(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr("shutil.which", fake_otb_path)
     calls = {"count": 0}
 
-    def fake_run(command: list[str], capture_output: bool, text: bool) -> subprocess.CompletedProcess:
+    def fake_run(command: list[str], capture_output: bool, text: bool, **kwargs) -> subprocess.CompletedProcess:
         calls["count"] += 1
         returncode = 0 if calls["count"] == 1 else 2
         return subprocess.CompletedProcess(command, returncode, "", "failed" if returncode else "")

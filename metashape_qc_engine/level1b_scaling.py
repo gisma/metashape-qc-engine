@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 
+from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+
 import numpy as np
 from osgeo import gdal
 
@@ -352,7 +354,12 @@ def run_scaling_step(config) -> dict[str, object]:
         return report
 
     for command in (masked_command, statistics_command):
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            **otb_subprocess_kwargs(command),
+        )
         report["command_results"].append(_command_result(command, result))
         if result.returncode != 0:
             report["status"] = "failed"
@@ -397,7 +404,12 @@ def run_scaling_step(config) -> dict[str, object]:
 
     robust_command = build_quantile_scaling_command(config, apps, layout, stats)
     report["otb_commands"].append(robust_command)
-    result = subprocess.run(robust_command, capture_output=True, text=True)
+    result = subprocess.run(
+        robust_command,
+        capture_output=True,
+        text=True,
+        **otb_subprocess_kwargs(robust_command),
+    )
     report["command_results"].append(_command_result(robust_command, result))
     if result.returncode != 0:
         report["status"] = "failed"

@@ -43,7 +43,59 @@ EOF
   export PATH="$RUNTIME_BIN:$PATH"
 fi
 
+# Preserve the complete OTB CLI runtime before sanitizing the Python process.
+export LEVEL1B_OTB_PYTHONPATH_ORIG="${PYTHONPATH:-}"
+export LEVEL1B_OTB_LD_LIBRARY_PATH_ORIG="${LD_LIBRARY_PATH:-}"
+export LEVEL1B_OTB_APPLICATION_PATH_ORIG="${OTB_APPLICATION_PATH:-}"
+export LEVEL1B_OTB_PATH_ORIG="$PATH"
+export LEVEL1B_OTB_GDAL_DATA_ORIG="${GDAL_DATA:-}"
+export LEVEL1B_OTB_PROJ_LIB_ORIG="${PROJ_LIB:-}"
+
 export PYTHONPATH="$REPO:${PYTHONPATH:-}"
+
+# OTB CLI tools run as external commands. Do not let OTB's Python bindings
+# shadow the active venv GDAL bindings, which are compatible with NumPy 2.
+IFS=':' read -r -a _PYTHONPATH_ENTRIES <<< "${PYTHONPATH:-}"
+_SANITIZED_PYTHONPATH_ENTRIES=()
+for _PYTHONPATH_ENTRY in "${_PYTHONPATH_ENTRIES[@]}"; do
+  case "$_PYTHONPATH_ENTRY" in
+    "$OTB_ROOT"/lib/python*/dist-packages|\
+    "$OTB_ROOT"/lib/python*/site-packages|\
+    "$OTB_ROOT"/lib/otb/python)
+      continue
+      ;;
+  esac
+  _SANITIZED_PYTHONPATH_ENTRIES+=("$_PYTHONPATH_ENTRY")
+done
+if (( ${#_SANITIZED_PYTHONPATH_ENTRIES[@]} > 0 )); then
+  PYTHONPATH="$(IFS=:; printf '%s' "${_SANITIZED_PYTHONPATH_ENTRIES[*]}")"
+  export PYTHONPATH
+else
+  unset PYTHONPATH
+fi
+unset _PYTHONPATH_ENTRIES _SANITIZED_PYTHONPATH_ENTRIES _PYTHONPATH_ENTRY
+
+IFS=':' read -r -a _LD_LIBRARY_PATH_ENTRIES <<< "${LD_LIBRARY_PATH:-}"
+_SANITIZED_LD_LIBRARY_PATH_ENTRIES=()
+for _LD_LIBRARY_PATH_ENTRY in "${_LD_LIBRARY_PATH_ENTRIES[@]}"; do
+  case "$_LD_LIBRARY_PATH_ENTRY" in
+    "$OTB_ROOT"/lib|"$OTB_ROOT"/lib/*)
+      continue
+      ;;
+  esac
+  _SANITIZED_LD_LIBRARY_PATH_ENTRIES+=("$_LD_LIBRARY_PATH_ENTRY")
+done
+if (( ${#_SANITIZED_LD_LIBRARY_PATH_ENTRIES[@]} > 0 )); then
+  LD_LIBRARY_PATH="$(IFS=:; printf '%s' "${_SANITIZED_LD_LIBRARY_PATH_ENTRIES[*]}")"
+  export LD_LIBRARY_PATH
+else
+  unset LD_LIBRARY_PATH
+fi
+unset _LD_LIBRARY_PATH_ENTRIES _SANITIZED_LD_LIBRARY_PATH_ENTRIES _LD_LIBRARY_PATH_ENTRY
+
+echo "PYTHONPATH sanitized for Python runner"
+echo "LD_LIBRARY_PATH sanitized for Python runner"
+
 cd "$REPO"
 
 RUNNER_ARGS=(
@@ -61,5 +113,6 @@ echo "SHELL_LOG=$SHELL_LOG"
 printf 'COMMAND=python3 -m metashape_qc_engine.level1b_dumb_runner'
 printf ' %q' "${RUNNER_ARGS[@]}"
 printf '\n'
+python3 -c 'import osgeo; print(f"OSGEO_IMPORT_PATH={osgeo.__file__}")'
 
 python3 -m metashape_qc_engine.level1b_dumb_runner "${RUNNER_ARGS[@]}"
