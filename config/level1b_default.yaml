@@ -1,11 +1,19 @@
 level1b:
-  feature_band_count: 6
-
   channels:
     input_type: "rgb"
     rgb_band_indices: [1, 2, 3]
     dglcm_pc1_small_radius_m: 0.25
     dglcm_pc1_large_radius_m: 0.5
+    pc1_clip_quantiles: [0.02, 0.98]
+    pc1_output_min: 0
+    pc1_output_max: 255
+    glcm_nbbin: 32
+    glcm_directions:
+      - [1, 0]
+      - [1, 1]
+      - [0, 1]
+      - [-1, 1]
+    ratio_eps: 1.0e-6
     background_value: -999999.0
     report_filename: "channel_report.json"
 

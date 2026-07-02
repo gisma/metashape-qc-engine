@@ -30,6 +30,7 @@ def _install_stubs(
     *,
     branch: str = "adjacent",
     omit_step: str | None = None,
+    channel_band_count: int = 6,
 ) -> tuple[list[str], dict[str, object]]:
     calls: list[str] = []
     captured: dict[str, object] = {}
@@ -84,7 +85,7 @@ def _install_stubs(
                 "report": level1b / "channels" / "channel_report.json",
             },
         )
-        return {"status": "ok"}
+        return {"status": "ok", "band_count": channel_band_count}
 
     def scaling(config):
         calls.append("scaling")
@@ -469,6 +470,12 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     channel_config = captured["channels"]
     assert channel_config.dglcm_pc1_small_radius_m == 0.25
     assert channel_config.dglcm_pc1_large_radius_m == 0.5
+    assert channel_config.pc1_clip_quantiles == (0.02, 0.98)
+    assert channel_config.pc1_output_min == 0
+    assert channel_config.pc1_output_max == 255
+    assert channel_config.glcm_nbbin == 32
+    assert channel_config.glcm_directions == ((1, 0), (1, 1), (0, 1), (-1, 1))
+    assert channel_config.ratio_eps == 1e-6
     assert channel_config.background_value == -999999.0
     assert captured["scaling"].band_count == 6
     assert captured["feature_range"].band_count == 6
@@ -770,3 +777,17 @@ def test_cli_writes_same_report_path_for_failure(
         f"  tail -n 80 {output_dir / 'level1b_chain.log'}",
         f"  ls -la {output_dir / 'level1b' / 'manifests'}",
     ]
+
+
+def test_runner_propagates_recipe_band_count_without_yaml_duplicate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output_dir = tmp_path / "run"
+    _, captured = _install_stubs(
+        monkeypatch, output_dir, branch="adjacent", channel_band_count=7
+    )
+
+    runner.run_level1b_dumb_chain(Path("/tmp/ortho.tif"), output_dir)
+
+    assert captured["scaling"].band_count == 7
+    assert captured["feature_range"].band_count == 7

@@ -248,7 +248,12 @@ def parse_scaling_statistics_xml(xml_path, band_count) -> dict[str, list[float]]
     return {"means": means, "standard_deviations": standard_deviations}
 
 
-def compute_quantile_scaling_parameters(masked_stack_path, config) -> dict[str, list[float]]:
+def compute_quantile_scaling_parameters(
+    masked_stack_path,
+    config,
+    *,
+    quantile_probs: tuple[float, float] = (0.02, 0.98),
+) -> dict[str, list[float]]:
     dataset = gdal.Open(str(masked_stack_path))
     if dataset is None:
         raise ValueError(f"could not open masked feature stack: {masked_stack_path}")
@@ -265,7 +270,7 @@ def compute_quantile_scaling_parameters(masked_stack_path, config) -> dict[str, 
         if valid_values.size == 0:
             raise ValueError(f"band {band_index}: no valid pixels for robust scaling")
 
-        lower, upper = np.quantile(valid_values, [0.02, 0.98])
+        lower, upper = np.quantile(valid_values, quantile_probs)
         if upper <= lower:
             raise ValueError(f"band {band_index}: robust scaling upper <= lower")
 

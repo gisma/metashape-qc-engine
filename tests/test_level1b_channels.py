@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-import metashape_qc_engine.level1b_channels as channels
+import metashape_qc_engine.level1b_proxy_stack_rgb_dglcm as proxy_recipe
 from metashape_qc_engine.level1b_channels import (
     GLCM_DIRECTIONS,
     REPORT_KEYS,
@@ -119,6 +119,7 @@ def test_pc1_quantization_contract_is_reported_and_commanded(tmp_path, monkeypat
     assert quantization["output_max"] == 255
     assert quantization["nbbin"] == 32
     command = report["otb_commands"][3]
+    assert command.count("-il") == 1
     assert command[command.index("-il") + 1].endswith("rgb_pc1.tif")
     assert "PC1_Q02" in command[-1]
     assert "PC1_Q98" in command[-1]
@@ -240,12 +241,12 @@ def test_actual_rgb_execution_calls_existing_pca_and_valid_quantiles(tmp_path, m
         pca_configs.append(config)
         return {"status": "ok", "command_results": []}
 
-    monkeypatch.setattr(channels.subprocess, "run", fake_subprocess)
-    monkeypatch.setattr(channels, "run_pca_step", fake_pca)
+    monkeypatch.setattr(proxy_recipe.subprocess, "run", fake_subprocess)
+    monkeypatch.setattr(proxy_recipe, "run_pca_step", fake_pca)
     monkeypatch.setattr(
-        channels,
+        proxy_recipe,
         "compute_quantile_scaling_parameters",
-        lambda path, config: {
+        lambda path, config, **kwargs: {
             "lower_values": [-12.5],
             "upper_values": [42.5],
         },
@@ -298,3 +299,54 @@ def test_report_contains_exactly_required_keys(tmp_path, monkeypatch) -> None:
     on_disk = json.loads(Path(report["report_path"]).read_text())
     assert tuple(report) == REPORT_KEYS
     assert tuple(on_disk) == REPORT_KEYS
+
+
+def test_recipe_band_list_is_the_single_source_of_band_names_and_count(
+    tmp_path, monkeypatch
+) -> None:
+    original = proxy_recipe.rgb_dglcm_pc1_band_definitions
+
+    def extended(rgb_band_indices, ratio_eps):
+        bands, expressions = original(rgb_band_indices, ratio_eps)
+        return [*bands, ("EXTRA_TEST_CHANNEL", "im1b1")], expressions
+
+    monkeypatch.setattr(
+        proxy_recipe, "rgb_dglcm_pc1_band_definitions", extended
+    )
+    report = run_rgb_dry(tmp_path, monkeypatch)
+
+    assert report["band_count"] == 7
+    assert report["band_names"][-1] == "EXTRA_TEST_CHANNEL"
+    assert report["otb_commands"][-1][-1].count(";") == 6
+
+
+def test_yaml_controlled_recipe_parameters_reach_commands_and_report(
+    tmp_path, monkeypatch
+) -> None:
+    report = run_rgb_dry(
+        tmp_path,
+        monkeypatch,
+        pc1_clip_quantiles=(0.1, 0.9),
+        pc1_output_min=5,
+        pc1_output_max=200,
+        glcm_nbbin=16,
+        glcm_directions=((2, 0), (0, 2)),
+        ratio_eps=0.001,
+    )
+
+    haralick = [
+        command
+        for command in report["otb_commands"]
+        if "HaralickTextureExtraction" in command[0]
+    ]
+    assert len(haralick) == 4
+    assert report["pc1_quantization"]["clip_quantiles"] == [0.1, 0.9]
+    assert report["pc1_quantization"]["output_min"] == 5
+    assert report["pc1_quantization"]["output_max"] == 200
+    assert report["pc1_quantization"]["nbbin"] == 16
+    assert "PC1_Q10" in report["otb_commands"][3][-1]
+    assert "PC1_Q90" in report["otb_commands"][3][-1]
+    assert all(command[command.index("-parameters.nbbin") + 1] == "16" for command in haralick)
+    assert all(command[command.index("-parameters.min") + 1] == "5" for command in haralick)
+    assert all(command[command.index("-parameters.max") + 1] == "200" for command in haralick)
+    assert "0.001" in report["otb_commands"][-1][-1]

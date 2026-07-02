@@ -29,6 +29,29 @@ The `scale_distribution.baseline_candidate_radii_m` list contains the determinis
 
 There is no CLI option for an alternative Level-1B config path.
 
+### Proxy-stack parameters
+
+The active RGB proxy-stack parameters are in the `channels` block:
+
+- `rgb_band_indices`
+- `dglcm_pc1_small_radius_m` and `dglcm_pc1_large_radius_m`
+- `pc1_clip_quantiles`
+- `pc1_output_min` and `pc1_output_max`
+- `glcm_nbbin`
+- `glcm_directions`
+- `ratio_eps`
+- `background_value`
+
+`feature_band_count` is intentionally not a YAML setting. The active proxy-stack recipe derives `band_count` from its ordered band-definition list, and the runner passes that result to scaling and feature-range assignment. Adding or removing a recipe band therefore does not require a second band-count edit.
+
+The scientific RGB recipe is implemented in:
+
+```text
+metashape_qc_engine/level1b_proxy_stack_rgb_dglcm.py
+```
+
+`level1b_channels.py` validates paths and parameters, calls that recipe, and writes the existing `proxy_stack.tif` and `channel_report.json` artifacts.
+
 ## Normal wrapper call
 
 ```bash

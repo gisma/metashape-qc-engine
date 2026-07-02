@@ -201,6 +201,14 @@ def run_level1b_dumb_chain(
             dglcm_pc1_large_radius_m=channels_cfg[
                 "dglcm_pc1_large_radius_m"
             ],
+            pc1_clip_quantiles=tuple(channels_cfg["pc1_clip_quantiles"]),
+            pc1_output_min=float(channels_cfg["pc1_output_min"]),
+            pc1_output_max=float(channels_cfg["pc1_output_max"]),
+            glcm_nbbin=channels_cfg["glcm_nbbin"],
+            glcm_directions=tuple(
+                tuple(direction) for direction in channels_cfg["glcm_directions"]
+            ),
+            ratio_eps=channels_cfg["ratio_eps"],
             background_value=channels_cfg["background_value"],
             report_filename=channels_cfg["report_filename"],
             overwrite=overwrite,
@@ -212,6 +220,7 @@ def run_level1b_dumb_chain(
         "channels", channels_manifest, ("proxy_stack", "report")
     )
     proxy_stack = channels_artifacts["proxy_stack"]
+    proxy_band_count = int(channels_result["band_count"])
     step_results["channels"] = _compact_step_result(output_dir, channels_manifest)
 
     scaling_result = run_scaling_step(
@@ -220,7 +229,7 @@ def run_level1b_dumb_chain(
             feature_stack_path=proxy_stack,
             valid_mask_path=valid_mask,
             output_dir=output_dir,
-            band_count=cfg["feature_band_count"],
+            band_count=proxy_band_count,
             overwrite=overwrite,
         )
     )
@@ -267,7 +276,7 @@ def run_level1b_dumb_chain(
             valid_mask_path=valid_mask,
             scale_candidates_json_path=scale_candidates,
             feature_space_source=feature_range_cfg["feature_space_source"],
-            band_count=cfg["feature_band_count"],
+            band_count=proxy_band_count,
             sample_n=feature_range_cfg["sample_n"],
             knn_k=feature_range_cfg["knn_k"],
             quantile_probs=tuple(feature_range_cfg["quantile_probs"]),

@@ -8,7 +8,7 @@ Operational commands are in [RUN_LEVEL1B.md](RUN_LEVEL1B.md). This file maps the
 
 | Layer | Current code | Responsibility |
 |---|---|---|
-| Method steps | `level1b_valid_mask.py`, `level1b_channels.py`, `level1b_scaling.py`, `level1b_scale_distribution.py`, `level1b_feature_range.py`, `level1b_perturbations.py`, `level1b_candidate_response_surface.py`, `level1b_materialization.py` | Define domain, features, scale candidates, perturbations, response evidence, handoff, and products |
+| Method steps | `level1b_valid_mask.py`, `level1b_proxy_stack_rgb_dglcm.py`, `level1b_channels.py`, `level1b_scaling.py`, `level1b_scale_distribution.py`, `level1b_feature_range.py`, `level1b_perturbations.py`, `level1b_candidate_response_surface.py`, `level1b_materialization.py` | Define domain, features, scale candidates, perturbations, response evidence, handoff, and products |
 | Segment statistics | `R/level1b_step10_exactextractr_segment_stats.R` | Compute exactextractr summaries for materialized selected segments |
 | Contract validation | `level1b_preflight.py`, `level1b_step_manifest.py` | Validate runtime inputs/tools and expose stable per-step input/artifact keys |
 | Wrapper | `level1b_dumb_runner.py`, `run_level1b_dumb_with_user_header.sh` | Establish environment, call steps in order, enforce branch/status contracts, and write a compact report |
@@ -23,7 +23,7 @@ The mask is `level1b/mask/valid_mask.tif`; later steps receive this exact path. 
 
 ## 2. Deterministic six-band RGB proxy stack
 
-For RGB input, `level1b_channels.py` builds this exact normal-stack order:
+For RGB input, `level1b_proxy_stack_rgb_dglcm.py` defines and builds this exact normal-stack order. `level1b_channels.py` is the workflow adapter that validates inputs, invokes the recipe, and writes the channel artifacts:
 
 1. `ExGR` — green/living-vegetation dominance
 2. `ExR` — dry, reddish, soil, and residue component
@@ -49,6 +49,14 @@ Active radii are `dglcm_pc1_small_radius_m: 0.25` and `dglcm_pc1_large_radius_m:
 The previous five-channel ExGR neighborhood-variance stack and its historical `TEX_*` labels are legacy and are not the current normal RGB path. Current RGB structure is directional GLCM/Haralick Inertia on RGB-PC1, not undirected neighborhood variance.
 
 Outputs are `level1b/channels/proxy_stack.tif` and `channel_report.json`. The report records band order, PCA quantization, offsets, radii, aggregation, and ratio metadata.
+
+### Scientific extension point
+
+`rgb_dglcm_pc1_band_definitions()` is the single ordered definition of the final stack bands. Each entry contains a band name and its OTB BandMathX expression. The reported `band_names` and `band_count` are derived from this list rather than duplicated in YAML or the runner.
+
+A channel based on the existing RGB, small-structure, or large-structure inputs is added locally by appending one `(name, expression)` entry. A channel requiring a new raster operator additionally needs its intermediate command and raster added within the same recipe module. It does not require Step 9 or Step 10 changes. Scaling and feature-range assignment receive the resulting band count from the channel result.
+
+The normal method parameters are explicit in `config/level1b_default.yaml`: RGB band indices, metric DGLCM radii, PC1 clip quantiles and output range, GLCM bin count and directions, ratio epsilon, and background value. Fixed OTB interface facts—PCA input/component count, `texture=simple`, and Inertia output band 5—remain in the recipe code rather than being exposed as experimental YAML parameters.
 
 ## 3. Robust feature scaling
 
@@ -195,7 +203,7 @@ Each contains `step`, `status`, `inputs`, `artifacts`, and `provenance.candidate
 - Step-9a score terms define family ranking
 - Step-9b adjacency and fixed `> 0.5` rule define local handoff
 
-The normal CLI does not expose these as ad hoc arguments. Wired operational constants are centralized in `config/level1b_default.yaml`; other method defaults remain in current config classes.
+The normal CLI does not expose these as ad hoc arguments. Wired operational parameters are read from `config/level1b_default.yaml`; the proxy-stack band count is derived from the active recipe output rather than configured separately.
 
 ## Explicit non-scope
 
