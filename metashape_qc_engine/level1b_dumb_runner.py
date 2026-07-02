@@ -110,12 +110,6 @@ def _manifest_artifacts(
     return paths
 
 
-def _tuple_or_none(values: object) -> tuple | None:
-    if values is None:
-        return None
-    return tuple(values)
-
-
 def _compact_step_result(
     output_dir: Path,
     manifest: dict[str, object],
@@ -218,7 +212,6 @@ def run_level1b_dumb_chain(
         "channels", channels_manifest, ("proxy_stack", "report")
     )
     proxy_stack = channels_artifacts["proxy_stack"]
-    channel_report = channels_artifacts["report"]
     step_results["channels"] = _compact_step_result(output_dir, channels_manifest)
 
     scaling_result = run_scaling_step(
@@ -245,60 +238,9 @@ def run_level1b_dumb_chain(
             candidate_id=candidate_id,
             output_dir=output_dir,
             pixel_size_m=pixel_size_m,
-            scale_mode=scale_distribution_cfg["scale_mode"],
-
-            metric_radius_m=_tuple_or_none(
-                scale_distribution_cfg["metric_radius_m"]
+            baseline_candidate_radii_m=tuple(
+                scale_distribution_cfg["baseline_candidate_radii_m"]
             ),
-            structure_radius_m=_tuple_or_none(
-                scale_distribution_cfg["structure_radius_m"]
-            ),
-
-            proxy_stack_path=proxy_stack,
-            valid_mask_path=valid_mask,
-            channel_report_path=channel_report,
-
-            proxy_structure_mode=scale_distribution_cfg["proxy_structure_mode"],
-            proxy_band_indices=_tuple_or_none(
-                scale_distribution_cfg["proxy_band_indices"]
-            ),
-            texture_band_indices=_tuple_or_none(
-                scale_distribution_cfg["texture_band_indices"]
-            ),
-
-            infer_structure_support_from_proxy=scale_distribution_cfg[
-                "infer_structure_support_from_proxy"
-            ],
-            infer_texture_support_from_proxy=scale_distribution_cfg[
-                "infer_texture_support_from_proxy"
-            ],
-            sampling_regime=scale_distribution_cfg["sampling_regime"],
-
-            structure_support_max_m=scale_distribution_cfg[
-                "structure_support_max_m"
-            ],
-            texture_support_max_m=scale_distribution_cfg[
-                "texture_support_max_m"
-            ],
-            target_structure_max_m=scale_distribution_cfg[
-                "target_structure_max_m"
-            ],
-            segment_similarity_radius_max_m=scale_distribution_cfg[
-                "segment_similarity_radius_max_m"
-            ],
-
-            upper_radius_factor=scale_distribution_cfg["upper_radius_factor"],
-            max_radius_m=scale_distribution_cfg["max_radius_m"],
-            patch_radius_quantiles=tuple(
-                scale_distribution_cfg["patch_radius_quantiles"]
-            ),
-            min_radius_m=scale_distribution_cfg["min_radius_m"],
-            max_candidate_radius_fraction=scale_distribution_cfg[
-                "max_candidate_radius_fraction"
-            ],
-
-            output_csv_filename=scale_distribution_cfg["output_csv_filename"],
-            output_json_filename=scale_distribution_cfg["output_json_filename"],
             overwrite=overwrite,
         )
     )

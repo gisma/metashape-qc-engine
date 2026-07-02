@@ -60,7 +60,7 @@ OVERWRITE=1 \
 bash metashape_qc_engine/run_level1b_dumb_with_user_header.sh
 ```
 
-See [RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) for dependencies, statuses, final products, and quality evidence.
+The deterministic Step-9a baseline radii are explicit metre values in `config/level1b_default.yaml`; they are not inferred from DGLCM window radii or channel names. See [RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) for dependencies, statuses, final products, and quality evidence.
 
 ## Scope boundaries
 

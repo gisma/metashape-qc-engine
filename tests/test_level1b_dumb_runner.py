@@ -475,14 +475,13 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
 
     scale_config = captured["scale_distribution"]
     assert isinstance(scale_config, Level1BScaleDistributionConfig)
-    assert scale_config.texture_band_indices == (4, 5)
-    assert scale_config.scale_mode == "structure_derived_scale_distribution"
-    assert scale_config.metric_radius_m is None
-    assert scale_config.proxy_stack_path == (
-        output_dir / "level1b" / "channels" / "proxy_stack.tif"
-    )
-    assert scale_config.channel_report_path == (
-        output_dir / "level1b" / "channels" / "channel_report.json"
+    assert scale_config.baseline_candidate_radii_m == (
+        0.2,
+        0.3618081437156948,
+        0.6545256642949843,
+        1.1840635780642512,
+        2.142019226103952,
+        3.875,
     )
 
     step9a_config = captured["step9a"]

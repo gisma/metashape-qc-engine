@@ -25,6 +25,8 @@ The resolved copy used for a run is written to:
 RUN_ROOT/level1b/resolved_level1b_config.yaml
 ```
 
+The `scale_distribution.baseline_candidate_radii_m` list contains the deterministic Step-9a baseline radii in metres. Each value defines one central baseline family; the perturbation generator creates its local variants. These radii are explicit workflow inputs from YAML and are not inferred from DGLCM radii, channel names, or proxy metadata.
+
 There is no CLI option for an alternative Level-1B config path.
 
 ## Normal wrapper call
@@ -38,9 +40,11 @@ bash metashape_qc_engine/run_level1b_dumb_with_user_header.sh
 
 The wrapper is the normal path because it:
 
-- optionally sources `OTB_ROOT/otbenv.profile`
-- prepends OTB `bin` and `lib` paths
-- exports the repository through `PYTHONPATH`
+- optionally sources `OTB_ROOT/otbenv.profile` and records its CLI runtime
+- keeps OTB CLI tools discoverable through `PATH`
+- removes OTB Python and library paths plus OTB `GDAL_DATA`/`PROJ_LIB` from the Python runner environment
+- restores the recorded OTB runtime only for `otbcli_*` subprocesses
+- exports the repository through the sanitized `PYTHONPATH`
 - creates a temporary executable bridge when `gdal_edit.py` is discoverable
 - changes to the repository root
 - prints the exact Python command before executing it
@@ -136,7 +140,7 @@ Under `RUN_ROOT/level1b/`:
 - `channels/proxy_stack.tif` — six bands in order: `ExGR`, `ExR`, `BRI`, `DGLCM_PC1_SMALL`, `DGLCM_PC1_LARGE`, `RATIO_DGLCM_PC1`
 - `channels/channel_report.json` — band order, PC1 quantization, Haralick directions/radii, aggregation, and ratio contract
 - `scaling/scaled_feature_stack.tif`
-- `scales/scale_candidates.json`
+- `scales/scale_candidates.json` — the explicit YAML baselines converted deterministically to `spatialr_px` and `minsize_px`
 - `ranger/scale_candidates_with_ranger.json`
 - `perturbations/perturbation_candidates.json`
 - `candidate_response_surface/run_population_summary.json`

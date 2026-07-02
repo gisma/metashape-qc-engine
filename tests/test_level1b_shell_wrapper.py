@@ -31,6 +31,9 @@ def test_shell_wrapper_is_environment_only_and_syntax_valid() -> None:
     assert source.count(
         "python3 -m metashape_qc_engine.level1b_dumb_runner"
     ) == 2
+    assert 'export LEVEL1B_OTB_GDAL_DATA_ORIG="${GDAL_DATA:-}"' in source
+    assert 'export LEVEL1B_OTB_PROJ_LIB_ORIG="${PROJ_LIB:-}"' in source
+    assert "unset GDAL_DATA PROJ_LIB" in source
     assert "--rgb-ortho" in source
     assert "--out-dir" in source
     assert "--overwrite" in source

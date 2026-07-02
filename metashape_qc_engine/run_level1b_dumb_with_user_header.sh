@@ -93,8 +93,14 @@ else
 fi
 unset _LD_LIBRARY_PATH_ENTRIES _SANITIZED_LD_LIBRARY_PATH_ENTRIES _LD_LIBRARY_PATH_ENTRY
 
+# The venv GDAL/PROJ runtime must discover its own data directories. The OTB
+# copies remain available through LEVEL1B_OTB_*_ORIG and are restored only for
+# otbcli_* subprocesses by level1b_otb_env.py.
+unset GDAL_DATA PROJ_LIB
+
 echo "PYTHONPATH sanitized for Python runner"
 echo "LD_LIBRARY_PATH sanitized for Python runner"
+echo "GDAL_DATA and PROJ_LIB sanitized for Python runner"
 
 cd "$REPO"
 

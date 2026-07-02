@@ -32,7 +32,7 @@ For RGB input, `level1b_channels.py` builds this exact normal-stack order:
 5. `DGLCM_PC1_LARGE` — coarse directional radiometric structure on RGB-PC1
 6. `RATIO_DGLCM_PC1` — fine-versus-coarse directional structure
 
-This is a deterministic RGB proxy stack for robust feature-space separation under variable UAV image quality. It is neither scene-trained nor scene-optimized. The spectral proxy bands are 1–3. Bands 4–5 are the structure-support bands used by scale distribution. Band 6 is a feature-space ratio and is not a support-radius source.
+This is a deterministic RGB proxy stack for robust feature-space separation under variable UAV image quality. It is neither scene-trained nor scene-optimized. The spectral proxy bands are 1–3. Bands 4–5 are directional structure-feature bands. Band 6 is their fine-to-coarse ratio. All six bands enter the scaled feature space, but none of their names or measurement radii define the Step-9a baseline ladder.
 
 The structure path is:
 
@@ -44,7 +44,7 @@ The structure path is:
 6. take the pixelwise maximum Inertia across directions separately for the small and large bands
 7. compute `DGLCM_PC1_SMALL / (DGLCM_PC1_LARGE + 1e-6)`
 
-Active radii are `dglcm_pc1_small_radius_m: 0.25` and `dglcm_pc1_large_radius_m: 0.5`. They are converted with `max(1, round(radius_m / pixel_size_m))`. Radius choice remains a methodological risk because it defines structural support visible to scale generation.
+Active radii are `dglcm_pc1_small_radius_m: 0.25` and `dglcm_pc1_large_radius_m: 0.5`. They are converted with `max(1, round(radius_m / pixel_size_m))`. Radius choice remains a methodological risk because it defines which local structure enters feature-space distances, ranger derivation, and segmentation. It does not define the explicit Step-9a baseline radii.
 
 The previous five-channel ExGR neighborhood-variance stack and its historical `TEX_*` labels are legacy and are not the current normal RGB path. Current RGB structure is directional GLCM/Haralick Inertia on RGB-PC1, not undirected neighborhood variance.
 
@@ -58,23 +58,24 @@ This reduces extreme-value influence on feature-space distances, ranger derivati
 
 Outputs include `scaled_feature_stack.tif`, `scaling_parameters.json`, `scaling_parameters.xml`, and `scaling_report.json`. The JSON records quantiles, bounds, centers, and scales.
 
-## 4. Candidate scale distribution
+## 4. Explicit baseline candidate radii
 
-The active default is `structure_derived_scale_distribution`. `level1b_scale_distribution.py` uses channel metadata and the two DGLCM structure roles (bands 4–5) to establish an explicit envelope. The ratio in band 6 remains a feature-space input and is excluded from support-radius inference:
+`level1b_scale_distribution.py` does not infer the tested segmentation scales from channel names, DGLCM window radii, or proxy metadata. The deterministic Step-9a baseline candidate radii are listed explicitly in `config/level1b_default.yaml` as `baseline_candidate_radii_m`. Every value is in metres and defines one central baseline family.
 
-- explicit `min_radius_m`, or one tenth of inferred texture support, defines the lower bound
-- explicit `max_radius_m`, explicit segment-similarity maximum, or inferred texture/target support multiplied by `upper_radius_factor` defines the upper envelope
-- candidate radii normally stop at `max_candidate_radius_fraction` of that envelope
-- the configured number of positions comes from `patch_radius_quantiles`; deterministic radii are logarithmically spaced
-- candidates collapsing to identical `(spatialr_px, minsize_px)` pairs are deduplicated
+The current defaults reproduce the former pre-DGLCM ladder for comparison:
 
-For each radius:
+```text
+0.2, 0.3618081437156948, 0.6545256642949843,
+1.1840635780642512, 2.142019226103952, 3.875 metres
+```
+
+The list must be finite, positive, duplicate-free, and strictly increasing. Its order is preserved; no grid, sorting, interpolation, texture-radius inference, or label parsing is performed. For each explicit baseline radius:
 
 - `spatialr_px = round(radius_m / pixel_size_m)`, minimum 1
 - `area_m2 = pi * radius_m²`
 - `minsize_px = round(area_m2 / pixel_area_m2)`, minimum 1
 
-Active defaults include `upper_radius_factor: 2.5`, `max_candidate_radius_fraction: 0.775`, and six positions. They define the tested ladder; Step-9b does not extend it.
+The DGLCM radii `0.25 m` and `0.5 m` are measurement-window parameters for the structure features only. They do not define or limit the segmentation baseline ladder. The existing perturbation generator subsequently creates the local `spatialr_px`, `minsize_px`, and `ranger` variants around every baseline. Step-9b remains inside the resulting Step-9a ladder.
 
 Outputs are `level1b/scales/scale_candidates.json` and `.csv`.
 
@@ -186,9 +187,9 @@ Each contains `step`, `status`, `inputs`, `artifacts`, and `provenance.candidate
 ## Methodological levers and risks
 
 - valid-mask rules define the population
-- DGLCM small/large radii define structural support visible to scale generation; the ratio band does not
+- DGLCM small/large radii define the measurement support of structure features; they do not define the tested segmentation baselines
+- `baseline_candidate_radii_m` defines the deterministic Step-9a baseline families in metres
 - robust scaling controls outlier influence
-- scale-envelope controls define tested metric radii
 - ranger quantiles define feature-space similarity ranges
 - perturbation deltas and family size define local sensitivity evidence
 - Step-9a score terms define family ranking

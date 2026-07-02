@@ -58,7 +58,7 @@ orthomosaic
   -> valid mask
   -> proxy stack
   -> robust scaling
-  -> scale candidates
+  -> explicit baseline candidates from YAML
   -> ranger assignment
   -> perturbation families
   -> Step 9a response surface
@@ -68,11 +68,11 @@ orthomosaic
 
 ### Analysis domain and features
 
-The runner derives orthomosaic pixel size, creates `valid_mask.tif`, builds the deterministic six-band RGB proxy stack (`ExGR`, `ExR`, `BRI`, fine/coarse directional GLCM Inertia on RGB-PC1, and their ratio), and robustly scales the proxy features. Bands 4–5 provide structure support; band 6 is feature-space input only. The active fixed defaults come from `config/level1b_default.yaml`.
+The runner derives orthomosaic pixel size, creates `valid_mask.tif`, builds the deterministic six-band RGB proxy stack (`ExGR`, `ExR`, `BRI`, fine/coarse directional GLCM Inertia on RGB-PC1, and their ratio), and robustly scales the proxy features. Bands 4–5 measure fine and coarse directional structure; band 6 is their ratio. These feature bands affect ranger and segmentation responses but do not generate the baseline scale ladder. The active fixed defaults come from `config/level1b_default.yaml`.
 
 ### Candidate population
 
-The scale-distribution step creates the explicit scale ladder and derives `spatialr_px` and `minsize_px`. Feature-range assignment derives `ranger`; the perturbation generator creates one baseline and a bounded local parameter family for each scale candidate.
+The scale-distribution step reads the strictly increasing `baseline_candidate_radii_m` list from `config/level1b_default.yaml` and deterministically derives `spatialr_px` and `minsize_px`. It performs no channel-name parsing, texture-radius inference, sorting, interpolation, or grid generation. Feature-range assignment derives `ranger`; the perturbation generator creates one baseline and a bounded local parameter family for each explicit radius.
 
 ### Step 9a and Step 9b
 
