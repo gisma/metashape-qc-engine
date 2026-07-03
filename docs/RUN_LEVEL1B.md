@@ -37,9 +37,11 @@ minsize_px  = max(1, round(area_m2 / pixel_area_m2))
 
 The resulting `spatialr_px` and `minsize_px` values are derived execution parameters, not additional scale inputs. Channel names, DGLCM radii, proxy-stack statistics, kNN distances, and `ranger` do not create or reorder spatial baselines.
 
-The feature-range step samples valid vectors from the scaled proxy stack and measures each vector's `knn_k`-th-nearest-neighbour distance in dimensionless feature space. A deterministic Half-Sample Mode estimate reduces that empirical distribution to exactly one scene-specific central `ranger`. Every spatial baseline receives the same central ranger. The perturbation generator then creates bounded local variations around each baseline's `spatialr_px`, `minsize_px`, and that shared ranger.
+The feature-range step samples valid vectors from the scaled proxy stack and evaluates the configured neighbour ranks `[8, 13, 21, 34, 55]` before any segmentation. A single nearest-neighbour calculation supplies the empirical distance distribution for each candidate `k`. Every distribution is summarized by Half-Sample Mode, producing the diagnostic curve `k -> HSM ranger` in dimensionless feature space.
 
-This change replaces the former ranger-quantile ladder and ordered/tail-padded ranger assignment. It does not reduce the number of spatial baselines or their perturbation families; that population remains controlled by `baseline_candidate_radii_m` and the perturbation settings.
+For each three-candidate window, stability is measured as `(max(ranger) - min(ranger)) / median(ranger)`. The first window with a relative span no greater than `hsm_stability_rel_tol` (`0.10` by default) is accepted, and its smallest `k` supplies exactly one scene-specific central ranger. If no window is stable, the feature-range step fails after writing the diagnostic curve; it does not fall back to a fixed `k`.
+
+Every spatial baseline receives the selected central ranger. The perturbation generator then creates bounded local variations around each baseline's `spatialr_px`, `minsize_px`, and that shared ranger. This replaces both the former fixed neighbour order and the ranger-quantile ladder. It does not reduce the number of spatial baselines or their perturbation families; that population remains controlled by `baseline_candidate_radii_m` and the perturbation settings.
 
 There is no CLI option for an alternative Level-1B config path.
 
@@ -178,7 +180,7 @@ Under `RUN_ROOT/level1b/`:
 - `channels/channel_report.json` — band order, PC1 quantization, Haralick directions/radii, aggregation, and ratio contract
 - `scaling/scaled_feature_stack.tif`
 - `scales/scale_candidates.json` — one row per explicit YAML metre baseline, with deterministically derived `spatialr_px` and `minsize_px`
-- `ranger/ranger_candidates.json` — exactly one scene-specific HSM ranger plus kNN/HSM diagnostics
+- `ranger/ranger_candidates.json` — the complete `k -> HSM ranger` curve, plateau-window diagnostics, selected `k`, and exactly one scene-specific ranger on success
 - `ranger/scale_candidates_with_ranger.json` — all explicit spatial baselines with that same central ranger attached
 - `perturbations/perturbation_candidates.json`
 - `candidate_response_surface/run_population_summary.json`

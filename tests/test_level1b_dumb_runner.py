@@ -482,8 +482,12 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert captured["feature_range"].band_count == 6
     assert captured["feature_range"].feature_space_source == "scaled"
     assert captured["feature_range"].sample_n == 80000
-    assert captured["feature_range"].knn_k == 10
+    assert captured["feature_range"].knn_k_policy == "auto_hsm_plateau"
+    assert captured["feature_range"].knn_k_candidates == (8, 13, 21, 34, 55)
+    assert captured["feature_range"].hsm_stability_rel_tol == 0.10
+    assert captured["feature_range"].hsm_plateau_window == 3
     assert captured["feature_range"].max_distance_sample_n == 15000
+    assert not hasattr(captured["feature_range"], "knn_k")
     assert not hasattr(captured["feature_range"], "quantile_probs")
 
     scale_config = captured["scale_distribution"]

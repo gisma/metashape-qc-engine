@@ -11,7 +11,7 @@ This file is the active documentation index. It defines which project documents 
 | `docs/RUN_LEVEL1A.md` | Level-1A operation: prepare, run-analysis, resume-analysis, evaluate, outputs, failure diagnosis | active |
 | `docs/LEVEL1A_METHOD_CORE_MAP.md` | Level-1A method core: replicates, canonical grid, stability ranking, support persistence, median/medoid, non-scope | active |
 | `docs/RUN_LEVEL1B.md` | Level-1B operation: wrapper call, chain report, Step-10 products, quality evidence, status diagnosis | active |
-| `docs/LEVEL1B_METHOD_CORE_MAP.md` | Level-1B method core: valid mask, six-band RGB/DGLCM-PC1 proxy stack, scaling, explicit metre baselines, one scene-specific HSM ranger, perturbations, Step 9a/9b, Step 10 | active |
+| `docs/LEVEL1B_METHOD_CORE_MAP.md` | Level-1B method core: valid mask, six-band RGB/DGLCM-PC1 proxy stack, scaling, explicit metre baselines, automatic k-to-HSM plateau selection and one scene-specific ranger, perturbations, Step 9a/9b, Step 10 | active |
 
 ## Active configuration and runtime entry points
 

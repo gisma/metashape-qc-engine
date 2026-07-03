@@ -59,7 +59,8 @@ orthomosaic
   -> proxy stack
   -> robust scaling
   -> explicit baseline candidates from YAML
-  -> one scene-specific HSM ranger shared across baselines
+  -> pre-segmentation k-to-HSM plateau diagnostic
+  -> one scene-specific ranger shared across baselines
   -> perturbation families
   -> Step 9a response surface
   -> Step 9b adjacency/midpoint handoff
@@ -74,7 +75,9 @@ The runner derives orthomosaic pixel size, creates `valid_mask.tif`, builds the 
 
 The scale-distribution step reads the strictly increasing `baseline_candidate_radii_m` list from `config/level1b_default.yaml`. These metre values are the only spatial baseline inputs. Orthomosaic pixel size is used only to derive each baseline's executable `spatialr_px` and `minsize_px`; it does not select the baseline ladder. The step performs no channel-name parsing, DGLCM-radius inference, ranger-to-radius mapping, sorting, interpolation, or grid generation.
 
-Independently, the feature-range step computes the empirical `knn_k`-nearest-neighbour distance distribution of valid scaled pixel-feature vectors and estimates exactly one central ranger by deterministic Half-Sample Mode. That same feature-space ranger is attached to every spatial baseline. The perturbation generator then creates one bounded local parameter family per explicit metre radius. There is no ranger ladder, tail padding, or Cartesian product of radii and ranger candidates.
+Independently and before segmentation, the feature-range step evaluates the configured neighbour ranks `[8, 13, 21, 34, 55]` on the same valid scaled pixel-feature sample. One nearest-neighbour calculation supplies each empirical kNN-distance distribution, and Half-Sample Mode produces the curve `k -> ranger`. The smallest `k` in the first three-value window whose relative ranger span is at most `0.10` supplies exactly one scene-specific ranger. With no stable window, the step fails after writing diagnostics; there is no fixed-k fallback.
+
+That same feature-space ranger is attached to every spatial baseline. The perturbation generator then creates one bounded local parameter family per explicit metre radius. There is no ranger quantile ladder, tail padding, or Cartesian product of radii and ranger candidates.
 
 ### Step 9a and Step 9b
 

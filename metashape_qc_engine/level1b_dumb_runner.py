@@ -278,7 +278,10 @@ def run_level1b_dumb_chain(
             feature_space_source="scaled",
             band_count=proxy_band_count,
             sample_n=feature_range_cfg["sample_n"],
-            knn_k=feature_range_cfg["knn_k"],
+            knn_k_policy=feature_range_cfg["knn_k_policy"],
+            knn_k_candidates=tuple(feature_range_cfg["knn_k_candidates"]),
+            hsm_stability_rel_tol=feature_range_cfg["hsm_stability_rel_tol"],
+            hsm_plateau_window=feature_range_cfg["hsm_plateau_window"],
             max_distance_sample_n=feature_range_cfg["max_distance_sample_n"],
             overwrite=overwrite,
         )

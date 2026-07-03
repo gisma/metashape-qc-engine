@@ -78,20 +78,34 @@ level1b:
     # stability and memory, not the intended segmentation scale.
     sample_n: 80000
 
-    # Neighbour rank used for the feature-space distance distribution. For each
-    # sampled vector, the k-th-nearest-neighbour distance is measured. Larger k
-    # generally produces larger distances and ranger values, which permit more
-    # feature variation within segments and can therefore create larger areas.
-    # Here a pragmatic uncalibrated default.
-    knn_k: 10
+    # Automatic pre-segmentation selection of the local feature-space
+    # neighbourhood order. No segmentation is run while selecting k.
+    knn_k_policy: "auto_hsm_plateau"
+
+    # Candidate neighbour ranks evaluated on the same deterministic vector
+    # sample. The sequence starts above the unstable very-small-k range and is
+    # approximately geometric, so successive values probe increasingly broader
+    # local feature neighbourhoods without a dense arbitrary ladder.
+    knn_k_candidates: [8, 13, 21, 34, 55]
+
+    # Maximum relative HSM-ranger span accepted within one plateau window:
+    # (max(ranger) - min(ranger)) / median(ranger) <= this value.
+    # A value of 0.10 therefore permits at most 10% spread in the window.
+    hsm_stability_rel_tol: 0.10
+
+    # Number of consecutive k candidates required for a stable plateau. The
+    # smallest k in the first stable window is selected. If no such window is
+    # found, feature-range assignment fails and writes the diagnostic curve;
+    # there is no fallback to a fixed k.
+    hsm_plateau_window: 3
 
     # Maximum vectors entering the expensive pairwise kNN distance calculation
     # after the first sample. A deterministic subsample is used above this
     # limit. Larger values reduce sampling noise but increase approximately
-    # quadratic computation. This value must be greater than knn_k.
+    # quadratic computation. This value must exceed the largest k candidate.
     max_distance_sample_n: 15000
 
-    # The empirical kNN-distance distribution is reduced to one robust central
-    # ranger with the deterministic Half-Sample Mode estimator. All explicit
-    # spatial baseline radii receive this same ranger; the perturbation step
-    # creates only local ranger variations around it.
+    # For every candidate k, the empirical kNN-distance distribution is reduced
+    # to a robust central ranger with the deterministic Half-Sample Mode. The
+    # selected plateau ranger is assigned to all explicit spatial baselines;
+    # perturbation then creates only local ranger variations around it.

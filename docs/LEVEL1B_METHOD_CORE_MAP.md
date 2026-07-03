@@ -93,8 +93,9 @@ baseline_candidate_radii_m [metres]
   -> spatialr_px and minsize_px [derived pixel parameters]
 
 valid scaled pixel-feature vectors
-  -> kNN-distance distribution
-  -> one Half-Sample Mode ranger [dimensionless feature-space tolerance]
+  -> kNN-distance distributions for explicit candidate neighbour ranks
+  -> k-to-HSM-ranger curve and first stable plateau
+  -> one selected ranger [dimensionless feature-space tolerance]
   -> copied unchanged to every spatial baseline
 ```
 
@@ -102,15 +103,17 @@ Neither path generates values for the other. In particular, pixel size converts 
 
 ## 5. Feature range (`ranger`)
 
-`level1b_feature_range.py` samples valid vectors from the scaled stack and computes each sampled vector's k-th-nearest-neighbour distance in the scaled six-dimensional feature space. These distances are dimensionless feature-space distances, not metres or pixels.
+`level1b_feature_range.py` samples valid vectors from the scaled stack and computes k-th-nearest-neighbour distances in the scaled six-dimensional feature space. These distances are dimensionless feature-space distances, not metres or pixels. The active neighbour-rank candidates are `[8, 13, 21, 34, 55]`; very small and unstable neighbourhood orders are therefore excluded.
 
-The empirical distance distribution is reduced to one robust central `ranger` with the deterministic Half-Sample Mode estimator: the shortest interval containing half of the remaining observations is selected recursively until at most two values remain. This targets the dominant distribution mass without turning tail values into segmentation tolerances. The same scene-specific ranger is assigned to every explicit spatial baseline. The existing perturbation generator subsequently creates local ranger variations around that central value.
+All candidate ranks are extracted from one nearest-neighbour calculation on the same deterministic vector sample. For every candidate `k`, its empirical distance distribution is reduced to a robust central value with the deterministic Half-Sample Mode estimator: the shortest interval containing half of the remaining observations is selected recursively until at most two values remain. This produces the scene diagnostic curve `k -> HSM ranger` without running segmentation.
 
-`ranger` is the feature-space similarity range. It is distinct from spatial `spatialr_px` and minimum-size `minsize_px`. The spatial ladder remains defined only by `baseline_candidate_radii_m`; no ranger statistic, channel name, or DGLCM radius creates a spatial scale.
+The curve is inspected in consecutive windows of three candidate ranks. A window is stable when `(max(ranger) - min(ranger)) / median(ranger) <= 0.10`. The smallest `k` in the first stable window supplies the single scene-specific ranger. If no window satisfies the criterion, the step fails and preserves the curve and window diagnostics; no fixed-k fallback is used.
 
-Active defaults sample up to 80,000 vectors, limit the pairwise distance calculation to a deterministic sample of 15,000, and use `k=10` as the explicit local feature-space neighbourhood order. No ranger quantile ladder, radius-to-ranger assignment, tail padding, or Cartesian radius/ranger product is created.
+The selected ranger is the feature-space similarity range. It is distinct from spatial `spatialr_px` and minimum-size `minsize_px`, and the same value is assigned to every explicit spatial baseline. The spatial ladder remains defined only by `baseline_candidate_radii_m`; no ranger statistic, candidate `k`, channel name, or DGLCM radius creates a spatial scale. The perturbation generator subsequently creates local ranger variations around the selected central value.
 
-Outputs remain `ranger_candidates.json/.csv` and `scale_candidates_with_ranger.json/.csv`. `ranger_candidates` contains exactly one central ranger and records the HSM modal interval and distribution summary needed to audit the estimate.
+Active defaults sample up to 80,000 vectors and limit the pairwise distance calculation to a deterministic sample of 15,000. No fixed neighbour order, ranger quantile ladder, radius-to-ranger assignment, tail padding, or Cartesian radius/ranger product is created.
+
+Outputs remain `ranger_candidates.json/.csv` and `scale_candidates_with_ranger.json/.csv`. `ranger_candidates.json` records the full HSM curve, every tested plateau window, the selected `k`, and exactly one central ranger on success.
 
 ## 6. Perturbation design
 
@@ -213,7 +216,7 @@ Each contains `step`, `status`, `inputs`, `artifacts`, and `provenance.candidate
 - DGLCM small/large radii define the measurement support of structure features; they do not define the tested segmentation baselines
 - `baseline_candidate_radii_m` defines the deterministic Step-9a baseline families in metres
 - robust scaling controls outlier influence
-- `knn_k` defines the local feature-space neighbourhood order; Half-Sample Mode defines one scene-specific central ranger shared by all spatial baselines
+- `knn_k_candidates`, `hsm_stability_rel_tol`, and `hsm_plateau_window` define the pre-segmentation neighbourhood-order diagnostic; the first stable HSM plateau supplies one ranger shared by all spatial baselines
 - perturbation deltas and family size define local sensitivity evidence
 - Step-9a score terms define family ranking
 - Step-9b adjacency and fixed `> 0.5` rule define local handoff

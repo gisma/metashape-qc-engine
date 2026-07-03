@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 import numpy as np
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -13,17 +14,20 @@ sys.path.insert(0, str(REPO_ROOT))
 import metashape_qc_engine.level1b_feature_range as feature_range
 from metashape_qc_engine.level1b_feature_range import (
     ASSIGNMENT_RULE,
+    KNN_K_POLICY,
     RANGER_SELECTION_METHOD,
     RANGER_SOURCE,
     Level1BFeatureRangeConfig,
     assign_ranger_candidates_to_scale_candidates,
     build_level1b_feature_range_layout,
     build_ranger_candidate_from_knn_distances,
+    compute_knn_distance_distributions,
     compute_knn_distances,
     estimate_half_sample_mode,
     read_scale_candidates,
     run_feature_range_assignment_step,
     sample_valid_feature_vectors,
+    select_first_stable_hsm_plateau,
     subsample_for_distance,
     validate_feature_range_config,
 )
@@ -96,7 +100,10 @@ def make_config(tmp_path: Path, **overrides: object) -> Level1BFeatureRangeConfi
         "feature_space_source": "scaled",
         "band_count": 2,
         "sample_n": 50,
-        "knn_k": 2,
+        "knn_k_policy": KNN_K_POLICY,
+        "knn_k_candidates": (7, 8, 9),
+        "hsm_stability_rel_tol": 1.0,
+        "hsm_plateau_window": 3,
         "seed": 1,
         "max_distance_sample_n": 30,
     }
@@ -108,8 +115,12 @@ def validate(config: Level1BFeatureRangeConfig):
     return validate_feature_range_config(config, build_level1b_feature_range_layout(config.output_dir))
 
 
-def synthetic_vectors() -> np.ndarray:
+def small_vectors() -> np.ndarray:
     return np.array([[0.0, 0.0], [1.0, 0.0], [3.0, 0.0], [6.0, 0.0], [10.0, 0.0]], dtype=float)
+
+
+def synthetic_vectors() -> np.ndarray:
+    return np.column_stack((np.arange(20, dtype=float), np.zeros(20, dtype=float)))
 
 
 def test_01_config_has_no_removed_range_fields(tmp_path: Path) -> None:
@@ -118,6 +129,7 @@ def test_01_config_has_no_removed_range_fields(tmp_path: Path) -> None:
 
     assert blocked_terms()[0] not in names
     assert "quantile_probs" not in names
+    assert "knn_k" not in names
     assert not hasattr(config, "quantile_probs")
 
 
@@ -131,7 +143,7 @@ def test_02_active_feature_range_source_has_no_quantile_ladder_or_tail_padding()
 
 
 def test_03_knn_distances_feed_one_half_sample_mode_ranger() -> None:
-    distances = compute_knn_distances(synthetic_vectors(), knn_k=2)
+    distances = compute_knn_distances(small_vectors(), knn_k=2)
     candidates, diagnostics = build_ranger_candidate_from_knn_distances(
         candidate_id="candidate-1",
         distances=distances,
@@ -161,6 +173,56 @@ def test_04_half_sample_mode_ignores_distant_distribution_tails() -> None:
     assert with_tails["ranger"] == 10.5
     assert with_tails["distance_min"] == 1.0
     assert with_tails["distance_max"] == 100.0
+
+
+def test_04b_multi_k_distance_calculation_matches_single_k_results() -> None:
+    vectors = synthetic_vectors()
+    distributions = compute_knn_distance_distributions(vectors, (2, 4, 7))
+
+    for knn_k in (2, 4, 7):
+        np.testing.assert_allclose(
+            distributions[knn_k],
+            compute_knn_distances(vectors, knn_k),
+        )
+
+
+def test_04c_first_stable_hsm_plateau_selects_its_smallest_k() -> None:
+    curve = [
+        {"knn_k": 8, "ranger": 1.00},
+        {"knn_k": 13, "ranger": 1.05},
+        {"knn_k": 21, "ranger": 1.09},
+        {"knn_k": 34, "ranger": 1.40},
+        {"knn_k": 55, "ranger": 1.80},
+    ]
+
+    selected, windows = select_first_stable_hsm_plateau(
+        curve,
+        relative_tolerance=0.10,
+        plateau_window=3,
+    )
+
+    assert selected == 8
+    assert windows[0]["stable"] is True
+    assert windows[0]["relative_span"] == pytest.approx((1.09 - 1.00) / 1.05)
+
+
+def test_04d_no_hsm_plateau_returns_no_selected_k() -> None:
+    curve = [
+        {"knn_k": 8, "ranger": 1.0},
+        {"knn_k": 13, "ranger": 1.3},
+        {"knn_k": 21, "ranger": 1.7},
+        {"knn_k": 34, "ranger": 2.3},
+        {"knn_k": 55, "ranger": 3.1},
+    ]
+
+    selected, windows = select_first_stable_hsm_plateau(
+        curve,
+        relative_tolerance=0.10,
+        plateau_window=3,
+    )
+
+    assert selected is None
+    assert all(window["stable"] is False for window in windows)
 
 
 def test_05_sampling_and_distance_subsampling_are_deterministic_with_seed(tmp_path: Path, monkeypatch) -> None:
@@ -216,7 +278,7 @@ def test_08_output_schemas_record_half_sample_mode_and_one_ranger(tmp_path: Path
     vectors = synthetic_vectors()
     monkeypatch.setattr(feature_range, "sample_valid_feature_vectors", lambda _config: (vectors, len(vectors)))
 
-    report = run_feature_range_assignment_step(make_config(tmp_path, sample_n=5, max_distance_sample_n=5))
+    report = run_feature_range_assignment_step(make_config(tmp_path, sample_n=20, max_distance_sample_n=20))
     ranger_payload = json.loads(Path(report["output_ranger_json_path"]).read_text(encoding="utf-8"))
     assigned_payload = json.loads(Path(report["output_assigned_json_path"]).read_text(encoding="utf-8"))
 
@@ -228,6 +290,45 @@ def test_08_output_schemas_record_half_sample_mode_and_one_ranger(tmp_path: Path
     assert "quantile_probs" not in ranger_payload
     assert len({candidate["ranger"] for candidate in assigned_payload["candidates"]}) == 1
     assert assigned_payload["ranger_candidate_count"] == 1
+
+
+def test_08b_missing_plateau_fails_after_writing_the_diagnostic_curve(tmp_path: Path, monkeypatch) -> None:
+    vectors = synthetic_vectors()
+    monkeypatch.setattr(feature_range, "sample_valid_feature_vectors", lambda _config: (vectors, len(vectors)))
+    ranger_values = iter((1.0, 1.3, 1.7))
+
+    def fake_hsm(_distances):
+        ranger = next(ranger_values)
+        return {
+            "selection_method": RANGER_SELECTION_METHOD,
+            "ranger": ranger,
+            "distance_min": ranger,
+            "distance_median": ranger,
+            "distance_max": ranger,
+            "modal_interval_lower": ranger,
+            "modal_interval_upper": ranger,
+            "half_sample_iterations": 1,
+        }
+
+    monkeypatch.setattr(feature_range, "estimate_half_sample_mode", fake_hsm)
+    report = run_feature_range_assignment_step(
+        make_config(
+            tmp_path,
+            sample_n=20,
+            max_distance_sample_n=20,
+            hsm_stability_rel_tol=0.10,
+        )
+    )
+    ranger_payload = json.loads(Path(report["output_ranger_json_path"]).read_text(encoding="utf-8"))
+
+    assert report["status"] == "failed"
+    assert report["plateau_found"] is False
+    assert report["selected_knn_k"] is None
+    assert ranger_payload["plateau_found"] is False
+    assert ranger_payload["ranger_count"] == 0
+    assert len(ranger_payload["hsm_ranger_curve"]) == 3
+    assert any("no stable Half-Sample Mode plateau" in reason for reason in report["failure_reasons"])
+    assert not Path(report["output_assigned_json_path"]).exists()
 
 
 def test_09_read_scale_candidates_fails_clearly_for_missing_required_fields(tmp_path: Path) -> None:
@@ -245,10 +346,10 @@ def test_09_read_scale_candidates_fails_clearly_for_missing_required_fields(tmp_
 
 
 def test_10_insufficient_valid_feature_vectors_fail_clearly(tmp_path: Path, monkeypatch) -> None:
-    vectors = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
+    vectors = np.column_stack((np.arange(9, dtype=float), np.zeros(9, dtype=float)))
     monkeypatch.setattr(feature_range, "sample_valid_feature_vectors", lambda _config: (vectors, len(vectors)))
 
-    report = run_feature_range_assignment_step(make_config(tmp_path, knn_k=2, max_distance_sample_n=3))
+    report = run_feature_range_assignment_step(make_config(tmp_path, max_distance_sample_n=10))
 
     assert report["status"] == "failed"
     assert any("not enough valid feature vectors" in reason for reason in report["failure_reasons"])
@@ -274,7 +375,7 @@ def test_12_run_function_is_testable_without_real_rasters_by_monkeypatching_samp
     vectors = synthetic_vectors()
     monkeypatch.setattr(feature_range, "sample_valid_feature_vectors", lambda _config: (vectors, len(vectors)))
 
-    report = run_feature_range_assignment_step(make_config(tmp_path, sample_n=5, max_distance_sample_n=5))
+    report = run_feature_range_assignment_step(make_config(tmp_path, sample_n=20, max_distance_sample_n=20))
 
     assert report["status"] == "ok"
     assert len(report["files_written"]) == 4
@@ -289,9 +390,16 @@ def test_13_validation_rejects_required_bad_inputs(tmp_path: Path) -> None:
         ("feature_space_source", "raw", "feature_space_source must be exactly scaled or pca"),
         ("band_count", 0, "band_count must be a positive integer"),
         ("sample_n", 0, "sample_n must be a positive integer"),
-        ("knn_k", 0, "knn_k must be a positive integer"),
+        ("knn_k_policy", "fixed", "knn_k_policy must be exactly auto_hsm_plateau"),
+        ("knn_k_candidates", (), "knn_k_candidates must be non-empty"),
+        ("knn_k_candidates", (5, 8, 13), "knn_k_candidates must contain integers >= 7"),
+        ("knn_k_candidates", (8, 8, 13), "knn_k_candidates must be strictly increasing"),
+        ("sample_n", 9, "sample_n must be greater than the largest knn_k candidate"),
+        ("hsm_stability_rel_tol", 0.0, "hsm_stability_rel_tol must be finite and in (0, 1]"),
+        ("hsm_plateau_window", 1, "hsm_plateau_window must be an integer >= 2"),
+        ("hsm_plateau_window", 4, "hsm_plateau_window must not exceed the knn_k candidate count"),
         ("max_distance_sample_n", 0, "max_distance_sample_n must be a positive integer"),
-        ("max_distance_sample_n", 2, "max_distance_sample_n must be greater than knn_k"),
+        ("max_distance_sample_n", 9, "max_distance_sample_n must be greater than the largest knn_k candidate"),
     ]
 
     for field_name, value, reason in cases:
@@ -319,7 +427,7 @@ def test_14_sampler_uses_valid_complete_vectors_and_configured_band_count(tmp_pa
 def test_15_run_outputs_preserve_all_scale_rows_without_cartesian_product(tmp_path: Path, monkeypatch) -> None:
     vectors = synthetic_vectors()
     monkeypatch.setattr(feature_range, "sample_valid_feature_vectors", lambda _config: (vectors, len(vectors)))
-    report = run_feature_range_assignment_step(make_config(tmp_path, sample_n=5, max_distance_sample_n=5))
+    report = run_feature_range_assignment_step(make_config(tmp_path, sample_n=20, max_distance_sample_n=20))
     assigned_payload = json.loads(Path(report["output_assigned_json_path"]).read_text(encoding="utf-8"))
     with Path(report["output_assigned_csv_path"]).open(newline="", encoding="utf-8") as file_obj:
         rows = list(csv.DictReader(file_obj))
