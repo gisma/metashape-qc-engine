@@ -56,12 +56,12 @@ Level-1A produces and reviews orthomosaic product candidates. It does not run St
 ```text
 orthomosaic
   -> valid mask
-  -> proxy stack
+  -> six-band proxy stack
   -> robust scaling
-  -> explicit baseline candidates from YAML
-  -> pre-segmentation k-to-HSM plateau diagnostic
-  -> one scene-specific ranger shared across baselines
-  -> perturbation families
+  -> scene-adaptive multiband variogram pre-screening
+  -> stable sill-fraction spatial support points
+  -> HSM main-interval ranger levels
+  -> materialized Step-9a candidate families
   -> Step 9a response surface
   -> Step 9b adjacency/midpoint handoff
   -> Step 10 materialization and quality evidence
@@ -69,27 +69,35 @@ orthomosaic
 
 ### Analysis domain and features
 
-The runner derives orthomosaic pixel size, creates `valid_mask.tif`, builds the deterministic six-band RGB proxy stack (`ExGR`, `ExR`, `BRI`, fine/coarse directional GLCM Inertia on RGB-PC1, and their ratio), and robustly scales the proxy features. Bands 4–5 measure fine and coarse directional structure; band 6 is their ratio. These feature bands affect ranger and segmentation responses but do not generate the baseline scale ladder. The active fixed defaults come from `config/level1b_default.yaml`.
+The runner derives orthomosaic pixel size, creates `valid_mask.tif`, builds the deterministic six-band RGB proxy stack, and robustly scales the proxy features. Bands 4–5 measure fine and coarse directional structure; band 6 is their ratio. These features enter the variogram, ranger diagnostic, and segmentation, but their names and DGLCM measurement radii do not define the candidate ladder. Domain and policy defaults come from `config/level1b_default.yaml`.
 
 ### Candidate population
 
-The scale-distribution step reads the strictly increasing `baseline_candidate_radii_m` list from `config/level1b_default.yaml`. These metre values are the only spatial baseline inputs. Orthomosaic pixel size is used only to derive each baseline's executable `spatialr_px` and `minsize_px`; it does not select the baseline ladder. The step performs no channel-name parsing, DGLCM-radius inference, ranger-to-radius mapping, sorting, interpolation, or grid generation.
+`candidate_pre_screening` reads the valid scaled feature stack and the YAML
+parameter domain. It computes a robust multiband empirical variogram over
+logarithmic lags and configured directions. Stable first crossings of the
+configured sill fractions materialize the scene-specific spatial ladder inside
+`radius_min_m` and `radius_max_m`.
 
-Independently and before segmentation, the feature-range step evaluates the configured neighbour ranks `[8, 13, 21, 34, 55]` on the same valid scaled pixel-feature sample. One nearest-neighbour calculation supplies each empirical kNN-distance distribution, and Half-Sample Mode produces the curve `k -> ranger`. The smallest `k` in the first three-value window whose relative ranger span is at most `0.10` supplies exactly one scene-specific ranger. With no stable window, the step fails after writing diagnostics; there is no fixed-k fallback.
-
-That same feature-space ranger is attached to every spatial baseline. The perturbation generator then creates one bounded local parameter family per explicit metre radius. There is no ranger quantile ladder, tail padding, or Cartesian product of radii and ranger candidates.
+For each selected radius, `spatialr_px` is the selected raster lag and
+`minsize_px` is deterministically coupled through the circular footprint
+area. The pre-screen reuses the k-to-HSM plateau diagnostic and materializes
+the central ranger plus the positive unique bounds of its main modal interval.
+It writes one Step-9a-compatible population and performs no segmentation,
+ranking, or final selection.
 
 ### Step 9a and Step 9b
 
-Step 9a executes or reuses perturbation segmentations, writes run/group response summaries, computes raw/clamped stability scores, ranks candidates, and diagnoses numeric scale adjacency and boundaries.
+Step 9a executes or reuses every materialized candidate run, writes run/group
+response summaries, computes raw/clamped stability scores, ranks candidate
+families, and diagnoses numeric scale adjacency and boundaries.
 
 Step 9b either:
 
 - writes two non-adjacent supported alternatives and stops for analyst choice, or
 - evaluates one midpoint family inside an adjacent interval and applies the fixed gain-share handoff.
 
-No scale outside the tested ladder is introduced.
-
+No scale outside the pre-screened ladder is introduced.
 ### Step 10
 
 On the adjacent handoff branch, Step 10 collects finalist evidence, aggregates it, writes diagnostic figures, materializes selected labels and polygons, and computes exactextractr segment statistics plus run-level quality information.

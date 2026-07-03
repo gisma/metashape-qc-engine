@@ -54,24 +54,45 @@ level1b:
     # <run_root>/level1b/channels/. It does not change the proxy raster name.
     report_filename: "channel_report.json"
 
-  scale_distribution:
-    # Strictly increasing deterministic Step-9a baseline radii in metres.
-    # Every entry invokes creation of one central segmentation candidate with:
-    #   spatialr_px = max(1, round(radius_m / ortho_pixel_size_m))
-    #   area_m2     = pi * radius_m^2
-    #   minsize_px  = max(1, round(area_m2 / pixel_area_m2))
-    # The perturbation generator later creates local spatialr/minsize/ranger
-    # variants around each baseline. These defaults reproduce the former
-    # pre-DGLCM ladder; they are not derived from channel names or DGLCM radii.
-    baseline_candidate_radii_m:
-      - 0.2
-      - 0.36
-      - 0.65
-      - 1.18
-      - 2.14
-      - 3.87
+  candidate_pre_screening:
+    # Admissible radius domain in metres, not concrete Step-9a anchors. Stable
+    # variogram sill crossings materialize the scene-specific scale ladder.
+    radius_min_m: 0.2
+    radius_max_m: 3.87
 
-  feature_range:
+    # Logarithmic lag sampling inside the radius domain. Pixel rounding can
+    # reduce the number of distinct sampled lags.
+    lag_count: 32
+    lag_spacing: "logarithmic"
+    directions:
+      - [1, 0]
+      - [1, 1]
+      - [0, 1]
+      - [-1, 1]
+
+    # Valid-pair sampling for the robust multiband empirical variogram.
+    pair_sample_n_per_direction: 5000
+    min_valid_pairs_per_direction: 500
+
+    # The sill is the median semivariance in the last 25% of sampled lags.
+    sill_tail_fraction: 0.25
+    plateau_rel_tol: 0.10
+
+    # Stable first crossings create support points on one continuous curve.
+    # They are not analysis classes and receive identical Step-9 treatment.
+    sill_fraction_targets: [0.25, 0.50, 0.75, 0.95]
+    stable_crossing_window: 2
+
+    # Diagnostic-only anisotropy flag threshold; it never selects candidates.
+    anisotropy_ratio_threshold: 1.5
+
+    # Hard cap. Pre-screening fails instead of truncating the population.
+    candidate_budget: 12
+
+    # Central HSM plus positive unique bounds of its shortest half interval.
+    # No feature-distance tail quantiles are used.
+    ranger_level_policy: "hsm_main_interval_lower_mode_upper"
+
     # Maximum number of valid scaled feature vectors sampled from the complete
     # raster before ranger estimation. If fewer vectors exist, all are used.
     # Above a sufficiently representative sample this mainly affects sampling
@@ -83,10 +104,9 @@ level1b:
     knn_k_policy: "auto_hsm_plateau"
 
     # Candidate neighbour ranks evaluated on the same deterministic vector
-    # sample. The sequence starts above the unstable very-small-k range and is
-    # approximately geometric, so successive values probe increasingly broader
-    # local feature neighbourhoods without a dense arbitrary ladder.
-    knn_k_candidates: [8, 13, 21, 34, 55]
+    # sample. Denser low-k spacing resolves short early plateaus; the later
+    # approximately geometric spacing still probes broader neighbourhoods.
+    knn_k_candidates: [8, 10, 13, 16, 21, 27, 34, 44, 55]
 
     # Maximum relative HSM-ranger span accepted within one plateau window:
     # (max(ranger) - min(ranger)) / median(ranger) <= this value.
@@ -95,8 +115,8 @@ level1b:
 
     # Number of consecutive k candidates required for a stable plateau. The
     # smallest k in the first stable window is selected. If no such window is
-    # found, feature-range assignment fails and writes the diagnostic curve;
-    # there is no fallback to a fixed k.
+    # found, pre-screening fails and records the diagnostic curve; there is no
+    # fallback to a fixed k.
     hsm_plateau_window: 3
 
     # Maximum vectors entering the expensive pairwise kNN distance calculation
@@ -105,7 +125,5 @@ level1b:
     # quadratic computation. This value must exceed the largest k candidate.
     max_distance_sample_n: 15000
 
-    # For every candidate k, the empirical kNN-distance distribution is reduced
-    # to a robust central ranger with the deterministic Half-Sample Mode. The
-    # selected plateau ranger is assigned to all explicit spatial baselines;
-    # perturbation then creates only local ranger variations around it.
+    # Controls both valid-pair sampling and feature-vector subsampling.
+    seed: 1

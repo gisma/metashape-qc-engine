@@ -25,26 +25,44 @@ The resolved copy used for a run is written to:
 RUN_ROOT/level1b/resolved_level1b_config.yaml
 ```
 
-### Spatial baselines and scene-specific ranger
+### Scene-adaptive scale and ranger pre-screening
 
-`scale_distribution.baseline_candidate_radii_m` is the only source of spatial baseline scales. Its entries are explicit metre values; they are not pixel scales. For every configured radius, the workflow derives the executable pixel parameters from the orthomosaic resolution:
+The YAML block `candidate_pre_screening` defines an admissible radius domain,
+not concrete scale anchors. The active bounds are `radius_min_m: 0.2` and
+`radius_max_m: 3.87` metres.
+
+Before segmentation, the workflow samples valid pixel pairs from the scaled
+six-band stack over logarithmic lags and four directions. It computes a robust
+multiband empirical variogram and estimates its sill from the tail. Stable
+first crossings of the configured sill fractions `0.25, 0.50, 0.75, 0.95`
+materialize the actual scene-specific scale families. Knee, plateau, saturation,
+and directional-anisotropy values are diagnostics only; they never change how
+Step 9 evaluates a family.
+
+For each selected radius the workflow derives:
 
 ```text
-spatialr_px = max(1, round(radius_m / pixel_size_m))
+spatialr_px = selected raster lag
 area_m2     = pi * radius_m^2
 minsize_px  = max(1, round(area_m2 / pixel_area_m2))
 ```
 
-The resulting `spatialr_px` and `minsize_px` values are derived execution parameters, not additional scale inputs. Channel names, DGLCM radii, proxy-stack statistics, kNN distances, and `ranger` do not create or reorder spatial baselines.
+`minsize_px` is therefore coupled to the spatial radius rather than searched
+as an independent axis.
 
-The feature-range step samples valid vectors from the scaled proxy stack and evaluates the configured neighbour ranks `[8, 13, 21, 34, 55]` before any segmentation. A single nearest-neighbour calculation supplies the empirical distance distribution for each candidate `k`. Every distribution is summarized by Half-Sample Mode, producing the diagnostic curve `k -> HSM ranger` in dimensionless feature space.
+The same pre-screen evaluates kNN ranks
+`[8, 10, 13, 16, 21, 27, 34, 44, 55]` on valid scaled feature vectors. The
+first stable HSM-ranger plateau supplies the central ranger. Candidate rows use
+that mode and the positive unique lower/upper bounds of its shortest
+half-sample interval. These are controlled positions in the plausible main
+interval, not tail quantiles.
 
-For each three-candidate window, stability is measured as `(max(ranger) - min(ranger)) / median(ranger)`. The first window with a relative span no greater than `hsm_stability_rel_tol` (`0.10` by default) is accepted, and its smallest `k` supplies exactly one scene-specific central ranger. If no window is stable, the feature-range step fails after writing the diagnostic curve; it does not fall back to a fixed `k`.
-
-Every spatial baseline receives the selected central ranger. The perturbation generator then creates bounded local variations around each baseline's `spatialr_px`, `minsize_px`, and that shared ranger. This replaces both the former fixed neighbour order and the ranger-quantile ladder. It does not reduce the number of spatial baselines or their perturbation families; that population remains controlled by `baseline_candidate_radii_m` and the perturbation settings.
+Pre-screening performs no segmentation, ranking, or final selection. It fails
+rather than restoring fixed YAML anchors when fewer than two stable spatial
+support points are available or when the configured candidate budget is
+insufficient.
 
 There is no CLI option for an alternative Level-1B config path.
-
 ### Proxy-stack parameters
 
 The active RGB proxy-stack parameters are in the `channels` block:
@@ -58,7 +76,7 @@ The active RGB proxy-stack parameters are in the `channels` block:
 - `ratio_eps`
 - `background_value`
 
-`feature_band_count` is intentionally not a YAML setting. The active proxy-stack recipe derives `band_count` from its ordered band-definition list, and the runner passes that result to scaling and feature-range assignment. Adding or removing a recipe band therefore does not require a second band-count edit.
+`feature_band_count` is intentionally not a YAML setting. The active proxy-stack recipe derives `band_count` from its ordered band-definition list, and the runner passes that result to scaling and candidate pre-screening. Adding or removing a recipe band therefore does not require a second band-count edit.
 
 The scientific RGB recipe is implemented in:
 
@@ -179,10 +197,9 @@ Under `RUN_ROOT/level1b/`:
 - `channels/proxy_stack.tif` — six bands in order: `ExGR`, `ExR`, `BRI`, `DGLCM_PC1_SMALL`, `DGLCM_PC1_LARGE`, `RATIO_DGLCM_PC1`
 - `channels/channel_report.json` — band order, PC1 quantization, Haralick directions/radii, aggregation, and ratio contract
 - `scaling/scaled_feature_stack.tif`
-- `scales/scale_candidates.json` — one row per explicit YAML metre baseline, with deterministically derived `spatialr_px` and `minsize_px`
-- `ranger/ranger_candidates.json` — the complete `k -> HSM ranger` curve, plateau-window diagnostics, selected `k`, and exactly one scene-specific ranger on success
-- `ranger/scale_candidates_with_ranger.json` — all explicit spatial baselines with that same central ranger attached
-- `perturbations/perturbation_candidates.json`
+- `candidate_pre_screening/candidate_population.json` — complete Step-9a rows grouped by scene-adaptive scale support
+- `candidate_pre_screening/variogram_diagnostics.json` — sill crossings, knee/plateau and directional diagnostics
+- `candidate_pre_screening/candidate_pre_screening_report.json`
 - `candidate_response_surface/run_population_summary.json`
 - `candidate_response_surface/candidate_group_response_summary.json`
 - `candidate_response_surface/ranked_candidate_scales.json`

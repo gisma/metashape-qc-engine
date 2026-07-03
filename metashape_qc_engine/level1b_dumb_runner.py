@@ -21,9 +21,9 @@ from metashape_qc_engine.level1b_channels import (
     Level1BChannelConfig,
     run_channel_construction_step,
 )
-from metashape_qc_engine.level1b_feature_range import (
-    Level1BFeatureRangeConfig,
-    run_feature_range_assignment_step,
+from metashape_qc_engine.level1b_candidate_prescreening import (
+    Level1BCandidatePrescreeningConfig,
+    run_candidate_prescreening_step,
 )
 from metashape_qc_engine.level1b_materialization import (
     run_level1b_step10_aggregate_finalist_evidence,
@@ -32,17 +32,10 @@ from metashape_qc_engine.level1b_materialization import (
     run_level1b_step10_make_finalist_figures,
     run_level1b_step10_materialize_selected_segments,
 )
-from metashape_qc_engine.level1b_perturbations import (
-    Level1BPerturbationConfig,
-    run_local_perturbation_step,
-)
+from metashape_qc_engine.level1b_perturbations import Level1BPerturbationConfig
 from metashape_qc_engine.level1b_preflight import (
     Level1BPreflightConfig,
     run_preflight,
-)
-from metashape_qc_engine.level1b_scale_distribution import (
-    Level1BScaleDistributionConfig,
-    run_scale_distribution_step,
 )
 from metashape_qc_engine.level1b_scaling import (
     Level1BScalingConfig,
@@ -241,90 +234,78 @@ def run_level1b_dumb_chain(
     scaled_feature_stack = scaling_artifacts["scaled_feature_stack"]
     step_results["scaling"] = _compact_step_result(output_dir, scaling_manifest)
 
-    scale_distribution_cfg = cfg["scale_distribution"]
-    scale_distribution_result = run_scale_distribution_step(
-        Level1BScaleDistributionConfig(
-            candidate_id=candidate_id,
-            output_dir=output_dir,
-            pixel_size_m=pixel_size_m,
-            baseline_candidate_radii_m=tuple(
-                scale_distribution_cfg["baseline_candidate_radii_m"]
-            ),
-            overwrite=overwrite,
-        )
-    )
-    _raise_on_failed_status("scale_distribution", scale_distribution_result)
-    scale_distribution_manifest = _consume_step_manifest(
-        output_dir, "scale_distribution", scale_distribution_result
-    )
-    scale_distribution_artifacts = _manifest_artifacts(
-        "scale_distribution",
-        scale_distribution_manifest,
-        ("scale_candidates_json",),
-    )
-    scale_candidates = scale_distribution_artifacts["scale_candidates_json"]
-    step_results["scale_distribution"] = _compact_step_result(
-        output_dir, scale_distribution_manifest
-    )
-
-    feature_range_cfg = cfg["feature_range"]
-    feature_range_result = run_feature_range_assignment_step(
-        Level1BFeatureRangeConfig(
+    prescreen_cfg = cfg["candidate_pre_screening"]
+    prescreen_result = run_candidate_prescreening_step(
+        Level1BCandidatePrescreeningConfig(
             candidate_id=candidate_id,
             output_dir=output_dir,
             feature_space_stack_path=scaled_feature_stack,
             valid_mask_path=valid_mask,
-            scale_candidates_json_path=scale_candidates,
-            feature_space_source="scaled",
+            pixel_size_m=pixel_size_m,
             band_count=proxy_band_count,
-            sample_n=feature_range_cfg["sample_n"],
-            knn_k_policy=feature_range_cfg["knn_k_policy"],
-            knn_k_candidates=tuple(feature_range_cfg["knn_k_candidates"]),
-            hsm_stability_rel_tol=feature_range_cfg["hsm_stability_rel_tol"],
-            hsm_plateau_window=feature_range_cfg["hsm_plateau_window"],
-            max_distance_sample_n=feature_range_cfg["max_distance_sample_n"],
+            radius_min_m=prescreen_cfg["radius_min_m"],
+            radius_max_m=prescreen_cfg["radius_max_m"],
+            lag_count=prescreen_cfg["lag_count"],
+            lag_spacing=prescreen_cfg["lag_spacing"],
+            directions=tuple(
+                tuple(value) for value in prescreen_cfg["directions"]
+            ),
+            pair_sample_n_per_direction=prescreen_cfg[
+                "pair_sample_n_per_direction"
+            ],
+            min_valid_pairs_per_direction=prescreen_cfg[
+                "min_valid_pairs_per_direction"
+            ],
+            sill_tail_fraction=prescreen_cfg["sill_tail_fraction"],
+            sill_fraction_targets=tuple(
+                prescreen_cfg["sill_fraction_targets"]
+            ),
+            stable_crossing_window=prescreen_cfg["stable_crossing_window"],
+            plateau_rel_tol=prescreen_cfg["plateau_rel_tol"],
+            anisotropy_ratio_threshold=prescreen_cfg[
+                "anisotropy_ratio_threshold"
+            ],
+            candidate_budget=prescreen_cfg["candidate_budget"],
+            ranger_level_policy=prescreen_cfg["ranger_level_policy"],
+            sample_n=prescreen_cfg["sample_n"],
+            knn_k_policy=prescreen_cfg["knn_k_policy"],
+            knn_k_candidates=tuple(prescreen_cfg["knn_k_candidates"]),
+            hsm_stability_rel_tol=prescreen_cfg["hsm_stability_rel_tol"],
+            hsm_plateau_window=prescreen_cfg["hsm_plateau_window"],
+            max_distance_sample_n=prescreen_cfg["max_distance_sample_n"],
+            seed=prescreen_cfg["seed"],
             overwrite=overwrite,
         )
     )
-    _raise_on_failed_status("feature_range", feature_range_result)
-    feature_range_manifest = _consume_step_manifest(
-        output_dir, "feature_range", feature_range_result
+    _raise_on_failed_status("candidate_pre_screening", prescreen_result)
+    prescreen_manifest = _consume_step_manifest(
+        output_dir, "candidate_pre_screening", prescreen_result
     )
-    feature_range_artifacts = _manifest_artifacts(
-        "feature_range",
-        feature_range_manifest,
-        ("scale_candidates_with_ranger_json",),
+    prescreen_artifacts = _manifest_artifacts(
+        "candidate_pre_screening",
+        prescreen_manifest,
+        ("candidate_population_json", "variogram_diagnostics_json"),
     )
-    scale_candidates_with_ranger = feature_range_artifacts[
-        "scale_candidates_with_ranger_json"
-    ]
-    step_results["feature_range"] = _compact_step_result(output_dir, feature_range_manifest)
+    candidate_population = prescreen_artifacts["candidate_population_json"]
+    variogram_diagnostics = prescreen_artifacts["variogram_diagnostics_json"]
+    step_results["candidate_pre_screening"] = _compact_step_result(
+        output_dir, prescreen_manifest
+    )
 
+    # Step-9b reuses the existing local midpoint-family generator. Its source
+    # table path is provenance only in that call; Step-9a consumes the complete
+    # pre-screened population directly.
     perturbation_config = Level1BPerturbationConfig(
         candidate_id=candidate_id,
         output_dir=output_dir,
-        scale_candidates_with_ranger_json_path=scale_candidates_with_ranger,
+        scale_candidates_with_ranger_json_path=candidate_population,
         overwrite=overwrite,
     )
-    perturbation_result = run_local_perturbation_step(perturbation_config)
-    _raise_on_failed_status("perturbations", perturbation_result)
-    perturbations_manifest = _consume_step_manifest(
-        output_dir, "perturbations", perturbation_result
-    )
-    perturbation_artifacts = _manifest_artifacts(
-        "perturbations",
-        perturbations_manifest,
-        ("perturbation_candidates_json",),
-    )
-    perturbation_candidates = perturbation_artifacts[
-        "perturbation_candidates_json"
-    ]
-    step_results["perturbations"] = _compact_step_result(output_dir, perturbations_manifest)
 
     candidate_response_surface_config = Level1BCandidateResponseSurfaceConfig(
         candidate_id=candidate_id,
         output_dir=output_dir,
-        perturbation_candidates_json_path=perturbation_candidates,
+        perturbation_candidates_json_path=candidate_population,
         valid_mask_path=valid_mask,
         segmentation_stack_path=scaled_feature_stack,
         segmentation_stack_source="scaled_proxy_stack",
@@ -542,9 +523,8 @@ def run_level1b_dumb_chain(
             "valid_mask": str(valid_mask),
             "proxy_stack": str(proxy_stack),
             "scaled_feature_stack": str(scaled_feature_stack),
-            "scale_candidates": str(scale_candidates),
-            "scale_candidates_with_ranger": str(scale_candidates_with_ranger),
-            "perturbation_candidates": str(perturbation_candidates),
+            "candidate_population": str(candidate_population),
+            "variogram_diagnostics": str(variogram_diagnostics),
             "step9a_report": str(step9a_report),
             "step9b_prepare_manifest": str(
                 step9b_prepare_artifacts["step9b_prepare_manifest_json"]

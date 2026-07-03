@@ -9,10 +9,10 @@ from metashape_qc_engine import level1b_dumb_runner as runner
 from metashape_qc_engine.level1b_candidate_response_surface import (
     Level1BCandidateResponseSurfaceConfig,
 )
-from metashape_qc_engine.level1b_perturbations import Level1BPerturbationConfig
-from metashape_qc_engine.level1b_scale_distribution import (
-    Level1BScaleDistributionConfig,
+from metashape_qc_engine.level1b_candidate_prescreening import (
+    Level1BCandidatePrescreeningConfig,
 )
+from metashape_qc_engine.level1b_perturbations import Level1BPerturbationConfig
 from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 
@@ -104,53 +104,25 @@ def _install_stubs(
         )
         return {"status": "ok"}
 
-    def scale_distribution(config):
-        calls.append("scale_distribution")
-        captured["scale_distribution"] = config
-        _write(level1b / "scales" / "scale_candidates.json", {"candidates": [{}]})
-        manifest(
-            "scale_distribution",
-            "ok",
-            {
-                "scale_candidates_json": level1b
-                / "scales"
-                / "scale_candidates.json"
-            },
-        )
-        return {"status": "ok"}
-
-    def feature_range(config):
-        calls.append("feature_range")
-        captured["feature_range"] = config
+    def candidate_pre_screening(config):
+        calls.append("candidate_pre_screening")
+        captured["candidate_pre_screening"] = config
+        prescreen_dir = level1b / "candidate_pre_screening"
         _write(
-            level1b / "ranger" / "scale_candidates_with_ranger.json",
+            prescreen_dir / "candidate_population.json",
             {"candidates": [{}]},
         )
+        _write(prescreen_dir / "variogram_diagnostics.json", {})
+        _write(prescreen_dir / "candidate_pre_screening_report.json", {})
         manifest(
-            "feature_range",
+            "candidate_pre_screening",
             "ok",
             {
-                "scale_candidates_with_ranger_json": level1b
-                / "ranger"
-                / "scale_candidates_with_ranger.json"
-            },
-        )
-        return {"status": "ok"}
-
-    def perturbations(config):
-        calls.append("perturbations")
-        captured["perturbations"] = config
-        _write(
-            level1b / "perturbations" / "perturbation_candidates.json",
-            {"candidates": [{}]},
-        )
-        manifest(
-            "perturbations",
-            "ok",
-            {
-                "perturbation_candidates_json": level1b
-                / "perturbations"
-                / "perturbation_candidates.json"
+                "candidate_population_json": prescreen_dir
+                / "candidate_population.json",
+                "variogram_diagnostics_json": prescreen_dir
+                / "variogram_diagnostics.json",
+                "report": prescreen_dir / "candidate_pre_screening_report.json",
             },
         )
         return {"status": "ok"}
@@ -405,9 +377,9 @@ def _install_stubs(
     monkeypatch.setattr(runner, "run_valid_mask_step", valid_mask)
     monkeypatch.setattr(runner, "run_channel_construction_step", channels)
     monkeypatch.setattr(runner, "run_scaling_step", scaling)
-    monkeypatch.setattr(runner, "run_scale_distribution_step", scale_distribution)
-    monkeypatch.setattr(runner, "run_feature_range_assignment_step", feature_range)
-    monkeypatch.setattr(runner, "run_local_perturbation_step", perturbations)
+    monkeypatch.setattr(
+        runner, "run_candidate_prescreening_step", candidate_pre_screening
+    )
     monkeypatch.setattr(runner, "run_candidate_response_surface_step", step9a)
     monkeypatch.setattr(
         runner, "run_step9b_prepare_from_existing_step9a", step9b_prepare
@@ -455,9 +427,7 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
         "valid_mask",
         "channels",
         "scaling",
-        "scale_distribution",
-        "feature_range",
-        "perturbations",
+        "candidate_pre_screening",
         "step9a",
         "step9b_prepare",
         "step9b_midpoint_handoff",
@@ -479,33 +449,37 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert channel_config.ratio_eps == 1e-6
     assert channel_config.background_value == -999999.0
     assert captured["scaling"].band_count == 6
-    assert captured["feature_range"].band_count == 6
-    assert captured["feature_range"].feature_space_source == "scaled"
-    assert captured["feature_range"].sample_n == 80000
-    assert captured["feature_range"].knn_k_policy == "auto_hsm_plateau"
-    assert captured["feature_range"].knn_k_candidates == (8, 13, 21, 34, 55)
-    assert captured["feature_range"].hsm_stability_rel_tol == 0.10
-    assert captured["feature_range"].hsm_plateau_window == 3
-    assert captured["feature_range"].max_distance_sample_n == 15000
-    assert not hasattr(captured["feature_range"], "knn_k")
-    assert not hasattr(captured["feature_range"], "quantile_probs")
-
-    scale_config = captured["scale_distribution"]
-    assert isinstance(scale_config, Level1BScaleDistributionConfig)
-    assert scale_config.baseline_candidate_radii_m == (
-        0.2,
-        0.36,
-        0.65,
-        1.18,
-        2.14,
-        3.87,
+    prescreen_config = captured["candidate_pre_screening"]
+    assert isinstance(prescreen_config, Level1BCandidatePrescreeningConfig)
+    assert prescreen_config.band_count == 6
+    assert prescreen_config.radius_min_m == 0.2
+    assert prescreen_config.radius_max_m == 3.87
+    assert prescreen_config.lag_count == 32
+    assert prescreen_config.lag_spacing == "logarithmic"
+    assert prescreen_config.sill_fraction_targets == (0.25, 0.5, 0.75, 0.95)
+    assert prescreen_config.candidate_budget == 12
+    assert prescreen_config.ranger_level_policy == (
+        "hsm_main_interval_lower_mode_upper"
     )
+    assert prescreen_config.sample_n == 80000
+    assert prescreen_config.knn_k_policy == "auto_hsm_plateau"
+    assert prescreen_config.knn_k_candidates == (
+        8, 10, 13, 16, 21, 27, 34, 44, 55
+    )
+    assert prescreen_config.hsm_stability_rel_tol == 0.10
+    assert prescreen_config.hsm_plateau_window == 3
+    assert prescreen_config.max_distance_sample_n == 15000
+    assert not hasattr(prescreen_config, "baseline_candidate_radii_m")
+    assert not hasattr(prescreen_config, "quantile_probs")
 
     step9a_config = captured["step9a"]
     assert isinstance(step9a_config, Level1BCandidateResponseSurfaceConfig)
     assert step9a_config.segmentation_stack_source == "scaled_proxy_stack"
     assert step9a_config.perturbation_candidates_json_path == (
-        output_dir / "level1b" / "perturbations" / "perturbation_candidates.json"
+        output_dir
+        / "level1b"
+        / "candidate_pre_screening"
+        / "candidate_population.json"
     )
     prepare = captured["step9b_prepare"]
     assert prepare["run_root"] == output_dir
@@ -801,4 +775,4 @@ def test_runner_propagates_recipe_band_count_without_yaml_duplicate(
     runner.run_level1b_dumb_chain(Path("/tmp/ortho.tif"), output_dir)
 
     assert captured["scaling"].band_count == 7
-    assert captured["feature_range"].band_count == 7
+    assert captured["candidate_pre_screening"].band_count == 7

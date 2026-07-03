@@ -8,7 +8,7 @@ Operational commands are in [RUN_LEVEL1B.md](RUN_LEVEL1B.md). This file maps the
 
 | Layer | Current code | Responsibility |
 |---|---|---|
-| Method steps | `level1b_valid_mask.py`, `level1b_proxy_stack_rgb_dglcm.py`, `level1b_channels.py`, `level1b_scaling.py`, `level1b_scale_distribution.py`, `level1b_feature_range.py`, `level1b_perturbations.py`, `level1b_candidate_response_surface.py`, `level1b_materialization.py` | Define domain, features, scale candidates, perturbations, response evidence, handoff, and products |
+| Method steps | `level1b_valid_mask.py`, `level1b_proxy_stack_rgb_dglcm.py`, `level1b_channels.py`, `level1b_scaling.py`, `level1b_candidate_prescreening.py`, `level1b_candidate_response_surface.py`, `level1b_materialization.py` | Define domain, features, scale candidates, perturbations, response evidence, handoff, and products |
 | Segment statistics | `R/level1b_step10_exactextractr_segment_stats.R` | Compute exactextractr summaries for materialized selected segments |
 | Contract validation | `level1b_preflight.py`, `level1b_step_manifest.py` | Validate runtime inputs/tools and expose stable per-step input/artifact keys |
 | Wrapper | `level1b_dumb_runner.py`, `run_level1b_dumb_with_user_header.sh` | Establish environment, call steps in order, enforce branch/status contracts, and write a compact report |
@@ -32,7 +32,7 @@ For RGB input, `level1b_proxy_stack_rgb_dglcm.py` defines and builds this exact 
 5. `DGLCM_PC1_LARGE` — coarse directional radiometric structure on RGB-PC1
 6. `RATIO_DGLCM_PC1` — fine-versus-coarse directional structure
 
-This is a deterministic RGB proxy stack for robust feature-space separation under variable UAV image quality. It is neither scene-trained nor scene-optimized. The spectral proxy bands are 1–3. Bands 4–5 are directional structure-feature bands. Band 6 is their fine-to-coarse ratio. All six bands enter the scaled feature space, but none of their names or measurement radii define the Step-9a baseline ladder.
+This is a deterministic RGB proxy stack for robust feature-space separation under variable UAV image quality. It is neither scene-trained nor scene-optimized. The spectral proxy bands are 1–3. Bands 4–5 are directional structure-feature bands. Band 6 is their fine-to-coarse ratio. All six bands enter the scaled feature space, but none of their names or measurement radii define the scene-adaptive Step-9a candidate ladder.
 
 The structure path is:
 
@@ -44,7 +44,7 @@ The structure path is:
 6. take the pixelwise maximum Inertia across directions separately for the small and large bands
 7. compute `DGLCM_PC1_SMALL / (DGLCM_PC1_LARGE + 1e-6)`
 
-Active radii are `dglcm_pc1_small_radius_m: 0.25` and `dglcm_pc1_large_radius_m: 0.5`. They are converted with `max(1, round(radius_m / pixel_size_m))`. Radius choice remains a methodological risk because it defines which local structure enters feature-space distances, ranger derivation, and segmentation. It does not define the explicit Step-9a baseline radii.
+Active radii are `dglcm_pc1_small_radius_m: 0.25` and `dglcm_pc1_large_radius_m: 0.5`. They are converted with `max(1, round(radius_m / pixel_size_m))`. Radius choice remains a methodological risk because it defines which local structure enters feature-space distances, ranger derivation, and segmentation. It does not define the segmentation candidate radii.
 
 The previous five-channel ExGR neighborhood-variance stack and its historical `TEX_*` labels are legacy and are not the current normal RGB path. Current RGB structure is directional GLCM/Haralick Inertia on RGB-PC1, not undirected neighborhood variance.
 
@@ -54,7 +54,7 @@ Outputs are `level1b/channels/proxy_stack.tif` and `channel_report.json`. The re
 
 `rgb_dglcm_pc1_band_definitions()` is the single ordered definition of the final stack bands. Each entry contains a band name and its OTB BandMathX expression. The reported `band_names` and `band_count` are derived from this list rather than duplicated in YAML or the runner.
 
-A channel based on the existing RGB, small-structure, or large-structure inputs is added locally by appending one `(name, expression)` entry. A channel requiring a new raster operator additionally needs its intermediate command and raster added within the same recipe module. It does not require Step 9 or Step 10 changes. Scaling and feature-range assignment receive the resulting band count from the channel result.
+A channel based on the existing RGB, small-structure, or large-structure inputs is added locally by appending one `(name, expression)` entry. A channel requiring a new raster operator additionally needs its intermediate command and raster added within the same recipe module. It does not require Step 9 or Step 10 changes. Scaling and candidate pre-screening receive the resulting band count from the channel result.
 
 The normal method parameters are explicit in `config/level1b_default.yaml`: RGB band indices, metric DGLCM radii, PC1 clip quantiles and output range, GLCM bin count and directions, ratio epsilon, and background value. Fixed OTB interface facts—PCA input/component count, `texture=simple`, and Inertia output band 5—remain in the recipe code rather than being exposed as experimental YAML parameters.
 
@@ -66,70 +66,78 @@ This reduces extreme-value influence on feature-space distances, ranger derivati
 
 Outputs include `scaled_feature_stack.tif`, `scaling_parameters.json`, `scaling_parameters.xml`, and `scaling_report.json`. The JSON records quantiles, bounds, centers, and scales.
 
-## 4. Explicit baseline candidate radii
+## 4. Scene-adaptive candidate pre-screening
 
-`level1b_scale_distribution.py` does not infer the tested segmentation scales from channel names, DGLCM window radii, or proxy metadata. The deterministic Step-9a baseline candidate radii are listed explicitly in `config/level1b_default.yaml` as `baseline_candidate_radii_m`. Every value is in metres and defines one central baseline family.
+`level1b_candidate_prescreening.py` replaces the normal runner's former fixed
+scale-distribution, ranger-assignment, and perturbation chain. The YAML now
+defines an admissible radius domain and derivation policies; it does not list
+concrete Step-9a scale anchors.
 
-The current defaults reproduce the former pre-DGLCM ladder for comparison:
+The pre-screen reads the valid pixels of `scaled_feature_stack.tif` and
+computes a robust multiband empirical variogram over logarithmically spaced
+lags. For each lag and configured direction, the response is half the mean
+squared Euclidean difference between the two scaled feature vectors. The
+median across sampled valid pairs and then across directions limits the
+influence of extreme local differences.
 
-```text
-0.2, 0.36, 0.65, 1.18, 2.14, 3.87 metres
-```
+The sill is the median of the configured tail fraction of the variogram.
+Concrete scale support points are the first crossings of the configured sill
+fractions that remain above the threshold for the configured lag window. The
+active support fractions are `0.25, 0.50, 0.75, 0.95`. They are positions on
+one continuous scene-structure curve, not analysis classes. Every resulting
+family receives exactly the same Step-9 evaluation.
 
-The list must be finite, positive, duplicate-free, and strictly increasing. Its order is preserved; no grid, sorting, interpolation, texture-radius inference, or label parsing is performed. For each explicit baseline radius:
+The YAML domain bounds are `radius_min_m` and `radius_max_m`. Candidate
+radii are constrained to this domain and to executable raster-pixel lags.
+For every selected radius:
 
-- `spatialr_px = round(radius_m / pixel_size_m)`, minimum 1
+- `spatialr_px` is the selected pixel lag
 - `area_m2 = pi * radius_m²`
 - `minsize_px = round(area_m2 / pixel_area_m2)`, minimum 1
 
-The DGLCM radii `0.25 m` and `0.5 m` are measurement-window parameters for the structure features only. They do not define or limit the segmentation baseline ladder. The existing perturbation generator subsequently creates the local `spatialr_px`, `minsize_px`, and `ranger` variants around every baseline. Step-9b remains inside the resulting Step-9a ladder.
+Thus `minsize_px` is coupled to the spatial radius and is not an independent
+coverage axis. DGLCM measurement radii and channel names do not create the
+segmentation scale ladder.
 
-Outputs are `level1b/scales/scale_candidates.json` and `.csv`.
-
-The two independent parameter paths are therefore:
-
-```text
-baseline_candidate_radii_m [metres]
-  -> spatialr_px and minsize_px [derived pixel parameters]
-
-valid scaled pixel-feature vectors
-  -> kNN-distance distributions for explicit candidate neighbour ranks
-  -> k-to-HSM-ranger curve and first stable plateau
-  -> one selected ranger [dimensionless feature-space tolerance]
-  -> copied unchanged to every spatial baseline
-```
-
-Neither path generates values for the other. In particular, pixel size converts the explicit metre baselines for execution; it does not choose the baselines.
+Knee location, tail plateau, directional 95%-ranges, and their anisotropy
+ratio are diagnostic metadata only. They do not add, remove, rank, or
+differentially evaluate candidates. If fewer than two distinct stable support
+radii are found, pre-screening fails rather than restoring fixed anchors.
 
 ## 5. Feature range (`ranger`)
 
-`level1b_feature_range.py` samples valid vectors from the scaled stack and computes k-th-nearest-neighbour distances in the scaled six-dimensional feature space. These distances are dimensionless feature-space distances, not metres or pixels. The active neighbour-rank candidates are `[8, 13, 21, 34, 55]`; very small and unstable neighbourhood orders are therefore excluded.
+The pre-screen reuses the existing HSM/kNN implementation from
+`level1b_feature_range.py`. It evaluates the configured neighbour ranks
+`[8, 10, 13, 16, 21, 27, 34, 44, 55]` on one deterministic sample of valid scaled feature
+vectors. Each kNN-distance distribution is reduced by Half-Sample Mode. The
+smallest k in the first stable HSM window supplies the central scene ranger.
+There is no fixed-k or tail-quantile fallback.
 
-All candidate ranks are extracted from one nearest-neighbour calculation on the same deterministic vector sample. For every candidate `k`, its empirical distance distribution is reduced to a robust central value with the deterministic Half-Sample Mode estimator: the shortest interval containing half of the remaining observations is selected recursively until at most two values remain. This produces the scene diagnostic curve `k -> HSM ranger` without running segmentation.
+The materialized ranger levels are the central HSM plus the positive unique
+lower and upper bounds of its shortest half-sample modal interval. These are
+bounded positions in the plausible main feature-distance interval, not a
+ranger tail ladder. Ranger is dimensionless feature-space tolerance; it is not
+a metre or pixel scale.
 
-The curve is inspected in consecutive windows of three candidate ranks. A window is stable when `(max(ranger) - min(ranger)) / median(ranger) <= 0.10`. The smallest `k` in the first stable window supplies the single scene-specific ranger. If no window satisfies the criterion, the step fails and preserves the curve and window diagnostics; no fixed-k fallback is used.
+## 6. Materialized Step-9a population
 
-The selected ranger is the feature-space similarity range. It is distinct from spatial `spatialr_px` and minimum-size `minsize_px`, and the same value is assigned to every explicit spatial baseline. The spatial ladder remains defined only by `baseline_candidate_radii_m`; no ranger statistic, candidate `k`, channel name, or DGLCM radius creates a spatial scale. The perturbation generator subsequently creates local ranger variations around the selected central value.
+The pre-screen writes
+`level1b/candidate_pre_screening/candidate_population.json`. Each selected
+spatial support point defines one `candidate_scale_group_id`. Its ranger
+levels are rows in that family, with exactly one central row marked
+`is_baseline=true`.
 
-Active defaults sample up to 80,000 vectors and limit the pairwise distance calculation to a deterministic sample of 15,000. No fixed neighbour order, ranger quantile ladder, radius-to-ranger assignment, tail padding, or Cartesian radius/ranger product is created.
+Rows contain the opaque run and family IDs, `spatialr_px`, coupled
+`minsize_px`, `ranger`, explicit source radius, sill-support metadata,
+variogram plausibility flags, and provenance. The configured candidate budget
+is a hard cap; it does not silently truncate the population.
 
-Outputs remain `ranger_candidates.json/.csv` and `scale_candidates_with_ranger.json/.csv`. `ranger_candidates.json` records the full HSM curve, every tested plateau window, the selected `k`, and exactly one central ranger on success.
-
-## 6. Perturbation design
-
-`level1b_perturbations.py` writes one baseline per complete scale candidate, then a bounded local family around `spatialr_px`, `minsize_px`, and `ranger`.
-
-Current class defaults define:
-
-- spatial-radius delta `ds=1`, reduced to zero for baseline radii of 3 px or less
-- ranger delta `max(0.005, 10% of baseline ranger)` when not explicit
-- minsize delta `max(5, round(20% of baseline minsize))` when not explicit
-- minsize floor at 80% of baseline
-- at most `K=8` perturbations, selected deterministically with seed 1 when needed
-
-The family measures local parameter sensitivity. It is not a global search and creates no new metric-scale anchors.
-
-Outputs are `level1b/perturbations/perturbation_candidates.json` and `.csv`.
+The same directory contains `variogram_diagnostics.json`,
+`variogram_curve.csv`, and `candidate_pre_screening_report.json`.
+Pre-screening performs no segmentation, ranking, or final selection. Step 9a
+consumes the population JSON directly. The legacy scale-distribution,
+feature-range-assignment, and initial perturbation modules remain readable for
+old runs but are not called by the normal runner.
 
 ## 7. Step 9a response-surface evidence
 
@@ -213,11 +221,11 @@ Each contains `step`, `status`, `inputs`, `artifacts`, and `provenance.candidate
 ## Methodological levers and risks
 
 - valid-mask rules define the population
-- DGLCM small/large radii define the measurement support of structure features; they do not define the tested segmentation baselines
-- `baseline_candidate_radii_m` defines the deterministic Step-9a baseline families in metres
-- robust scaling controls outlier influence
-- `knn_k_candidates`, `hsm_stability_rel_tol`, and `hsm_plateau_window` define the pre-segmentation neighbourhood-order diagnostic; the first stable HSM plateau supplies one ranger shared by all spatial baselines
-- perturbation deltas and family size define local sensitivity evidence
+- `radius_min_m`, `radius_max_m`, lag sampling, directions, and sill policies define the admissible scene-adaptive spatial design
+- sill-fraction crossings materialize the Step-9a scale families; knee, plateau, saturation, and anisotropy fields remain diagnostic only
+- `knn_k_candidates`, `hsm_stability_rel_tol`, and `hsm_plateau_window` define the central ranger diagnostic
+- the HSM modal interval defines bounded ranger-family coverage
+- Step-9b midpoint perturbation settings define only the local refinement family
 - Step-9a score terms define family ranking
 - Step-9b adjacency and fixed `> 0.5` rule define local handoff
 
