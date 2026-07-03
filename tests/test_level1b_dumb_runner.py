@@ -468,6 +468,7 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
         "step10_quality",
     ]
     channel_config = captured["channels"]
+    assert channel_config.input_type == "rgb"
     assert channel_config.dglcm_pc1_small_radius_m == 0.25
     assert channel_config.dglcm_pc1_large_radius_m == 0.5
     assert channel_config.pc1_clip_quantiles == (0.02, 0.98)
@@ -479,20 +480,26 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert channel_config.background_value == -999999.0
     assert captured["scaling"].band_count == 6
     assert captured["feature_range"].band_count == 6
+    assert captured["feature_range"].feature_space_source == "scaled"
+    assert captured["feature_range"].sample_n == 80000
+    assert captured["feature_range"].knn_k == 10
+    assert captured["feature_range"].max_distance_sample_n == 15000
+    assert not hasattr(captured["feature_range"], "quantile_probs")
 
     scale_config = captured["scale_distribution"]
     assert isinstance(scale_config, Level1BScaleDistributionConfig)
     assert scale_config.baseline_candidate_radii_m == (
         0.2,
-        0.3618081437156948,
-        0.6545256642949843,
-        1.1840635780642512,
-        2.142019226103952,
-        3.875,
+        0.36,
+        0.65,
+        1.18,
+        2.14,
+        3.87,
     )
 
     step9a_config = captured["step9a"]
     assert isinstance(step9a_config, Level1BCandidateResponseSurfaceConfig)
+    assert step9a_config.segmentation_stack_source == "scaled_proxy_stack"
     assert step9a_config.perturbation_candidates_json_path == (
         output_dir / "level1b" / "perturbations" / "perturbation_candidates.json"
     )

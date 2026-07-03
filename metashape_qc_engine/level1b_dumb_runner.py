@@ -191,7 +191,7 @@ def run_level1b_dumb_chain(
             candidate_id=candidate_id,
             input_path=rgb_ortho,
             output_dir=output_dir,
-            input_type=channels_cfg["input_type"],
+            input_type="rgb",
             valid_mask_path=valid_mask,
             pixel_size_m=pixel_size_m,
             rgb_band_indices=tuple(channels_cfg["rgb_band_indices"]),
@@ -275,11 +275,10 @@ def run_level1b_dumb_chain(
             feature_space_stack_path=scaled_feature_stack,
             valid_mask_path=valid_mask,
             scale_candidates_json_path=scale_candidates,
-            feature_space_source=feature_range_cfg["feature_space_source"],
+            feature_space_source="scaled",
             band_count=proxy_band_count,
             sample_n=feature_range_cfg["sample_n"],
             knn_k=feature_range_cfg["knn_k"],
-            quantile_probs=tuple(feature_range_cfg["quantile_probs"]),
             max_distance_sample_n=feature_range_cfg["max_distance_sample_n"],
             overwrite=overwrite,
         )
@@ -325,7 +324,7 @@ def run_level1b_dumb_chain(
         perturbation_candidates_json_path=perturbation_candidates,
         valid_mask_path=valid_mask,
         segmentation_stack_path=scaled_feature_stack,
-        segmentation_stack_source=cfg["candidate_response_surface"]["segmentation_stack_source"],
+        segmentation_stack_source="scaled_proxy_stack",
         overwrite=overwrite,
     )
     step9a_result = run_candidate_response_surface_step(

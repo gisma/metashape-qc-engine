@@ -25,9 +25,9 @@ def step7_payload(candidates: list[dict[str, object]] | None = None) -> dict[str
         "candidate_id": "candidate-1",
         "scale_candidates_json_path": "scale_candidates.json",
         "ranger_candidates_json_path": "ranger_candidates.json",
-        "assignment_rule": "ordered_scale_candidates_assigned_ordered_knn_distance_quantiles_with_tail_padding",
+        "assignment_rule": "all_scale_candidates_assigned_scene_half_sample_mode_ranger",
         "scale_candidate_count": 2,
-        "ranger_candidate_count": 2,
+        "ranger_candidate_count": 1,
         "assigned_candidate_count": 2,
         "candidates": candidates
         if candidates is not None
@@ -41,15 +41,18 @@ def step7_payload(candidates: list[dict[str, object]] | None = None) -> dict[str
                 "minsize_px": 100,
                 "ranger_id": "candidate-1_ranger_001",
                 "ranger": 2.0,
-                "ranger_source": "knn_distance_quantile",
-                "assignment_rule": "ordered_scale_candidates_assigned_ordered_knn_distance_quantiles_with_tail_padding",
+                "ranger_source": "knn_distance_half_sample_mode",
+                "assignment_rule": "all_scale_candidates_assigned_scene_half_sample_mode_ranger",
             },
             {
                 "candidate_id": "candidate-1_scale_002_ranger_002",
                 "scale_id": "candidate-1_scale_002",
                 "spatialr_px": 20,
                 "minsize_px": 200,
-                "ranger": 4.0,
+                "ranger_id": "candidate-1_ranger_001",
+                "ranger": 2.0,
+                "ranger_source": "knn_distance_half_sample_mode",
+                "assignment_rule": "all_scale_candidates_assigned_scene_half_sample_mode_ranger",
             },
         ],
     }

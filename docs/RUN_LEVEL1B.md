@@ -25,7 +25,21 @@ The resolved copy used for a run is written to:
 RUN_ROOT/level1b/resolved_level1b_config.yaml
 ```
 
-The `scale_distribution.baseline_candidate_radii_m` list contains the deterministic Step-9a baseline radii in metres. Each value defines one central baseline family; the perturbation generator creates its local variants. These radii are explicit workflow inputs from YAML and are not inferred from DGLCM radii, channel names, or proxy metadata.
+### Spatial baselines and scene-specific ranger
+
+`scale_distribution.baseline_candidate_radii_m` is the only source of spatial baseline scales. Its entries are explicit metre values; they are not pixel scales. For every configured radius, the workflow derives the executable pixel parameters from the orthomosaic resolution:
+
+```text
+spatialr_px = max(1, round(radius_m / pixel_size_m))
+area_m2     = pi * radius_m^2
+minsize_px  = max(1, round(area_m2 / pixel_area_m2))
+```
+
+The resulting `spatialr_px` and `minsize_px` values are derived execution parameters, not additional scale inputs. Channel names, DGLCM radii, proxy-stack statistics, kNN distances, and `ranger` do not create or reorder spatial baselines.
+
+The feature-range step samples valid vectors from the scaled proxy stack and measures each vector's `knn_k`-th-nearest-neighbour distance in dimensionless feature space. A deterministic Half-Sample Mode estimate reduces that empirical distribution to exactly one scene-specific central `ranger`. Every spatial baseline receives the same central ranger. The perturbation generator then creates bounded local variations around each baseline's `spatialr_px`, `minsize_px`, and that shared ranger.
+
+This change replaces the former ranger-quantile ladder and ordered/tail-padded ranger assignment. It does not reduce the number of spatial baselines or their perturbation families; that population remains controlled by `baseline_candidate_radii_m` and the perturbation settings.
 
 There is no CLI option for an alternative Level-1B config path.
 
@@ -163,8 +177,9 @@ Under `RUN_ROOT/level1b/`:
 - `channels/proxy_stack.tif` — six bands in order: `ExGR`, `ExR`, `BRI`, `DGLCM_PC1_SMALL`, `DGLCM_PC1_LARGE`, `RATIO_DGLCM_PC1`
 - `channels/channel_report.json` — band order, PC1 quantization, Haralick directions/radii, aggregation, and ratio contract
 - `scaling/scaled_feature_stack.tif`
-- `scales/scale_candidates.json` — the explicit YAML baselines converted deterministically to `spatialr_px` and `minsize_px`
-- `ranger/scale_candidates_with_ranger.json`
+- `scales/scale_candidates.json` — one row per explicit YAML metre baseline, with deterministically derived `spatialr_px` and `minsize_px`
+- `ranger/ranger_candidates.json` — exactly one scene-specific HSM ranger plus kNN/HSM diagnostics
+- `ranger/scale_candidates_with_ranger.json` — all explicit spatial baselines with that same central ranger attached
 - `perturbations/perturbation_candidates.json`
 - `candidate_response_surface/run_population_summary.json`
 - `candidate_response_surface/candidate_group_response_summary.json`

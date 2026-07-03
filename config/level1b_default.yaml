@@ -1,41 +1,97 @@
+# Operational defaults loaded automatically by level1b_dumb_runner.py.
+# Values in this file affect the normal Level-1B run unless a comment below
+# explicitly identifies the key as provenance/report metadata only.
 level1b:
   channels:
-    input_type: "rgb"
+    # One-based source-band positions interpreted as red, green, and blue.
+    # These positions drive masked RGB creation and the ExGR, ExR, and BRI
+    # expressions in the proxy-stack recipe.
     rgb_band_indices: [1, 2, 3]
+
+    # Fine directional GLCM measurement radius in metres. It is converted to
+    # pixels as max(1, round(radius_m / ortho_pixel_size_m)) and invokes one
+    # Haralick Inertia extraction for every configured direction.
     dglcm_pc1_small_radius_m: 0.25
+
+    # Coarse directional GLCM measurement radius in metres. It uses the same
+    # metre-to-pixel conversion and must be larger than the small radius.
     dglcm_pc1_large_radius_m: 0.5
+
+    # Lower and upper valid-pixel quantiles used to clip RGB-PC1 before
+    # Haralick extraction. Values must satisfy 0 <= lower < upper <= 1.
     pc1_clip_quantiles: [0.02, 0.98]
+
+    # Output range used to rescale the clipped PC1. These values are also
+    # passed to HaralickTextureExtraction as parameters.min and parameters.max.
     pc1_output_min: 0
     pc1_output_max: 255
+
+    # Number of grey-level bins used by every HaralickTextureExtraction call.
+    # This controls GLCM quantization and must be an integer greater than one.
     glcm_nbbin: 32
+
+    # Pixel-offset vectors [xoff, yoff] evaluated at both DGLCM radii. Each
+    # pair invokes one Haralick call per radius; Inertia is aggregated with a
+    # pixelwise maximum. The angle is atan2(yoff, xoff) in image-grid space,
+    # not a geographic bearing: [1,0]=0°, [1,1]=45°, [0,1]=90°,
+    # [-1,1]=135°. Examples: [2,1] is about 26.6° and [1,2] about 63.4°.
+    # Vector magnitude also changes pixel-pair distance; do not use [0,0].
     glcm_directions:
       - [1, 0]
       - [1, 1]
       - [0, 1]
       - [-1, 1]
+
+    # Small positive constant added to the coarse-structure denominator to
+    # prevent division by zero. It materially affects only values near zero.
     ratio_eps: 1.0e-6
+
+    # Value assigned to invalid RGB pixels before PCA. The same value is passed
+    # as the PCA background value and excluded from valid PC1 quantiles.
     background_value: -999999.0
+
+    # Filename of the channel-construction JSON report under
+    # <run_root>/level1b/channels/. It does not change the proxy raster name.
     report_filename: "channel_report.json"
 
   scale_distribution:
-    # Deterministic Step-9a baseline candidate radii in metres.
-    # Each value defines one central baseline family; the existing perturbation
-    # generator creates the local spatialr/minsize/ranger variants around it.
-    # These defaults reproduce the former pre-DGLCM ladder for comparison.
+    # Strictly increasing deterministic Step-9a baseline radii in metres.
+    # Every entry invokes creation of one central segmentation candidate with:
+    #   spatialr_px = max(1, round(radius_m / ortho_pixel_size_m))
+    #   area_m2     = pi * radius_m^2
+    #   minsize_px  = max(1, round(area_m2 / pixel_area_m2))
+    # The perturbation generator later creates local spatialr/minsize/ranger
+    # variants around each baseline. These defaults reproduce the former
+    # pre-DGLCM ladder; they are not derived from channel names or DGLCM radii.
     baseline_candidate_radii_m:
       - 0.2
-      - 0.3618081437156948
-      - 0.6545256642949843
-      - 1.1840635780642512
-      - 2.142019226103952
-      - 3.875
+      - 0.36
+      - 0.65
+      - 1.18
+      - 2.14
+      - 3.87
 
   feature_range:
-    feature_space_source: "scaled"
-    sample_n: 50000
-    knn_k: 10
-    max_distance_sample_n: 8000
-    quantile_probs: [0.25, 0.5, 0.75, 0.9]
+    # Maximum number of valid scaled feature vectors sampled from the complete
+    # raster before ranger estimation. If fewer vectors exist, all are used.
+    # Above a sufficiently representative sample this mainly affects sampling
+    # stability and memory, not the intended segmentation scale.
+    sample_n: 80000
 
-  candidate_response_surface:
-    segmentation_stack_source: "scaled_proxy_stack"
+    # Neighbour rank used for the feature-space distance distribution. For each
+    # sampled vector, the k-th-nearest-neighbour distance is measured. Larger k
+    # generally produces larger distances and ranger values, which permit more
+    # feature variation within segments and can therefore create larger areas.
+    # Here a pragmatic uncalibrated default.
+    knn_k: 10
+
+    # Maximum vectors entering the expensive pairwise kNN distance calculation
+    # after the first sample. A deterministic subsample is used above this
+    # limit. Larger values reduce sampling noise but increase approximately
+    # quadratic computation. This value must be greater than knn_k.
+    max_distance_sample_n: 15000
+
+    # The empirical kNN-distance distribution is reduced to one robust central
+    # ranger with the deterministic Half-Sample Mode estimator. All explicit
+    # spatial baseline radii receive this same ranger; the perturbation step
+    # creates only local ranger variations around it.

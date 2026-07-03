@@ -59,7 +59,7 @@ orthomosaic
   -> proxy stack
   -> robust scaling
   -> explicit baseline candidates from YAML
-  -> ranger assignment
+  -> one scene-specific HSM ranger shared across baselines
   -> perturbation families
   -> Step 9a response surface
   -> Step 9b adjacency/midpoint handoff
@@ -72,7 +72,9 @@ The runner derives orthomosaic pixel size, creates `valid_mask.tif`, builds the 
 
 ### Candidate population
 
-The scale-distribution step reads the strictly increasing `baseline_candidate_radii_m` list from `config/level1b_default.yaml` and deterministically derives `spatialr_px` and `minsize_px`. It performs no channel-name parsing, texture-radius inference, sorting, interpolation, or grid generation. Feature-range assignment derives `ranger`; the perturbation generator creates one baseline and a bounded local parameter family for each explicit radius.
+The scale-distribution step reads the strictly increasing `baseline_candidate_radii_m` list from `config/level1b_default.yaml`. These metre values are the only spatial baseline inputs. Orthomosaic pixel size is used only to derive each baseline's executable `spatialr_px` and `minsize_px`; it does not select the baseline ladder. The step performs no channel-name parsing, DGLCM-radius inference, ranger-to-radius mapping, sorting, interpolation, or grid generation.
+
+Independently, the feature-range step computes the empirical `knn_k`-nearest-neighbour distance distribution of valid scaled pixel-feature vectors and estimates exactly one central ranger by deterministic Half-Sample Mode. That same feature-space ranger is attached to every spatial baseline. The perturbation generator then creates one bounded local parameter family per explicit metre radius. There is no ranger ladder, tail padding, or Cartesian product of radii and ranger candidates.
 
 ### Step 9a and Step 9b
 

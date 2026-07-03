@@ -11,14 +11,18 @@ from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
 FEATURE_SPACE_SOURCES = {"scaled", "pca"}
-RANGER_SOURCE = "knn_distance_quantile"
-ASSIGNMENT_RULE = "ordered_scale_candidates_assigned_ordered_knn_distance_quantiles_with_tail_padding"
+RANGER_SOURCE = "knn_distance_half_sample_mode"
+RANGER_SELECTION_METHOD = "half_sample_mode"
+ASSIGNMENT_RULE = "all_scale_candidates_assigned_scene_half_sample_mode_ranger"
 REQUIRED_SCALE_CANDIDATE_FIELDS = ("candidate_id", "radius_m", "area_m2", "spatialr_px", "minsize_px")
 RANGER_FIELDS = (
     "ranger_id",
     "ranger_index",
     "ranger",
-    "quantile_prob",
+    "selection_method",
+    "modal_interval_lower",
+    "modal_interval_upper",
+    "half_sample_iterations",
     "knn_k",
     "sample_n_requested",
     "sample_n_used",
@@ -50,7 +54,13 @@ RANGER_JSON_KEYS = (
     "sample_n_used",
     "distance_sample_n",
     "knn_k",
-    "quantile_probs",
+    "selection_method",
+    "distance_min",
+    "distance_median",
+    "distance_max",
+    "modal_interval_lower",
+    "modal_interval_upper",
+    "half_sample_iterations",
     "ranger_source",
     "ranger_count",
     "ranger_candidates",
@@ -77,8 +87,6 @@ CHECK_KEYS = (
     "band_count_positive_integer",
     "sample_n_positive_integer",
     "knn_k_positive_integer",
-    "quantile_probs_non_empty",
-    "quantile_probs_in_range",
     "max_distance_sample_n_positive_integer",
     "max_distance_sample_n_greater_than_knn_k",
     "output_ranger_csv_path_available",
@@ -97,11 +105,10 @@ class Level1BFeatureRangeConfig:
     scale_candidates_json_path: str | Path
     feature_space_source: str
     band_count: int
-    sample_n: int = 50000
-    knn_k: int = 10
-    quantile_probs: tuple[float, ...] = (0.25, 0.5, 0.75, 0.9)
+    sample_n: int
+    knn_k: int
+    max_distance_sample_n: int
     seed: int = 1
-    max_distance_sample_n: int = 8000
     output_ranger_csv_filename: str = "ranger_candidates.csv"
     output_ranger_json_filename: str = "ranger_candidates.json"
     output_assigned_csv_filename: str = "scale_candidates_with_ranger.csv"
@@ -166,12 +173,6 @@ def validate_feature_range_config(config, layout, apps=None) -> tuple[dict[str, 
     if not _is_positive_int(config.knn_k):
         checks["knn_k_positive_integer"] = False
         failure_reasons.append("knn_k must be a positive integer")
-    if not _quantile_probs(config.quantile_probs):
-        checks["quantile_probs_non_empty"] = False
-        failure_reasons.append("quantile_probs must be non-empty")
-    elif any(not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0 or value > 1 for value in config.quantile_probs):
-        checks["quantile_probs_in_range"] = False
-        failure_reasons.append("quantile_probs values must be in [0, 1]")
     if not _is_positive_int(config.max_distance_sample_n):
         checks["max_distance_sample_n_positive_integer"] = False
         failure_reasons.append("max_distance_sample_n must be a positive integer")
@@ -189,12 +190,6 @@ def validate_feature_range_config(config, layout, apps=None) -> tuple[dict[str, 
 
 def _is_positive_int(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
-
-
-def _quantile_probs(values) -> tuple[float, ...]:
-    if values is None:
-        return ()
-    return tuple(values)
 
 
 def sample_valid_feature_vectors(config) -> tuple[np.ndarray, int]:
@@ -296,61 +291,103 @@ def compute_knn_distances(vectors, knn_k: int) -> np.ndarray:
     return kth_distances
 
 
-def build_ranger_candidates_from_knn_distances(
+def estimate_half_sample_mode(distances) -> dict[str, float | int | str]:
+    """Estimate the dominant centre of a one-dimensional distribution.
+
+    The shortest interval containing half of the remaining observations is
+    selected repeatedly. Ties are resolved by the first interval in sorted
+    order, which keeps the estimate deterministic.
+    """
+    values = np.asarray(distances, dtype=np.float64).reshape(-1)
+    if values.size == 0:
+        raise ValueError("kNN-distance distribution is empty")
+    if not np.all(np.isfinite(values)):
+        raise ValueError("kNN distances must be finite")
+    if np.any(values < 0):
+        raise ValueError("kNN distances must be non-negative")
+    if not np.any(values > 0):
+        raise ValueError("Feature Space has no finite positive distance variation")
+
+    ordered = np.sort(values)
+    distance_min = float(ordered[0])
+    distance_median = float(np.median(ordered))
+    distance_max = float(ordered[-1])
+    modal_interval_lower = distance_min
+    modal_interval_upper = distance_max
+    iterations = 0
+    current = ordered
+
+    while current.size > 2:
+        half_n = (current.size + 1) // 2
+        widths = current[half_n - 1 :] - current[: current.size - half_n + 1]
+        start = int(np.argmin(widths))
+        current = current[start : start + half_n]
+        iterations += 1
+        if iterations == 1:
+            modal_interval_lower = float(current[0])
+            modal_interval_upper = float(current[-1])
+
+    ranger = float(np.mean(current))
+    if not math.isfinite(ranger):
+        raise ValueError("derived Half-Sample Mode ranger must be finite")
+    if ranger <= 0:
+        raise ValueError("derived Half-Sample Mode ranger must be positive")
+
+    return {
+        "selection_method": RANGER_SELECTION_METHOD,
+        "ranger": ranger,
+        "distance_min": distance_min,
+        "distance_median": distance_median,
+        "distance_max": distance_max,
+        "modal_interval_lower": modal_interval_lower,
+        "modal_interval_upper": modal_interval_upper,
+        "half_sample_iterations": iterations,
+    }
+
+
+def build_ranger_candidate_from_knn_distances(
     candidate_id: str,
     distances,
-    quantile_probs,
     knn_k: int,
     sample_n_requested: int,
     sample_n_used: int,
     distance_sample_n: int,
     feature_space_source: str,
     band_count: int,
-) -> list[dict[str, object]]:
-    distances = np.asarray(distances, dtype=np.float64)
-    if distances.size == 0:
-        raise ValueError("kNN-distance distribution is empty")
-    if not np.all(np.isfinite(distances)):
-        raise ValueError("derived ranger values must be finite")
-    if not np.any(distances > 0):
-        raise ValueError("Feature Space has no finite positive distance variation")
-
-    candidates: list[dict[str, object]] = []
-    for ranger_index, quantile_prob in enumerate(tuple(quantile_probs), start=1):
-        ranger = float(np.quantile(distances, float(quantile_prob)))
-        if not math.isfinite(ranger):
-            raise ValueError("derived ranger values must be finite")
-        if ranger <= 0:
-            raise ValueError("derived ranger values must be positive")
-        candidates.append(
-            {
-                "ranger_id": f"{str(candidate_id).strip()}_ranger_{ranger_index:03d}",
-                "ranger_index": ranger_index,
-                "ranger": ranger,
-                "quantile_prob": float(quantile_prob),
-                "knn_k": int(knn_k),
-                "sample_n_requested": int(sample_n_requested),
-                "sample_n_used": int(sample_n_used),
-                "distance_sample_n": int(distance_sample_n),
-                "feature_space_source": feature_space_source,
-                "band_count": int(band_count),
-                "ranger_source": RANGER_SOURCE,
-            }
-        )
-    return candidates
+) -> tuple[list[dict[str, object]], dict[str, float | int | str]]:
+    diagnostics = estimate_half_sample_mode(distances)
+    candidate = {
+        "ranger_id": f"{str(candidate_id).strip()}_ranger_001",
+        "ranger_index": 1,
+        "ranger": diagnostics["ranger"],
+        "selection_method": diagnostics["selection_method"],
+        "modal_interval_lower": diagnostics["modal_interval_lower"],
+        "modal_interval_upper": diagnostics["modal_interval_upper"],
+        "half_sample_iterations": diagnostics["half_sample_iterations"],
+        "knn_k": int(knn_k),
+        "sample_n_requested": int(sample_n_requested),
+        "sample_n_used": int(sample_n_used),
+        "distance_sample_n": int(distance_sample_n),
+        "feature_space_source": feature_space_source,
+        "band_count": int(band_count),
+        "ranger_source": RANGER_SOURCE,
+    }
+    return [candidate], diagnostics
 
 
-def derive_ranger_candidates(config, sampled_vectors) -> tuple[list[dict[str, object]], int]:
+def derive_ranger_candidates(
+    config,
+    sampled_vectors,
+) -> tuple[list[dict[str, object]], int, dict[str, float | int | str]]:
     if len(sampled_vectors) <= config.knn_k:
         raise ValueError("not enough valid feature vectors to compute knn_k nearest-neighbor distances")
     distance_vectors = subsample_for_distance(sampled_vectors, config.max_distance_sample_n, config.seed)
     if len(distance_vectors) <= config.knn_k:
         raise ValueError("not enough valid feature vectors to compute knn_k nearest-neighbor distances")
     distances = compute_knn_distances(distance_vectors, config.knn_k)
-    candidates = build_ranger_candidates_from_knn_distances(
+    candidates, diagnostics = build_ranger_candidate_from_knn_distances(
         candidate_id=config.candidate_id,
         distances=distances,
-        quantile_probs=config.quantile_probs,
         knn_k=config.knn_k,
         sample_n_requested=config.sample_n,
         sample_n_used=len(sampled_vectors),
@@ -358,7 +395,7 @@ def derive_ranger_candidates(config, sampled_vectors) -> tuple[list[dict[str, ob
         feature_space_source=config.feature_space_source,
         band_count=config.band_count,
     )
-    return candidates, len(distance_vectors)
+    return candidates, len(distance_vectors), diagnostics
 
 
 def read_scale_candidates(json_path) -> list[dict[str, object]]:
@@ -378,11 +415,11 @@ def read_scale_candidates(json_path) -> list[dict[str, object]]:
 
 
 def assign_ranger_candidates_to_scale_candidates(scale_candidates, ranger_candidates) -> list[dict[str, object]]:
-    if not ranger_candidates:
-        raise ValueError("ranger candidates are empty")
+    if len(ranger_candidates) != 1:
+        raise ValueError("exactly one scene-specific ranger candidate is required")
+    ranger_candidate = ranger_candidates[0]
     assigned_candidates: list[dict[str, object]] = []
-    for index, scale_candidate in enumerate(scale_candidates):
-        ranger_candidate = ranger_candidates[min(index, len(ranger_candidates) - 1)]
+    for scale_candidate in scale_candidates:
         scale_id = scale_candidate.get("scale_id", scale_candidate["candidate_id"])
         assigned = dict(scale_candidate)
         assigned.update(
@@ -406,7 +443,7 @@ def write_ranger_candidates_csv(candidates, csv_path) -> None:
         writer.writerows({key: candidate[key] for key in RANGER_FIELDS} for candidate in candidates)
 
 
-def write_ranger_candidates_json(config, candidates, sample_n_used, distance_sample_n, json_path) -> None:
+def write_ranger_candidates_json(config, candidates, sample_n_used, distance_sample_n, diagnostics, json_path) -> None:
     payload = {
         "candidate_id": str(config.candidate_id).strip(),
         "feature_space_stack_path": str(Path(config.feature_space_stack_path)),
@@ -418,7 +455,13 @@ def write_ranger_candidates_json(config, candidates, sample_n_used, distance_sam
         "sample_n_used": int(sample_n_used),
         "distance_sample_n": int(distance_sample_n),
         "knn_k": int(config.knn_k),
-        "quantile_probs": [float(value) for value in config.quantile_probs],
+        "selection_method": diagnostics["selection_method"],
+        "distance_min": diagnostics["distance_min"],
+        "distance_median": diagnostics["distance_median"],
+        "distance_max": diagnostics["distance_max"],
+        "modal_interval_lower": diagnostics["modal_interval_lower"],
+        "modal_interval_upper": diagnostics["modal_interval_upper"],
+        "half_sample_iterations": diagnostics["half_sample_iterations"],
         "ranger_source": RANGER_SOURCE,
         "ranger_count": len(candidates),
         "ranger_candidates": [{key: candidate[key] for key in RANGER_FIELDS} for candidate in candidates],
@@ -466,17 +509,25 @@ def run_feature_range_assignment_step(config) -> dict[str, object]:
     scale_candidate_count = 0
     assigned_candidate_count = 0
     files_written: list[str] = []
+    ranger_diagnostics: dict[str, float | int | str] = {}
     status = "failed"
 
     if not failure_reasons:
         try:
             sampled_vectors, valid_vector_count = sample_valid_feature_vectors(config)
             sampled_vector_count = len(sampled_vectors)
-            ranger_candidates, distance_sample_n = derive_ranger_candidates(config, sampled_vectors)
+            ranger_candidates, distance_sample_n, ranger_diagnostics = derive_ranger_candidates(config, sampled_vectors)
             scale_candidates = read_scale_candidates(config.scale_candidates_json_path)
             assigned_candidates = assign_ranger_candidates_to_scale_candidates(scale_candidates, ranger_candidates)
             write_ranger_candidates_csv(ranger_candidates, ranger_csv_path)
-            write_ranger_candidates_json(config, ranger_candidates, sampled_vector_count, distance_sample_n, ranger_json_path)
+            write_ranger_candidates_json(
+                config,
+                ranger_candidates,
+                sampled_vector_count,
+                distance_sample_n,
+                ranger_diagnostics,
+                ranger_json_path,
+            )
             write_assigned_candidates_csv(assigned_candidates, assigned_csv_path)
             write_assigned_candidates_json(config, len(ranger_candidates), assigned_candidates, assigned_json_path)
         except Exception as exc:
@@ -512,7 +563,8 @@ def run_feature_range_assignment_step(config) -> dict[str, object]:
         "valid_vector_count": valid_vector_count,
         "distance_sample_n": distance_sample_n,
         "knn_k": config.knn_k,
-        "quantile_probs": tuple(config.quantile_probs),
+        "selection_method": RANGER_SELECTION_METHOD,
+        "ranger_diagnostics": ranger_diagnostics,
         "max_distance_sample_n": config.max_distance_sample_n,
         "ranger_source": RANGER_SOURCE,
         "assignment_rule": ASSIGNMENT_RULE,

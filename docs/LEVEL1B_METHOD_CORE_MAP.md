@@ -73,8 +73,7 @@ Outputs include `scaled_feature_stack.tif`, `scaling_parameters.json`, `scaling_
 The current defaults reproduce the former pre-DGLCM ladder for comparison:
 
 ```text
-0.2, 0.3618081437156948, 0.6545256642949843,
-1.1840635780642512, 2.142019226103952, 3.875 metres
+0.2, 0.36, 0.65, 1.18, 2.14, 3.87 metres
 ```
 
 The list must be finite, positive, duplicate-free, and strictly increasing. Its order is preserved; no grid, sorting, interpolation, texture-radius inference, or label parsing is performed. For each explicit baseline radius:
@@ -87,15 +86,31 @@ The DGLCM radii `0.25 m` and `0.5 m` are measurement-window parameters for the s
 
 Outputs are `level1b/scales/scale_candidates.json` and `.csv`.
 
+The two independent parameter paths are therefore:
+
+```text
+baseline_candidate_radii_m [metres]
+  -> spatialr_px and minsize_px [derived pixel parameters]
+
+valid scaled pixel-feature vectors
+  -> kNN-distance distribution
+  -> one Half-Sample Mode ranger [dimensionless feature-space tolerance]
+  -> copied unchanged to every spatial baseline
+```
+
+Neither path generates values for the other. In particular, pixel size converts the explicit metre baselines for execution; it does not choose the baselines.
+
 ## 5. Feature range (`ranger`)
 
-`level1b_feature_range.py` samples valid vectors from the scaled stack. It computes each sampled vector's k-th-nearest-neighbor distance and uses configured quantiles of that distribution as ranger candidates.
+`level1b_feature_range.py` samples valid vectors from the scaled stack and computes each sampled vector's k-th-nearest-neighbour distance in the scaled six-dimensional feature space. These distances are dimensionless feature-space distances, not metres or pixels.
 
-`ranger` is the feature-space similarity range. It is distinct from spatial `spatialr_px` and minimum-size `minsize_px`.
+The empirical distance distribution is reduced to one robust central `ranger` with the deterministic Half-Sample Mode estimator: the shortest interval containing half of the remaining observations is selected recursively until at most two values remain. This targets the dominant distribution mass without turning tail values into segmentation tolerances. The same scene-specific ranger is assigned to every explicit spatial baseline. The existing perturbation generator subsequently creates local ranger variations around that central value.
 
-Active defaults sample up to 50,000 vectors, limit distance calculation to 8,000, use `k=10`, and derive quantiles `0.25, 0.5, 0.75, 0.9`. Ranger candidates are assigned deterministically across ordered scale candidates.
+`ranger` is the feature-space similarity range. It is distinct from spatial `spatialr_px` and minimum-size `minsize_px`. The spatial ladder remains defined only by `baseline_candidate_radii_m`; no ranger statistic, channel name, or DGLCM radius creates a spatial scale.
 
-Outputs are `ranger_candidates.json/.csv` and `scale_candidates_with_ranger.json/.csv`.
+Active defaults sample up to 80,000 vectors, limit the pairwise distance calculation to a deterministic sample of 15,000, and use `k=10` as the explicit local feature-space neighbourhood order. No ranger quantile ladder, radius-to-ranger assignment, tail padding, or Cartesian radius/ranger product is created.
+
+Outputs remain `ranger_candidates.json/.csv` and `scale_candidates_with_ranger.json/.csv`. `ranger_candidates` contains exactly one central ranger and records the HSM modal interval and distribution summary needed to audit the estimate.
 
 ## 6. Perturbation design
 
@@ -198,7 +213,7 @@ Each contains `step`, `status`, `inputs`, `artifacts`, and `provenance.candidate
 - DGLCM small/large radii define the measurement support of structure features; they do not define the tested segmentation baselines
 - `baseline_candidate_radii_m` defines the deterministic Step-9a baseline families in metres
 - robust scaling controls outlier influence
-- ranger quantiles define feature-space similarity ranges
+- `knn_k` defines the local feature-space neighbourhood order; Half-Sample Mode defines one scene-specific central ranger shared by all spatial baselines
 - perturbation deltas and family size define local sensitivity evidence
 - Step-9a score terms define family ranking
 - Step-9b adjacency and fixed `> 0.5` rule define local handoff

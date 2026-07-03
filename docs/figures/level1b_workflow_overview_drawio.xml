@@ -32,7 +32,7 @@
         <mxCell id="s6" value="Step 6&lt;br&gt;&lt;b&gt;Scale distribution&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;current repository implementation stays authoritative&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="170" y="490" width="260" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="s7" value="Step 7&lt;br&gt;&lt;b&gt;Feature-space ranger&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;kNN distances → ranger candidates → ordered assignment&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="s7" value="Step 7&lt;br&gt;&lt;b&gt;Feature-space ranger&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;kNN distances → Half-Sample Mode → one shared ranger&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="520" y="490" width="260" height="100" as="geometry" />
         </mxCell>
         <mxCell id="s8" value="Step 8&lt;br&gt;&lt;b&gt;Local perturbations&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;R-style local cloud around each candidate&lt;br&gt;e.g. 6 groups × 9 rows = 54 segmentations&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
