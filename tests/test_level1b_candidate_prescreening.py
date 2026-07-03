@@ -13,6 +13,7 @@ from metashape_qc_engine.level1b_candidate_prescreening import (
     build_logarithmic_lag_pixels,
     find_stable_sill_fraction_crossings,
     run_candidate_prescreening_step,
+    technical_minsize_from_radius_domain,
 )
 from metashape_qc_engine.level1b_candidate_response_surface import (
     group_rows_by_candidate_scale,
@@ -128,6 +129,12 @@ def test_logarithmic_lags_stay_inside_domain_and_are_deterministic() -> None:
     assert max(first) <= 38
 
 
+def test_technical_minsize_uses_domain_minimum_radius_and_pixel_size() -> None:
+    assert technical_minsize_from_radius_domain(0.1, 0.05) == (2, 4, 16)
+    assert technical_minsize_from_radius_domain(0.1, 0.04998031571346) == (2, 4, 16)
+    assert technical_minsize_from_radius_domain(0.1, 0.025) == (4, 8, 64)
+
+
 def test_stable_sill_crossings_are_support_points_not_classes() -> None:
     crossings = find_stable_sill_fraction_crossings(
         _curve(), 1.0, (0.25, 0.5, 0.75, 0.95), 2
@@ -173,8 +180,18 @@ def test_step_materializes_step9_compatible_scene_adaptive_population(
             assert source_candidate_radius_m(row) == row["radius_m"]
             expected_area = math.pi * row["radius_m"] ** 2
             assert row["area_m2"] == expected_area
-            assert row["minsize_px"] == round(expected_area)
+            assert row["minsize_px"] == 4
+            assert row["technical_minsize_source_radius_m"] == 1.0
+            assert row["technical_minsize_radius_px"] == 1
+            assert row["technical_minsize_diameter_px"] == 2
+            assert (
+                row["coupling_rule"]
+                == "candidate_radius_m_to_spatialr_px__"
+                "domain_min_radius_m_to_common_technical_minsize_px"
+            )
             assert row["spatialr_px"] == round(row["radius_m"])
+
+    assert {row["minsize_px"] for row in rows} == {4}
 
 
 def test_candidate_budget_fails_instead_of_truncating(

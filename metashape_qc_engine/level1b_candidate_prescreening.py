@@ -20,7 +20,10 @@ from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 PRESCREENING_METHOD = "multiband_variogram_sill_fraction_support"
 VARIOGRAM_ESTIMATOR = "median_half_squared_euclidean_feature_distance"
 RANGER_LEVEL_POLICY = "hsm_main_interval_lower_mode_upper"
-COUPLING_RULE = "radius_m_to_spatialr_px__area_m2_to_minsize_px"
+COUPLING_RULE = (
+    "candidate_radius_m_to_spatialr_px__"
+    "domain_min_radius_m_to_common_technical_minsize_px"
+)
 PERTURBATION_RULE = "scene_adaptive_variogram_scale__hsm_main_interval_ranger"
 
 
@@ -158,6 +161,26 @@ def build_logarithmic_lag_pixels(
     if len(lags) < 2:
         raise ValueError("logarithmic lag policy produced fewer than two distinct pixel lags")
     return lags
+
+
+def technical_minsize_from_radius_domain(
+    radius_min_m: float,
+    pixel_size_m: float,
+) -> tuple[int, int, int]:
+    """Return the common technical minsize derived from the domain floor.
+
+    ``radius_min_m`` is the smallest admissible spatial radius. Its diameter
+    defines a square pixel support used only to suppress spurious tiny
+    regions. The result is independent of every materialized candidate
+    radius, so larger candidates do not force progressively stronger merging.
+    """
+    minimum_radius_px = max(
+        1,
+        int(math.floor(float(radius_min_m) / float(pixel_size_m) + 0.5)),
+    )
+    minimum_diameter_px = 2 * minimum_radius_px
+    minsize_px = minimum_diameter_px**2
+    return minimum_radius_px, minimum_diameter_px, minsize_px
 
 
 def _direction_offset(direction: tuple[int, int], lag_px: int) -> tuple[int, int]:
@@ -430,12 +453,20 @@ def materialize_candidate_population(
             f"candidate budget {config.candidate_budget} is smaller than planned population {planned_count}"
         )
 
+    (
+        technical_minsize_radius_px,
+        technical_minsize_diameter_px,
+        common_minsize_px,
+    ) = technical_minsize_from_radius_domain(
+        config.radius_min_m,
+        config.pixel_size_m,
+    )
+
     candidates: list[dict[str, Any]] = []
     for scale_index, (lag_px, support_rows) in enumerate(sorted(by_lag.items()), start=1):
         scale_id = f"scale_{scale_index:03d}"
         radius_m = float(support_rows[0]["radius_m"])
         area_m2 = math.pi * radius_m**2
-        minsize_px = max(1, round(area_m2 / float(config.pixel_size_m) ** 2))
         source_candidate_id = f"{config.candidate_id}__{scale_id}"
         targets = [float(row["sill_fraction_target"]) for row in support_rows]
         for ranger_index, ranger_level in enumerate(ranger_levels, start=1):
@@ -451,7 +482,7 @@ def materialize_candidate_population(
                     "scale_id": scale_id,
                     "scale_index": scale_index,
                     "spatialr_px": int(lag_px),
-                    "minsize_px": int(minsize_px),
+                    "minsize_px": int(common_minsize_px),
                     "ranger": ranger,
                     "deltas": {
                         "spatialr_px_delta": 0,
@@ -467,6 +498,15 @@ def materialize_candidate_population(
                     "area_m2": area_m2,
                     "pixel_size_m": float(config.pixel_size_m),
                     "pixel_area_m2": float(config.pixel_size_m) ** 2,
+                    "technical_minsize_source_radius_m": float(
+                        config.radius_min_m
+                    ),
+                    "technical_minsize_radius_px": int(
+                        technical_minsize_radius_px
+                    ),
+                    "technical_minsize_diameter_px": int(
+                        technical_minsize_diameter_px
+                    ),
                     "coupling_rule": COUPLING_RULE,
                     "scale_source": PRESCREENING_METHOD,
                     "sill_fraction_targets": targets,

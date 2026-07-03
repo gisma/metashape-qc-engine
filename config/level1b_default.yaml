@@ -11,7 +11,7 @@ level1b:
     # Fine directional GLCM measurement radius in metres. It is converted to
     # pixels as max(1, round(radius_m / ortho_pixel_size_m)) and invokes one
     # Haralick Inertia extraction for every configured direction.
-    dglcm_pc1_small_radius_m: 0.25
+    dglcm_pc1_small_radius_m: 0.2
 
     # Coarse directional GLCM measurement radius in metres. It uses the same
     # metre-to-pixel conversion and must be larger than the small radius.
@@ -57,8 +57,12 @@ level1b:
   candidate_pre_screening:
     # Admissible radius domain in metres, not concrete Step-9a anchors. Stable
     # variogram sill crossings materialize the scene-specific scale ladder.
-    radius_min_m: 0.2
-    radius_max_m: 3.87
+    # radius_min_m also defines the common technical SmallRegionsMerging floor:
+    # radius_px = round_half_up(radius_min_m / pixel_size_m), diameter_px = 2*radius_px,
+    # minsize_px = diameter_px^2. This minsize suppresses tiny regions; it is
+    # not a target segment area and does not grow with candidate radius.
+    radius_min_m: 0.1
+    radius_max_m: 1.0
 
     # Logarithmic lag sampling inside the radius domain. Pixel rounding can
     # reduce the number of distinct sampled lags.
