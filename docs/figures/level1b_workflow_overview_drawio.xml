@@ -1,108 +1,177 @@
 <?xml version='1.0' encoding='utf-8'?>
-<mxfile host="app.diagrams.net" modified="2026-06-26T18:55:00.000Z" agent="ChatGPT" version="24.7.17" type="device">
+<mxfile host="app.diagrams.net" agent="Codex" version="24.7.17" type="device">
   <diagram name="Level-1b workflow" id="level1b-workflow">
-    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1200" math="0" shadow="0">
+    <mxGraphModel dx="1800" dy="1900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1900" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="Level-1b UAV orthomosaic segmentation-quality workflow&lt;br&gt;&lt;font style='font-size: 13px'&gt;valid support → proxy features → scale candidates → ranger → local perturbations → candidate-scale response surface&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=22;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="360" y="20" width="1080" height="80" as="geometry" />
+        <mxCell id="title" value="Level-1B UAV orthomosaic segmentation-evidence workflow&lt;br&gt;&lt;font style='font-size: 13px'&gt;valid support → six-band features → scene-adaptive pre-screening → Step 9 evidence → Step 10 products&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="20" width="1200" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="ortho" value="Input orthomosaic&lt;br&gt;&lt;font style='font-size: 11px'&gt;RGB UAV replicate orthomosaic&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;" vertex="1" parent="1">
-          <mxGeometry x="70" y="150" width="200" height="80" as="geometry" />
+        <mxCell id="ortho" value="&lt;b&gt;Input orthomosaic&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;finished RGB UAV orthomosaic&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="80" y="140" width="240" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="s1" value="Step 1&lt;br&gt;&lt;b&gt;Preflight&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;input contract, OTB, layout&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="330" y="150" width="190" height="80" as="geometry" />
+        <mxCell id="preflight" value="&lt;b&gt;Preflight&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;input, OTB/GDAL/R and output layout&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="390" y="140" width="240" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="s2" value="Step 2/3&lt;br&gt;&lt;b&gt;Valid observation mask&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;reject RGB 0/0/0 and 255/255/255 + masks&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="580" y="150" width="240" height="80" as="geometry" />
+        <mxCell id="mask" value="&lt;b&gt;Valid observation mask&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;one common analysis domain&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="700" y="140" width="250" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="mask" value="Common valid support&lt;br&gt;&lt;font style='font-size: 11px'&gt;all later rasters are mask-gated&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="890" y="150" width="220" height="80" as="geometry" />
+        <mxCell id="support" value="&lt;b&gt;Common valid support&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;all feature statistics and segment evidence are mask-gated&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="140" width="330" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="s4" value="Step 4&lt;br&gt;&lt;b&gt;RGB proxy stack&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;ExGR · ExR · BRI · DGLCM-PC1 small/large · ratio&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="190" y="300" width="270" height="90" as="geometry" />
+        <mxCell id="proxy" value="&lt;b&gt;Six-band RGB proxy stack&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;ExGR · ExR · BRI&lt;br&gt;DGLCM-PC1 small · large · ratio&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="260" y="290" width="330" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="s5a" value="Step 5a&lt;br&gt;&lt;b&gt;Mask-aware scaling&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;robust percentile / scaled feature stack&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="540" y="300" width="220" height="90" as="geometry" />
+        <mxCell id="scaling" value="&lt;b&gt;Robust mask-aware scaling&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;valid-pixel 2–98 % range&lt;br&gt;scaled feature stack [-1, 1]&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="700" y="290" width="300" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="s5b" value="Channel-internal&lt;br&gt;&lt;b&gt;RGB-PC1&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;DGLCM source only; not a separate workflow branch&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="840" y="300" width="240" height="90" as="geometry" />
+        <mxCell id="pc1" value="&lt;b&gt;RGB-PC1&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;internal DGLCM source only&lt;br&gt;not a separate workflow branch&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="290" width="280" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="s6" value="Step 6&lt;br&gt;&lt;b&gt;Scale distribution&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;current repository implementation stays authoritative&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="170" y="490" width="260" height="100" as="geometry" />
+        <mxCell id="prescreen_band" value="&lt;b&gt;Scene-adaptive candidate pre-screening&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;segmentation-free · no ranking · no final selection&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f7ef;strokeColor=#82b366;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="450" width="1680" height="260" as="geometry" />
         </mxCell>
-        <mxCell id="s7" value="Step 7&lt;br&gt;&lt;b&gt;Feature-space ranger&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;k candidates → HSM curve → first stable plateau&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="520" y="490" width="260" height="100" as="geometry" />
+        <mxCell id="domain" value="&lt;b&gt;YAML parameter domain&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;radius min/max · lag policy&lt;br&gt;directions · sill policy&lt;br&gt;candidate budget · seed&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="100" y="530" width="260" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="s8" value="Step 8&lt;br&gt;&lt;b&gt;Local perturbations&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;R-style local cloud around each candidate&lt;br&gt;e.g. 6 groups × 9 rows = 54 segmentations&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="870" y="490" width="300" height="100" as="geometry" />
+        <mxCell id="variogram" value="&lt;b&gt;Robust multiband variogram&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;logarithmic lags × directions&lt;br&gt;median half-squared feature distance&lt;br&gt;tail-median sill&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="410" y="530" width="290" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="s9" value="Step 9&lt;br&gt;&lt;b&gt;Candidate-scale response surface&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;run all planned one-scale segmentations; summarize segment-population distributions and spatial matrix stability&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="430" y="710" width="360" height="120" as="geometry" />
+        <mxCell id="crossings" value="&lt;b&gt;Spatial support points&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;stable 0.25 · 0.50 · 0.75 · 0.95 sill crossings&lt;br&gt;minsize coupled to radius&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="750" y="530" width="300" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="legacy" value="Legacy / audit only&lt;br&gt;&lt;b&gt;Hoover comparison&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;not the active Step-9 criterion&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="890" y="725" width="240" height="90" as="geometry" />
+        <mxCell id="ranger" value="&lt;b&gt;Feature-space ranger&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;k → HSM curve → first stable plateau&lt;br&gt;main-interval lower · mode · upper&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="530" width="290" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="outs" value="Response-surface outputs&lt;br&gt;&lt;font style='font-size: 11px'&gt;run_population_summary&lt;br&gt;candidate_group_response_summary&lt;br&gt;analysis_matrix_summary&lt;br&gt;spatial_response_stability&lt;br&gt;ranked_candidate_scales&lt;br&gt;stable_representative_combinations&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="360" y="910" width="500" height="140" as="geometry" />
+        <mxCell id="population" value="&lt;b&gt;Candidate population JSON&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;opaque IDs · scale families&lt;br&gt;spatialr_px · minsize_px · ranger&lt;br&gt;exactly one baseline per family&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1440" y="530" width="260" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="boundary1" value="Level-1b boundary&lt;br&gt;&lt;font style='font-size: 11px'&gt;does not select final ecological object layer; does not vectorize; does not write GPKG/shapefile final products&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="1020" y="920" width="360" height="90" as="geometry" />
+        <mxCell id="diagnostics" value="&lt;b&gt;Diagnostic metadata only&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;variogram knee · tail plateau · saturation · directional anisotropy&lt;br&gt;never changes downstream evaluation rules&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="180" y="740" width="430" height="95" as="geometry" />
         </mxCell>
-        <mxCell id="boundary2" value="Core diagnostic idea&lt;br&gt;&lt;font style='font-size: 11px'&gt;candidate-scale response surface = stability of segment-size population and mapped spatial pattern, not pixelwise object identity&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="70" y="920" width="260" height="110" as="geometry" />
+        <mxCell id="formula" value="&lt;b&gt;Spatial coupling&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;area = π · radius²&lt;br&gt;minsize_px = round(area / pixel_area)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="740" width="360" height="95" as="geometry" />
         </mxCell>
-        <mxCell id="e1" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="ortho" target="s1">
+        <mxCell id="step9a" value="&lt;b&gt;Step 9a — Candidate response surface&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;execute/reuse every candidate run&lt;br&gt;segment-population + spatial-response evidence&lt;br&gt;raw support score and true family ranking&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="590" y="870" width="560" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="step9evidence" value="&lt;b&gt;Step-9a evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;run_population_summary&lt;br&gt;candidate_group_response_summary&lt;br&gt;ranked_candidate_scales&lt;br&gt;scale-continuity / boundary metadata&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="870" width="390" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="sizeformula" value="&lt;b&gt;Scale-relative size evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;area = n_px · GSD²&lt;br&gt;r_eq = √(area / π)&lt;br&gt;q = r_eq / source radius&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="870" width="360" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="adjacency" value="&lt;b&gt;Step 9b&lt;/b&gt;&lt;br&gt;Are No1 and No2 adjacent&lt;br&gt;in explicit scale space?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="750" y="1060" width="260" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="nonadjacent" value="&lt;b&gt;Non-adjacent branch&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;forward No1 + No2&lt;br&gt;no midpoint · no automatic choice&lt;br&gt;analyst scale choice required&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="1080" width="360" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="midpoint" value="&lt;b&gt;Adjacent branch&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;one midpoint inside interval&lt;br&gt;execute midpoint family only&lt;br&gt;reuse endpoints by reference&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="330" y="1080" width="330" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="gainshare" value="&lt;b&gt;Gain-share handoff&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;(SM − S2) / (S1 − S2)&lt;br&gt;&amp;gt; 0.5 → midpoint&lt;br&gt;≤ 0.5 → retain No1&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="340" y="1260" width="310" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="step9boundary" value="&lt;b&gt;Method boundary&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;Step 9b is local support refinement&lt;br&gt;not optimization, best-scale search or final ecological selection&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="1250" width="400" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="step10" value="&lt;b&gt;Step 10 — Materialization and quality evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;1 collect finalist evidence · 2 aggregate numeric evidence · 3 figures&lt;br&gt;4 materialize selected baseline labels and polygons · 5 exactextractr statistics and quality information&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="480" y="1430" width="820" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="products" value="&lt;b&gt;Selected geospatial products&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;selected_labels.tif&lt;br&gt;selected_segments.gpkg&lt;br&gt;selected_segments_manifest.json&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="1620" width="430" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="quality" value="&lt;b&gt;Quality evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;segment exactextractr CSV + summary&lt;br&gt;ortho_segmentation_quality_info.json&lt;br&gt;diagnostic figure manifest&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="690" y="1620" width="430" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="scope" value="&lt;b&gt;Explicit non-scope&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;no ecological classification · no absolute geometric accuracy claim&lt;br&gt;quality JSON is evidence, not a final quality class&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="1620" width="430" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="ortho" target="preflight">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s1" target="s2">
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="preflight" target="mask">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s2" target="mask">
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;dashed=1;strokeWidth=1;" edge="1" parent="1" source="mask" target="support">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e4" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="ortho" target="s4">
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="mask" target="proxy">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e5" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="mask" target="s4">
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="ortho" target="proxy">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e6" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s4" target="s5a">
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="proxy" target="scaling">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e7" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s5a" target="s5b">
+        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;dashed=1;strokeWidth=1;" edge="1" parent="1" source="pc1" target="proxy">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e8" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s4" target="s6">
+        <mxCell id="e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="scaling" target="variogram">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e9" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="mask" target="s6">
+        <mxCell id="e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="scaling" target="ranger">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e10" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s6" target="s7">
+        <mxCell id="e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="domain" target="variogram">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e11" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s5b" target="s7">
+        <mxCell id="e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="domain" target="ranger">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e12" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s7" target="s8">
+        <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="variogram" target="crossings">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e13" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s8" target="s9">
+        <mxCell id="e13" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="crossings" target="population">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e14" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" edge="1" parent="1" source="s9" target="outs">
+        <mxCell id="e14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="ranger" target="population">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e15" value="" style="endArrow=block;html=1;rounded=0;strokeWidth=1;dashed=1;" edge="1" parent="1" source="legacy" target="s9">
+        <mxCell id="e15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;dashed=1;strokeWidth=1;" edge="1" parent="1" source="variogram" target="diagnostics">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="formula1" value="Segment-size normalization&lt;br&gt;&lt;font style='font-size: 11px'&gt;area = n_px · GSD²&lt;br&gt;r_eq = sqrt(area / π)&lt;br&gt;q = r_eq / r_candidate&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="70" y="710" width="260" height="120" as="geometry" />
+        <mxCell id="e16" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;dashed=1;strokeWidth=1;" edge="1" parent="1" source="crossings" target="formula">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="formula2" value="Diagnostic size classes&lt;br&gt;&lt;font style='font-size: 11px'&gt;micro · small · in_scale · large · oversize&lt;br&gt;used for run/group/candidate-space summaries&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="1180" y="715" width="280" height="110" as="geometry" />
+        <mxCell id="e17" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="population" target="step9a">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="step9a" target="step9evidence">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;dashed=1;strokeWidth=1;" edge="1" parent="1" source="sizeformula" target="step9a">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="step9a" target="adjacency">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" value="yes: adjacent" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="adjacency" target="midpoint">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e22" value="no: supported alternatives" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;strokeColor=#b85450;" edge="1" parent="1" source="adjacency" target="nonadjacent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="midpoint" target="gainshare">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e24" value="single handoff candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="gainshare" target="step10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;dashed=1;strokeWidth=1;" edge="1" parent="1" source="adjacency" target="step9boundary">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e26" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="step10" target="products">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e27" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="step10" target="quality">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e28" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;dashed=1;strokeWidth=1;" edge="1" parent="1" source="step10" target="scope">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
