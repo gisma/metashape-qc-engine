@@ -82,11 +82,13 @@ def _seed_step9_evidence(
         [
             {
                 "candidate_scale_group_id": "lower-id",
+                "medoid_run_id": "lower-baseline",
                 "stability_score_raw": 0.1,
                 "stability_score": 0.1,
             },
             {
                 "candidate_scale_group_id": "upper-id",
+                "medoid_run_id": "upper-baseline",
                 "stability_score_raw": 0.8,
                 "stability_score": 0.8,
             },
@@ -97,6 +99,7 @@ def _seed_step9_evidence(
         [
             {
                 "candidate_scale_group_id": "midpoint-id",
+                "medoid_run_id": "midpoint-baseline",
                 "stability_score_raw": 0.7,
                 "stability_score": 0.7,
             }
@@ -119,6 +122,7 @@ def _seed_step9_evidence(
                 "run_id": f"{role}-baseline",
                 "candidate_scale_group_id": candidate_id,
                 "original_row_metadata": {"is_baseline": True},
+                "ensemble_representative": True,
                 "run_contract_version": 2,
                 "merged_labels_path": str(merged_labels),
                 "masked_segmentation_stack_path": str(masked_stack),
@@ -132,6 +136,7 @@ def _seed_step9_evidence(
                 "run_id": f"{role}-perturbation",
                 "candidate_scale_group_id": candidate_id,
                 "original_row_metadata": {"is_baseline": False},
+                "ensemble_representative": False,
                 "run_contract_version": 2,
                 "merged_labels_path": str(merged_labels),
                 "masked_segmentation_stack_path": str(masked_stack),
@@ -180,7 +185,7 @@ def test_step10_canonical_evidence_preserves_upper_selected_display_order(
     ]
     assert evidence["selected_candidate_id"] == "upper-id"
     assert evidence["selected_role"] == "upper_boundary"
-    assert evidence["selected_baseline_run_id"] == "upper-baseline"
+    assert evidence["selected_representative_run_id"] == "upper-baseline"
     assert [
         row["step10_finalist_role"] for row in evidence["finalist_group_rows"]
     ] == evidence["display_order"]
@@ -238,7 +243,7 @@ def test_step10_parts_share_canonical_evidence_without_step9_reread(
     ]
     assert evidence["selected_candidate_id"] == "midpoint-id"
     assert evidence["selected_role"] == "midpoint"
-    assert evidence["selected_baseline_run_id"] == "midpoint-baseline"
+    assert evidence["selected_representative_run_id"] == "midpoint-baseline"
     assert json.loads(
         (decision_dir / "finalist_group_summary.json").read_text(encoding="utf-8")
     ) == evidence["finalist_group_rows"]
@@ -281,7 +286,7 @@ def test_step10_parts_share_canonical_evidence_without_step9_reread(
     assert figure_manifest["input_files_used"] == [str(evidence_path)]
     assert figure_manifest["selected_candidate_id"] == "midpoint-id"
 
-    selected_row = materialization._selected_baseline_run(aggregated_evidence)
+    selected_row = materialization._selected_representative_run(aggregated_evidence)
     source_labels = Path(selected_row["merged_labels_path"])
     _write_selected_source_labels(source_labels)
     materialize_result = run_level1b_step10_materialize_selected_segments(

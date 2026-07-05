@@ -61,10 +61,10 @@ orthomosaic
   -> scene-adaptive multiband variogram pre-screening
   -> stable sill-fraction spatial support points
   -> HSM main-interval ranger levels
-  -> materialized Step-9a candidate families
-  -> controlled hex/variance-minimum seeds per candidate
-  -> SAGA seeded region growing per candidate
-  -> Step 9a response surface
+  -> materialized scale x ranger x seed-phase ensemble
+  -> four translated controlled hex/variance-minimum seed realizations
+  -> SAGA seeded region growing per ensemble member
+  -> Step 9a boundary-persistence response surface
   -> Step 9b adjacency/midpoint handoff
   -> Step 10 materialization and quality evidence
 ```
@@ -85,14 +85,17 @@ For each selected radius, `spatialr_px` is the selected raster lag and
 `minsize_px` is deterministically coupled through the circular footprint
 area. The pre-screen reuses the k-to-HSM plateau diagnostic and materializes
 the central ranger plus the positive unique bounds of its main modal interval.
-It writes one Step-9a-compatible population and performs no segmentation,
-ranking, or final selection.
+It writes one Step-9a-compatible factorial population over spatial scale,
+ranger, and four deterministic seed-lattice phases, and performs no
+segmentation, ranking, or final selection.
 
 ### Step 9a and Step 9b
 
-Step 9a executes or reuses every materialized candidate run, writes run/group
-response summaries, computes raw/clamped stability scores, ranks candidate
-families, and diagnoses numeric scale adjacency and boundaries.
+Step 9a executes or reuses every materialized ensemble member, writes run/group
+response summaries and boundary-support rasters, compares boundaries across
+seed phase, ranger, and adjacent radius, selects an actual boundary-medoid run
+as each family's representative, computes raw/clamped support scores, ranks
+candidate families, and diagnoses numeric scale adjacency and boundaries.
 
 Step 9b either:
 

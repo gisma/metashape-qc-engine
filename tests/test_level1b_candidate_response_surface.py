@@ -487,7 +487,7 @@ def test_20_proxy_stack_is_default_and_mask_is_forwarded(tmp_path: Path, monkeyp
     assert captured[0].masked_segmentation_stack_scope == (
         "response_surface_canonical"
     )
-    assert captured[0].run_contract_version == 4
+    assert captured[0].run_contract_version == 5
     assert captured[0].debug_command_output is True
     assert report["segmentation_stack_path"] == str(proxy)
     assert report["segmentation_stack_source"] == "proxy_stack"
@@ -540,7 +540,7 @@ def test_22_invalid_support_is_zero_and_excluded_from_run_statistics(tmp_path: P
     assert summary_json["masked_segmentation_stack_scope"] == (
         "response_surface_canonical"
     )
-    assert summary_json["run_contract_version"] == 4
+    assert summary_json["run_contract_version"] == 5
     assert summary_json["merged_labels_path"].endswith("merged_labels.tif")
     assert {"scale_id", "candidate_id", "perturbation_id", "radius_m", "spatialr_px", "minsize_px", "ranger", "n_segments", "q_p10", "q_p25", "q_median", "q_p75", "q_p90"}.issubset(summary_json)
     assert {f"{size}_frac_{weight}" for size in rs.SIZE_CLASSES for weight in ("n", "area")}.issubset(summary_json)
@@ -1039,6 +1039,7 @@ def test_33_zero_score_candidates_rank_by_raw_score_before_id(tmp_path: Path, mo
     raw_scores = iter([-2.0, -1.0])
 
     monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", lambda config: {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(labels)}})
+    monkeypatch.setattr(rs, "finalize_boundary_ensemble_scores", lambda *_args: None)
     monkeypatch.setattr(
         rs,
         "compute_candidate_group_response_summary",
@@ -1073,6 +1074,7 @@ def test_34_true_ranking_uses_clamped_score_before_candidate_id(tmp_path: Path, 
     clamped_scores = iter([0.1, 0.9])
 
     monkeypatch.setattr(rs, "run_one_scale_segmentation_smoke", lambda config: {"status": "ok", "failure_reasons": [], "output_artifacts": {"merged_labels": str(labels)}})
+    monkeypatch.setattr(rs, "finalize_boundary_ensemble_scores", lambda *_args: None)
     monkeypatch.setattr(
         rs,
         "compute_candidate_group_response_summary",
@@ -1197,6 +1199,75 @@ def test_39_rank1_upper_boundary_is_reported_without_extending_the_ladder() -> N
     assert gate["top_pair_boundary_constrained"] is True
     assert gate["top_pair_lower_scale_candidate_group_id"] == "beta"
     assert gate["top_pair_upper_scale_candidate_group_id"] == "gamma"
+
+
+def test_boundary_ensemble_support_separates_seed_and_ranger_agreement(
+    tmp_path: Path,
+) -> None:
+    mask = write_raster(
+        tmp_path / "mask.tif",
+        np.ones((6, 8), dtype=np.uint8),
+    )
+    split_three = np.ones((6, 8), dtype=np.uint32)
+    split_three[:, 3:] = 2
+    same_partition_new_labels = np.full((6, 8), 10, dtype=np.uint32)
+    same_partition_new_labels[:, 3:] = 20
+    split_six = np.ones((6, 8), dtype=np.uint32)
+    split_six[:, 6:] = 2
+    label_paths = [
+        write_raster(tmp_path / "phase_00_mode.tif", split_three),
+        write_raster(tmp_path / "phase_01_mode.tif", same_partition_new_labels),
+        write_raster(tmp_path / "phase_00_upper.tif", split_six),
+    ]
+    runs = [
+        {
+            "run_id": "a-phase00-mode",
+            "merged_labels_path": str(label_paths[0]),
+            "seed_realization_id": "phase_00",
+            "run_ranger": 0.2,
+            "run_spatial_radius_m": 1.0,
+            "original_row_metadata": {"ranger_position": "mode"},
+        },
+        {
+            "run_id": "b-phase01-mode",
+            "merged_labels_path": str(label_paths[1]),
+            "seed_realization_id": "phase_01",
+            "run_ranger": 0.2,
+            "run_spatial_radius_m": 1.0,
+            "original_row_metadata": {"ranger_position": "mode"},
+        },
+        {
+            "run_id": "c-phase00-upper",
+            "merged_labels_path": str(label_paths[2]),
+            "seed_realization_id": "phase_00",
+            "run_ranger": 0.3,
+            "run_spatial_radius_m": 1.0,
+            "original_row_metadata": {"ranger_position": "main_interval_upper"},
+        },
+    ]
+
+    summary = rs.compute_boundary_ensemble_support(
+        tmp_path / "response_surface",
+        "scale_001",
+        runs,
+        mask,
+        block_rows=2,
+    )
+
+    assert Path(summary["boundary_support_raster"]).is_file()
+    assert summary["seed_realization_count"] == 2
+    assert summary["ranger_position_count"] == 2
+    assert summary["seed_realization_boundary_agreement"] == pytest.approx(1.0)
+    assert summary["ranger_boundary_agreement"] < 1.0
+    assert summary["boundary_medoid_run_id"] in {
+        "a-phase00-mode",
+        "b-phase01-mode",
+    }
+    assert {row["pair_class"] for row in summary["pairwise_boundary_agreements"]} == {
+        "seed_realization",
+        "ranger",
+        "factorial_cross",
+    }
 
 
 def test_40_step9b_non_adjacent_top_pair_requires_user_choice() -> None:
@@ -1470,6 +1541,96 @@ def test_52_step9b_adjacent_midpoint_uses_central_rows_and_existing_perturbation
     assert all(row["scale_coordinate_value"] == 1.5 for row in perturbations)
     assert all(row["source_candidate_radius_m"] == 2.0 for row in perturbations)
     assert not (step9b_dir / "step9b_midpoint_gain_share_handoff.json").exists()
+
+
+def test_step9b_midpoint_expands_the_same_seed_phase_ensemble(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    phases = (
+        ("phase_00", 0.0, 0.0),
+        ("phase_01", 0.5, 0.0),
+        ("phase_02", 0.0, 0.5),
+        ("phase_03", 0.5, 0.5),
+    )
+    boundary_rows = []
+    templates = {
+        "r999px001": ("source-lower-900", 1.0, 4, 10, 0.2),
+        "r001px999": ("source-upper-100", 3.0, 5, 11, 0.4),
+    }
+    for group_id, (source_id, radius, spatialr, minsize, ranger) in templates.items():
+        for phase_id, phase_u, phase_v in phases:
+            boundary_rows.append(
+                {
+                    "run_id": f"{group_id}-{phase_id}",
+                    "candidate_scale_group_id": group_id,
+                    "source_candidate_id": source_id,
+                    "source_candidate_radius_m": radius,
+                    "spatialr_px": spatialr,
+                    "minsize_px": minsize,
+                    "ranger": ranger,
+                    "seed_realization_id": phase_id,
+                    "seed_phase_u": phase_u,
+                    "seed_phase_v": phase_v,
+                    "original_row_metadata": {
+                        "is_baseline": phase_id == "phase_00",
+                        "seed_realization_id": phase_id,
+                        "seed_phase_u": phase_u,
+                        "seed_phase_v": phase_v,
+                    },
+                }
+            )
+
+    monkeypatch.setattr(
+        rs,
+        "build_perturbation_candidates",
+        lambda _config, complete_candidates: [
+            {
+                "perturbation_id": "local_midpoint__baseline",
+                "source_candidate_id": complete_candidates[0]["candidate_id"],
+                "scale_id": complete_candidates[0]["scale_id"],
+                "spatialr_px": complete_candidates[0]["spatialr_px"],
+                "minsize_px": complete_candidates[0]["minsize_px"],
+                "ranger": complete_candidates[0]["ranger"],
+                "deltas": {},
+                "is_baseline": True,
+            },
+            {
+                "perturbation_id": "local_midpoint__spatial_plus",
+                "source_candidate_id": complete_candidates[0]["candidate_id"],
+                "scale_id": complete_candidates[0]["scale_id"],
+                "spatialr_px": complete_candidates[0]["spatialr_px"] + 1,
+                "minsize_px": complete_candidates[0]["minsize_px"],
+                "ranger": complete_candidates[0]["ranger"],
+                "deltas": {"spatialr_px_delta": 1},
+                "is_baseline": False,
+            },
+        ],
+    )
+
+    result = rs.run_step9b_midpoint_support_probe(
+        tmp_path / "out",
+        "/step9a",
+        _step9b_adjacent_gate(),
+        _step9b_ranked_support_rows(),
+        boundary_rows,
+        _step9b_perturbation_config(tmp_path),
+    )
+    perturbations = json.loads(
+        (
+            rs.local_transition_refinement_output_dir(tmp_path / "out")
+            / "step9b_midpoint_perturbation_candidates.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert result["step9b_status"] == "step9b_midpoint_probe_ready"
+    assert result["midpoint_perturbation_candidate_count"] == 8
+    assert len(perturbations) == 8
+    assert {row["seed_realization_id"] for row in perturbations} == {
+        phase[0] for phase in phases
+    }
+    assert sum(bool(row["is_baseline"]) for row in perturbations) == 1
+    assert all(row["candidate_scale_group_id"] == "local_midpoint" for row in perturbations)
 
 
 def test_53_step9b_midpoint_requires_explicit_boundary_metadata(tmp_path: Path) -> None:

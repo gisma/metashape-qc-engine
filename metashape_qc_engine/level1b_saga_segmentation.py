@@ -279,16 +279,28 @@ def _append_seed(
     buckets.setdefault((row // bucket_size, col // bucket_size), []).append(index)
 
 
-def _hex_centres(width: int, height: int, spacing_px: float) -> Iterable[tuple[float, float]]:
-    """Yield a raster-origin-anchored triangular lattice with hexagonal cells."""
+def _hex_centres(
+    width: int,
+    height: int,
+    spacing_px: float,
+    *,
+    phase_u: float,
+    phase_v: float,
+) -> Iterable[tuple[float, float]]:
+    """Yield one translated realization of the metric triangular lattice."""
 
     row_spacing = spacing_px * math.sqrt(3.0) / 2.0
-    for lattice_row in range(-2, int(math.ceil(height / row_spacing)) + 3):
-        row = lattice_row * row_spacing
-        offset = 0.5 * spacing_px if lattice_row % 2 else 0.0
-        column_max = int(math.ceil((width - offset) / spacing_px)) + 2
-        for lattice_col in range(-2, column_max + 1):
-            yield row, lattice_col * spacing_px + offset
+    for lattice_row in range(-3, int(math.ceil(height / row_spacing)) + 4):
+        row = (lattice_row + phase_v) * row_spacing
+        column_max = int(math.ceil(width / spacing_px)) + 3
+        for lattice_col in range(-3, column_max + 1):
+            col = (
+                lattice_col
+                + 0.5 * lattice_row
+                + phase_u
+                + 0.5 * phase_v
+            ) * spacing_px
+            yield row, col
 
 
 def materialize_controlled_seed_grid(
@@ -297,6 +309,9 @@ def materialize_controlled_seed_grid(
     output_seed_grid_path: str | Path,
     *,
     spatial_radius_px: int,
+    seed_realization_id: str = "phase_00",
+    seed_phase_u: float = 0.0,
+    seed_phase_v: float = 0.0,
 ) -> dict[str, Any]:
     """Create deterministic, spatially controlled seeds for SAGA region growing."""
 
@@ -304,6 +319,16 @@ def materialize_controlled_seed_grid(
     valid_mask_path = Path(valid_mask_path)
     output_seed_grid_path = Path(output_seed_grid_path)
     radius_px = float(max(1, int(spatial_radius_px)))
+    seed_realization_id = str(seed_realization_id).strip()
+    if not seed_realization_id:
+        raise ValueError("seed_realization_id must be non-empty")
+    for name, value in (("seed_phase_u", seed_phase_u), ("seed_phase_v", seed_phase_v)):
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError(f"{name} must be numeric")
+        if not math.isfinite(float(value)) or not 0.0 <= float(value) < 1.0:
+            raise ValueError(f"{name} must be in [0, 1)")
+    seed_phase_u = float(seed_phase_u)
+    seed_phase_v = float(seed_phase_v)
     # One hexagonal support cell has the same area as the candidate's circular
     # footprint. This ties seed density explicitly to the candidate radius.
     spacing_px = math.sqrt(2.0 * math.pi / math.sqrt(3.0)) * radius_px
@@ -329,7 +354,13 @@ def materialize_controlled_seed_grid(
     rejected_for_minimum_distance = 0
     snap_radius_sq = snap_radius_px * snap_radius_px
 
-    for nominal_row, nominal_col in _hex_centres(width, height, spacing_px):
+    for nominal_row, nominal_col in _hex_centres(
+        width,
+        height,
+        spacing_px,
+        phase_u=seed_phase_u,
+        phase_v=seed_phase_v,
+    ):
         nominal_count += 1
         row_min = max(0, int(math.floor(nominal_row - snap_radius_px)))
         row_max = min(height, int(math.ceil(nominal_row + snap_radius_px)) + 1)
@@ -401,7 +432,10 @@ def materialize_controlled_seed_grid(
     return {
         "policy": CONTROLLED_SEED_POLICY,
         "target_footprint": "circular_candidate_radius",
-        "lattice": "raster_origin_anchored_hexagonal",
+        "lattice": "metric_hexagonal_translated_phase",
+        "seed_realization_id": seed_realization_id,
+        "seed_phase_u": seed_phase_u,
+        "seed_phase_v": seed_phase_v,
         "spatial_radius_px": int(spatial_radius_px),
         "nominal_spacing_px": spacing_px,
         "snap_radius_px": snap_radius_px,
@@ -523,6 +557,7 @@ def build_saga_region_growing_command(
     *,
     feature_variance: float,
     position_variance_px: float,
+    seed_grid_path: str | Path | None = None,
 ) -> list[str]:
     output_dir = Path(output_dir)
     features = ";".join(str(Path(path)) for path in feature_grid_paths)
@@ -532,7 +567,7 @@ def build_saga_region_growing_command(
         "imagery_segmentation",
         "3",
         "-SEEDS",
-        str(output_dir / "seeds.sgrd"),
+        str(Path(seed_grid_path) if seed_grid_path is not None else output_dir / "seeds.sgrd"),
         "-FEATURES",
         features,
         "-SEGMENTS",
@@ -639,20 +674,27 @@ def run_saga_seeded_region_growing(
     output_labels_path: str | Path,
     spatial_radius_px: int,
     feature_variance: float,
+    seed_realization_id: str = "phase_00",
+    seed_phase_u: float = 0.0,
+    seed_phase_v: float = 0.0,
+    seed_scaffold_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
+    scaffold_dir = Path(seed_scaffold_dir) if seed_scaffold_dir is not None else work_dir
+    scaffold_dir.mkdir(parents=True, exist_ok=True)
     feature_grid_paths = [Path(path) for path in feature_grid_paths]
     variance_command = build_saga_variance_surface_command(
-        saga_cmd_path, feature_grid_paths, work_dir, spatial_radius_px
+        saga_cmd_path, feature_grid_paths, scaffold_dir, spatial_radius_px
     )
-    proximity_command = build_saga_seed_proximity_command(saga_cmd_path, work_dir)
+    proximity_command = build_saga_seed_proximity_command(saga_cmd_path, scaffold_dir)
     growing_command = build_saga_region_growing_command(
         saga_cmd_path,
         feature_grid_paths,
         work_dir,
         feature_variance=feature_variance,
         position_variance_px=spatial_radius_px,
+        seed_grid_path=scaffold_dir / "seeds.sgrd",
     )
     commands: list[list[str]] = []
     command_results: list[dict[str, Any]] = []
@@ -678,57 +720,112 @@ def run_saga_seeded_region_growing(
                 f"SAGA command failed with returncode {result.returncode}: {' '.join(command[:4])}"
             )
 
-    # SAGA's seed tool supplies only the multiband local-variance surface here.
-    # Its unconstrained seed output is neither requested nor passed to Region
-    # Growing; the controlled seed grid below is the single operative source.
-    run_command(variance_command)
-    variance_path = work_dir / "seed_variance.sgrd"
-    if not variance_path.is_file() or not variance_path.with_suffix(".sdat").is_file():
-        raise RuntimeError("SAGA Seed Generation did not create seed_variance.sgrd/.sdat")
-
-    seed_report = materialize_controlled_seed_grid(
-        variance_path,
-        valid_mask_path,
-        work_dir / "seeds.sgrd",
-        spatial_radius_px=spatial_radius_px,
+    scaffold_provenance = {
+        "feature_grids": [
+            {
+                "path": str(path),
+                "size_bytes": path.with_suffix(".sdat").stat().st_size,
+                "mtime_ns": path.with_suffix(".sdat").stat().st_mtime_ns,
+            }
+            for path in feature_grid_paths
+        ],
+        "valid_mask_path": str(Path(valid_mask_path)),
+        "valid_mask_size_bytes": Path(valid_mask_path).stat().st_size,
+        "valid_mask_mtime_ns": Path(valid_mask_path).stat().st_mtime_ns,
+        "spatial_radius_px": int(spatial_radius_px),
+        "seed_realization_id": str(seed_realization_id),
+        "seed_phase_u": float(seed_phase_u),
+        "seed_phase_v": float(seed_phase_v),
+        "seed_policy": CONTROLLED_SEED_POLICY,
+        "snap_radius_fraction": SEED_SNAP_RADIUS_FRACTION,
+        "minimum_distance_fraction": SEED_MIN_DISTANCE_FRACTION,
+        "maximum_coverage_fraction": SEED_MAX_COVERAGE_FRACTION,
+    }
+    seed_report_path = scaffold_dir / "controlled_seed_report.json"
+    try:
+        existing_seed_report = json.loads(seed_report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        existing_seed_report = None
+    scaffold_files = [
+        scaffold_dir / "seeds.sgrd",
+        scaffold_dir / "seeds.sdat",
+        scaffold_dir / "seed_distance.sgrd",
+        scaffold_dir / "seed_distance.sdat",
+    ]
+    scaffold_reusable = (
+        isinstance(existing_seed_report, dict)
+        and existing_seed_report.get("provenance") == scaffold_provenance
+        and existing_seed_report.get("coverage", {}).get("coverage_within_limit") is True
+        and all(path.is_file() and path.stat().st_size > 0 for path in scaffold_files)
     )
 
-    run_command(proximity_command)
-    coverage = summarize_seed_coverage(
-        work_dir / "seed_distance.sgrd",
-        valid_mask_path,
-        maximum_coverage_distance_px=seed_report["maximum_coverage_distance_px"],
-    )
-    completion = {"coverage_completion_seed_count": 0}
-    if not coverage["coverage_within_limit"]:
-        completion = complete_seed_coverage(
-            work_dir / "seeds.sgrd",
-            work_dir / "seed_distance.sgrd",
+    if scaffold_reusable:
+        seed_report = dict(existing_seed_report)
+        seed_report["preparation_status"] = "reused"
+    else:
+        # SAGA supplies only the multiband local-variance surface here. Its
+        # unconstrained seed output is not requested; the controlled scaffold
+        # below is the single operative seed source.
+        run_command(variance_command)
+        variance_path = scaffold_dir / "seed_variance.sgrd"
+        if not variance_path.is_file() or not variance_path.with_suffix(".sdat").is_file():
+            raise RuntimeError("SAGA Seed Generation did not create seed_variance.sgrd/.sdat")
+
+        seed_report = materialize_controlled_seed_grid(
+            variance_path,
             valid_mask_path,
-            maximum_coverage_distance_px=seed_report[
-                "maximum_coverage_distance_px"
-            ],
+            scaffold_dir / "seeds.sgrd",
+            spatial_radius_px=spatial_radius_px,
+            seed_realization_id=seed_realization_id,
+            seed_phase_u=seed_phase_u,
+            seed_phase_v=seed_phase_v,
         )
-        for suffix in (".sgrd", ".sdat", ".mgrd"):
-            path = (work_dir / "seed_distance.sgrd").with_suffix(suffix)
-            if path.exists():
-                path.unlink()
+
         run_command(proximity_command)
         coverage = summarize_seed_coverage(
-            work_dir / "seed_distance.sgrd",
+            scaffold_dir / "seed_distance.sgrd",
             valid_mask_path,
             maximum_coverage_distance_px=seed_report[
                 "maximum_coverage_distance_px"
             ],
         )
-    if not coverage["coverage_within_limit"]:
-        raise RuntimeError("controlled seed grid exceeds its maximum coverage distance")
+        completion = {"coverage_completion_seed_count": 0}
+        if not coverage["coverage_within_limit"]:
+            completion = complete_seed_coverage(
+                scaffold_dir / "seeds.sgrd",
+                scaffold_dir / "seed_distance.sgrd",
+                valid_mask_path,
+                maximum_coverage_distance_px=seed_report[
+                    "maximum_coverage_distance_px"
+                ],
+            )
+            for suffix in (".sgrd", ".sdat", ".mgrd"):
+                distance_path = (scaffold_dir / "seed_distance.sgrd").with_suffix(
+                    suffix
+                )
+                if distance_path.exists():
+                    distance_path.unlink()
+            run_command(proximity_command)
+            coverage = summarize_seed_coverage(
+                scaffold_dir / "seed_distance.sgrd",
+                valid_mask_path,
+                maximum_coverage_distance_px=seed_report[
+                    "maximum_coverage_distance_px"
+                ],
+            )
+        if not coverage["coverage_within_limit"]:
+            raise RuntimeError(
+                "controlled seed grid exceeds its maximum coverage distance"
+            )
 
-    seed_report.update(completion)
-    seed_report["seed_count"] += completion["coverage_completion_seed_count"]
-    seed_report["coverage"] = coverage
-    seed_report_path = work_dir / "controlled_seed_report.json"
-    seed_report_path.write_text(json.dumps(seed_report, indent=2), encoding="utf-8")
+        seed_report.update(completion)
+        seed_report["seed_count"] += completion["coverage_completion_seed_count"]
+        seed_report["coverage"] = coverage
+        seed_report["provenance"] = scaffold_provenance
+        seed_report["preparation_status"] = "computed"
+        seed_report_path.write_text(
+            json.dumps(seed_report, indent=2), encoding="utf-8"
+        )
 
     run_command(growing_command)
     segments_path = work_dir / "segments.sgrd"

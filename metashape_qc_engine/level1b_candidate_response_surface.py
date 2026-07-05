@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import ExitStack
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 import csv
@@ -11,6 +12,8 @@ import time
 from typing import Any
 
 import numpy as np
+import rasterio
+from rasterio.windows import Window
 
 from metashape_qc_engine.level1b_one_scale_segmentation import (
     Level1BOneScaleSegmentationConfig,
@@ -53,9 +56,10 @@ OUTPUT_FILENAMES = {
     "failed": "failed_runs.json",
     "canonical_masked_stack": "masked_segmentation_stack.tif",
     "canonical_masked_stack_report": "masked_segmentation_stack_report.json",
+    "boundary_support_index": "boundary_support_index.json",
 }
 
-RUN_CONTRACT_VERSION = 4
+RUN_CONTRACT_VERSION = 5
 CANONICAL_MASKED_STACK_SCOPE = "response_surface_canonical"
 
 SCALE_COORDINATE_FIELDS = (
@@ -822,6 +826,398 @@ def compute_spatial_response_stability(matrix_summaries: list[dict[str, Any]], c
     }
 
 
+
+def _dilate_boundary_one_pixel(boundary: np.ndarray) -> np.ndarray:
+    dilated = boundary.copy()
+    height, width = boundary.shape
+    for row_delta in (-1, 0, 1):
+        for col_delta in (-1, 0, 1):
+            if row_delta == 0 and col_delta == 0:
+                continue
+            source_row_start = max(0, -row_delta)
+            source_row_stop = min(height, height - row_delta)
+            source_col_start = max(0, -col_delta)
+            source_col_stop = min(width, width - col_delta)
+            target_row_start = source_row_start + row_delta
+            target_row_stop = source_row_stop + row_delta
+            target_col_start = source_col_start + col_delta
+            target_col_stop = source_col_stop + col_delta
+            dilated[
+                target_row_start:target_row_stop,
+                target_col_start:target_col_stop,
+            ] |= boundary[
+                source_row_start:source_row_stop,
+                source_col_start:source_col_stop,
+            ]
+    return dilated
+
+
+def _boundary_from_labels(labels: np.ndarray, valid: np.ndarray) -> np.ndarray:
+    boundary = np.zeros(labels.shape, dtype=bool)
+    horizontal = (
+        valid[:, :-1]
+        & valid[:, 1:]
+        & (labels[:, :-1] != labels[:, 1:])
+    )
+    vertical = (
+        valid[:-1, :]
+        & valid[1:, :]
+        & (labels[:-1, :] != labels[1:, :])
+    )
+    boundary[:, :-1] |= horizontal
+    boundary[:-1, :] |= vertical
+    return boundary
+
+
+def _pair_class(left: dict[str, Any], right: dict[str, Any]) -> str:
+    left_phase = str(left.get("seed_realization_id", ""))
+    right_phase = str(right.get("seed_realization_id", ""))
+    left_ranger = str(
+        _step9b_metadata_dict(left.get("original_row_metadata")).get(
+            "ranger_position", left.get("run_ranger", "")
+        )
+    )
+    right_ranger = str(
+        _step9b_metadata_dict(right.get("original_row_metadata")).get(
+            "ranger_position", right.get("run_ranger", "")
+        )
+    )
+    left_radius = left.get("run_spatial_radius_m")
+    right_radius = right.get("run_spatial_radius_m")
+    if left_ranger == right_ranger and left_phase != right_phase:
+        return "seed_realization"
+    if left_phase == right_phase and left_ranger != right_ranger:
+        return "ranger"
+    if (
+        left_phase == right_phase
+        and left_ranger == right_ranger
+        and left_radius is not None
+        and right_radius is not None
+        and not math.isclose(float(left_radius), float(right_radius))
+    ):
+        return "radius"
+    return "factorial_cross"
+
+
+def compute_boundary_ensemble_support(
+    out_dir: Path,
+    group_id: str,
+    run_summaries: list[dict[str, Any]],
+    valid_mask_path: Path,
+    *,
+    block_rows: int = 256,
+) -> dict[str, Any]:
+    if not run_summaries:
+        raise ValueError("boundary ensemble requires at least one run")
+    ordered_runs = sorted(run_summaries, key=lambda row: str(row["run_id"]))
+    label_paths = [Path(str(row["merged_labels_path"])) for row in ordered_runs]
+    support_dir = out_dir / "boundary_support"
+    support_dir.mkdir(parents=True, exist_ok=True)
+    support_path = support_dir / f"{_safe_name(group_id)}_boundary_support.tif"
+    summary_path = support_dir / f"{_safe_name(group_id)}_boundary_support_summary.json"
+
+    pair_accumulators: dict[tuple[int, int], dict[str, int]] = {
+        (left, right): {
+            "left_count": 0,
+            "right_count": 0,
+            "left_matched": 0,
+            "right_matched": 0,
+            "intersection": 0,
+            "union": 0,
+        }
+        for left in range(len(ordered_runs))
+        for right in range(left + 1, len(ordered_runs))
+    }
+
+    with ExitStack() as stack:
+        mask_dataset = stack.enter_context(rasterio.open(valid_mask_path))
+        label_datasets = [
+            stack.enter_context(rasterio.open(path)) for path in label_paths
+        ]
+        reference = label_datasets[0]
+        width, height = reference.width, reference.height
+        if (mask_dataset.width, mask_dataset.height) != (width, height):
+            raise ValueError("boundary support mask and labels have different grids")
+        if any((dataset.width, dataset.height) != (width, height) for dataset in label_datasets):
+            raise ValueError("boundary support label rasters have different grids")
+        profile = reference.profile.copy()
+        profile.update(
+            driver="GTiff",
+            count=1,
+            dtype="float32",
+            nodata=-1.0,
+            compress="deflate",
+            BIGTIFF="IF_SAFER",
+        )
+        if not profile.get("tiled", False):
+            profile.pop("blockxsize", None)
+            profile.pop("blockysize", None)
+        with rasterio.open(support_path, "w", **profile) as support_dataset:
+            for row_off in range(0, height, block_rows):
+                row_count = min(block_rows, height - row_off)
+                read_start = max(0, row_off - 1)
+                read_stop = min(height, row_off + row_count + 2)
+                read_window = Window(0, read_start, width, read_stop - read_start)
+                valid_halo = mask_dataset.read(1, window=read_window) > 0
+                boundary_halos = [
+                    _boundary_from_labels(
+                        dataset.read(1, window=read_window), valid_halo
+                    )
+                    for dataset in label_datasets
+                ]
+                dilated_halos = [
+                    _dilate_boundary_one_pixel(boundary)
+                    for boundary in boundary_halos
+                ]
+                central_start = row_off - read_start
+                central_stop = central_start + row_count
+                boundaries = [
+                    boundary[central_start:central_stop]
+                    for boundary in boundary_halos
+                ]
+                dilated = [
+                    boundary[central_start:central_stop]
+                    for boundary in dilated_halos
+                ]
+                valid = valid_halo[central_start:central_stop]
+                support_count = np.sum(
+                    np.asarray(boundaries, dtype=np.uint16), axis=0
+                )
+                support = support_count.astype(np.float32) / len(boundaries)
+                support[~valid] = -1.0
+                support_dataset.write(
+                    support,
+                    1,
+                    window=Window(0, row_off, width, row_count),
+                )
+                for (left, right), accumulator in pair_accumulators.items():
+                    left_boundary = boundaries[left] & valid
+                    right_boundary = boundaries[right] & valid
+                    accumulator["left_count"] += int(left_boundary.sum())
+                    accumulator["right_count"] += int(right_boundary.sum())
+                    accumulator["left_matched"] += int(
+                        (left_boundary & dilated[right] & valid).sum()
+                    )
+                    accumulator["right_matched"] += int(
+                        (right_boundary & dilated[left] & valid).sum()
+                    )
+                    accumulator["intersection"] += int(
+                        (left_boundary & right_boundary).sum()
+                    )
+                    accumulator["union"] += int(
+                        (left_boundary | right_boundary).sum()
+                    )
+
+    pair_rows: list[dict[str, Any]] = []
+    agreement_by_run: dict[str, list[float]] = {
+        str(row["run_id"]): [] for row in ordered_runs
+    }
+    for (left, right), accumulator in pair_accumulators.items():
+        denominator = accumulator["left_count"] + accumulator["right_count"]
+        tolerant = (
+            (accumulator["left_matched"] + accumulator["right_matched"])
+            / denominator
+            if denominator
+            else 1.0
+        )
+        exact = (
+            accumulator["intersection"] / accumulator["union"]
+            if accumulator["union"]
+            else 1.0
+        )
+        left_run = ordered_runs[left]
+        right_run = ordered_runs[right]
+        pair_class = _pair_class(left_run, right_run)
+        pair_rows.append(
+            {
+                "left_run_id": left_run["run_id"],
+                "right_run_id": right_run["run_id"],
+                "pair_class": pair_class,
+                "tolerant_boundary_f1": tolerant,
+                "exact_boundary_jaccard": exact,
+            }
+        )
+        agreement_by_run[str(left_run["run_id"])].append(tolerant)
+        agreement_by_run[str(right_run["run_id"])].append(tolerant)
+
+    medoid_run_id = min(
+        agreement_by_run,
+        key=lambda run_id: (
+            -_mean(agreement_by_run[run_id]),
+            run_id,
+        ),
+    )
+    seed_scores = [
+        float(row["tolerant_boundary_f1"])
+        for row in pair_rows
+        if row["pair_class"] == "seed_realization"
+    ]
+    ranger_scores = [
+        float(row["tolerant_boundary_f1"])
+        for row in pair_rows
+        if row["pair_class"] == "ranger"
+    ]
+    radius_scores = [
+        float(row["tolerant_boundary_f1"])
+        for row in pair_rows
+        if row["pair_class"] == "radius"
+    ]
+    all_scores = [float(row["tolerant_boundary_f1"]) for row in pair_rows]
+    summary = {
+        "candidate_scale_group_id": group_id,
+        "run_count": len(ordered_runs),
+        "seed_realization_count": len(
+            {str(row.get("seed_realization_id", "")) for row in ordered_runs}
+        ),
+        "ranger_position_count": len(
+            {
+                str(
+                    _step9b_metadata_dict(row.get("original_row_metadata")).get(
+                        "ranger_position", row.get("run_ranger", "")
+                    )
+                )
+                for row in ordered_runs
+            }
+        ),
+        "boundary_support_raster": str(support_path),
+        "pairwise_boundary_agreements": pair_rows,
+        "ensemble_boundary_agreement": _mean(all_scores) if all_scores else 1.0,
+        "seed_realization_boundary_agreement": (
+            _mean(seed_scores) if seed_scores else 1.0
+        ),
+        "ranger_boundary_agreement": _mean(ranger_scores) if ranger_scores else 1.0,
+        "local_radius_boundary_agreement": (
+            _mean(radius_scores) if radius_scores else 1.0
+        ),
+        "boundary_medoid_run_id": medoid_run_id,
+        "boundary_medoid_mean_agreement": _mean(agreement_by_run[medoid_run_id]),
+        "boundary_support_summary_json": str(summary_path),
+    }
+    _write_json(summary_path, summary)
+    return summary
+
+
+def _boundary_agreement_between_labels(
+    left_path: Path,
+    right_path: Path,
+    valid_mask_path: Path,
+    *,
+    block_rows: int = 256,
+) -> float:
+    left_count = right_count = left_matched = right_matched = 0
+    with rasterio.open(left_path) as left, rasterio.open(right_path) as right, rasterio.open(valid_mask_path) as mask:
+        if (left.width, left.height) != (right.width, right.height) or (
+            mask.width,
+            mask.height,
+        ) != (left.width, left.height):
+            raise ValueError("adjacent-scale boundary rasters have different grids")
+        for row_off in range(0, left.height, block_rows):
+            row_count = min(block_rows, left.height - row_off)
+            read_start = max(0, row_off - 1)
+            read_stop = min(left.height, row_off + row_count + 2)
+            window = Window(0, read_start, left.width, read_stop - read_start)
+            valid_halo = mask.read(1, window=window) > 0
+            left_halo = _boundary_from_labels(left.read(1, window=window), valid_halo)
+            right_halo = _boundary_from_labels(right.read(1, window=window), valid_halo)
+            left_dilated = _dilate_boundary_one_pixel(left_halo)
+            right_dilated = _dilate_boundary_one_pixel(right_halo)
+            central_start = row_off - read_start
+            central_stop = central_start + row_count
+            valid = valid_halo[central_start:central_stop]
+            left_boundary = left_halo[central_start:central_stop] & valid
+            right_boundary = right_halo[central_start:central_stop] & valid
+            left_count += int(left_boundary.sum())
+            right_count += int(right_boundary.sum())
+            left_matched += int(
+                (left_boundary & right_dilated[central_start:central_stop] & valid).sum()
+            )
+            right_matched += int(
+                (right_boundary & left_dilated[central_start:central_stop] & valid).sum()
+            )
+    denominator = left_count + right_count
+    return (left_matched + right_matched) / denominator if denominator else 1.0
+
+
+def finalize_boundary_ensemble_scores(
+    group_summaries: list[dict[str, Any]],
+    run_summaries: list[dict[str, Any]],
+    valid_mask_path: Path,
+) -> None:
+    runs_by_id = {str(row["run_id"]): row for row in run_summaries}
+    ordered = sorted(
+        group_summaries,
+        key=lambda row: float(
+            next(
+                run["source_candidate_radius_m"]
+                for run in run_summaries
+                if run["candidate_scale_group_id"]
+                == row["candidate_scale_group_id"]
+            )
+        ),
+    )
+    neighbour_scores: dict[str, list[float]] = {
+        str(row["candidate_scale_group_id"]): [] for row in ordered
+    }
+    for left, right in zip(ordered, ordered[1:]):
+        left_run = runs_by_id[str(left["boundary_medoid_run_id"])]
+        right_run = runs_by_id[str(right["boundary_medoid_run_id"])]
+        agreement = _boundary_agreement_between_labels(
+            Path(str(left_run["merged_labels_path"])),
+            Path(str(right_run["merged_labels_path"])),
+            valid_mask_path,
+        )
+        neighbour_scores[str(left["candidate_scale_group_id"])].append(agreement)
+        neighbour_scores[str(right["candidate_scale_group_id"])].append(agreement)
+    for summary in group_summaries:
+        group_id = str(summary["candidate_scale_group_id"])
+        summary["radius_boundary_agreement"] = (
+            _mean(neighbour_scores[group_id])
+            if neighbour_scores[group_id]
+            else float(summary.get("local_radius_boundary_agreement", 1.0))
+        )
+        summary["distribution_medoid_run_id"] = summary.get("medoid_run_id")
+        summary["medoid_run_id"] = summary["boundary_medoid_run_id"]
+        summary["legacy_response_stability_score_raw"] = _legacy_stability_score_raw(
+            summary
+        )
+        summary["boundary_support_score_raw"] = (
+            max(0.0, float(summary["seed_realization_boundary_agreement"]))
+            * max(0.0, float(summary["ranger_boundary_agreement"]))
+            * max(0.0, float(summary["radius_boundary_agreement"]))
+        ) ** (1.0 / 3.0)
+        summary["stability_score_raw"] = stability_score_raw(summary)
+        summary["stability_score"] = stability_score(summary)
+        summary["candidate_outcome"] = classify_candidate_outcome(summary)
+        summary["decision_reasons"] = decision_reasons(summary)
+        for run in run_summaries:
+            if str(run["candidate_scale_group_id"]) == group_id:
+                run["ensemble_representative"] = (
+                    str(run["run_id"]) == str(summary["medoid_run_id"])
+                )
+        _write_json(
+            Path(str(summary["boundary_support_summary_json"])),
+            {
+                key: summary[key]
+                for key in (
+                    "candidate_scale_group_id",
+                    "run_count",
+                    "seed_realization_count",
+                    "ranger_position_count",
+                    "boundary_support_raster",
+                    "pairwise_boundary_agreements",
+                    "ensemble_boundary_agreement",
+                    "seed_realization_boundary_agreement",
+                    "ranger_boundary_agreement",
+                    "local_radius_boundary_agreement",
+                    "radius_boundary_agreement",
+                    "boundary_medoid_run_id",
+                    "boundary_medoid_mean_agreement",
+                    "boundary_support_score_raw",
+                    "stability_score_raw",
+                )
+            },
+        )
+
 def compute_candidate_group_response_summary(
     group_id: str,
     run_summaries: list[dict[str, Any]],
@@ -1425,6 +1821,50 @@ def _step9b_central_boundary_row(
     return central_rows[0], None
 
 
+
+def _step9b_seed_phase_realizations(
+    run_population_rows: list[dict[str, Any]],
+    lower_group_id: str,
+    upper_group_id: str,
+) -> list[dict[str, Any]]:
+    def phases_for(group_id: str) -> dict[str, tuple[float, float]]:
+        phases: dict[str, tuple[float, float]] = {}
+        for row in run_population_rows:
+            if str(row.get("candidate_scale_group_id", "")) != group_id:
+                continue
+            metadata = _step9b_metadata_dict(row.get("original_row_metadata"))
+            phase_id = str(
+                row.get(
+                    "seed_realization_id",
+                    metadata.get("seed_realization_id", "phase_00"),
+                )
+            )
+            phase = (
+                float(row.get("seed_phase_u", metadata.get("seed_phase_u", 0.0))),
+                float(row.get("seed_phase_v", metadata.get("seed_phase_v", 0.0))),
+            )
+            if phase_id in phases and phases[phase_id] != phase:
+                raise ValueError("seed realization ID maps to conflicting phases")
+            phases[phase_id] = phase
+        return phases
+
+    lower = phases_for(lower_group_id)
+    upper = phases_for(upper_group_id)
+    if not lower or lower != upper:
+        raise ValueError("Step-9a boundary groups do not share one seed-phase ensemble")
+    ordered = sorted(lower.items(), key=lambda item: item[0])
+    if sum(1 for _phase_id, phase in ordered if phase == (0.0, 0.0)) != 1:
+        raise ValueError("seed-phase ensemble requires exactly one [0,0] reference")
+    return [
+        {
+            "seed_realization_id": phase_id,
+            "seed_phase_u": phase[0],
+            "seed_phase_v": phase[1],
+            "seed_realization_is_reference": phase == (0.0, 0.0),
+        }
+        for phase_id, phase in ordered
+    ]
+
 def _step9b_ranked_candidate_row(
     ranked_candidate_rows: list[dict[str, Any]],
     candidate_scale_group_id: str,
@@ -1677,7 +2117,31 @@ def run_step9b_midpoint_support_probe(
         "requires_step9b_execution": True,
         "source_step9a_metrics_reused": False,
     }
-    midpoint_perturbations = [dict(row, **midpoint_metadata) for row in midpoint_perturbations]
+    try:
+        seed_phases = _step9b_seed_phase_realizations(
+            run_population_rows,
+            lower_id,
+            upper_id,
+        )
+    except (TypeError, ValueError) as exc:
+        return finish(
+            "step9b_blocked_inconsistent_seed_realization_ensemble",
+            str(exc),
+        )
+    expanded_midpoint_perturbations: list[dict[str, Any]] = []
+    for row in midpoint_perturbations:
+        base_id = str(row["perturbation_id"])
+        for phase in seed_phases:
+            expanded = dict(row, **midpoint_metadata, **phase)
+            expanded["perturbation_id"] = (
+                f"{base_id}__{phase['seed_realization_id']}"
+            )
+            expanded["candidate_id"] = expanded["perturbation_id"]
+            expanded["is_baseline"] = bool(row.get("is_baseline")) and bool(
+                phase["seed_realization_is_reference"]
+            )
+            expanded_midpoint_perturbations.append(expanded)
+    midpoint_perturbations = expanded_midpoint_perturbations
     anchor_references = [
         {
             "step9b_row_role": "existing_lower_anchor",
@@ -2196,6 +2660,11 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
                 else:
                     run_summary = compute_run_population_summary_from_counts(run_id, group_id, row, label_counts, pixel_size, cfg)
                     run_summary = _write_incremental_run_q_statistics_from_counts(out_dir, group_id, run_id, row, label_counts, pixel_size, cfg, run_summary)
+                # The execution report is the authoritative producer of the
+                # actual label raster. Production paths are identical to the
+                # canonical run path; keeping the explicit path also makes the
+                # artifact contract testable without manufacturing that path.
+                run_summary["merged_labels_path"] = str(labels_path)
                 run_summaries.append(run_summary)
                 group_run_summaries.append(run_summary)
                 label_classes = label_classes_from_counts(label_counts, row, pixel_size, cfg)
@@ -2277,8 +2746,27 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
                         }
                     )
         if group_run_summaries:
-            group_summaries.append(compute_candidate_group_response_summary(group_id, group_run_summaries, group_matrix_summaries, cfg))
+            group_summary = compute_candidate_group_response_summary(
+                group_id,
+                group_run_summaries,
+                group_matrix_summaries,
+                cfg,
+            )
+            boundary_summary = compute_boundary_ensemble_support(
+                out_dir,
+                group_id,
+                group_run_summaries,
+                valid_mask_path,
+            )
+            group_summary.update(boundary_summary)
+            group_summaries.append(group_summary)
 
+    if group_summaries:
+        finalize_boundary_ensemble_scores(
+            group_summaries,
+            run_summaries,
+            valid_mask_path,
+        )
     space_summary = analyze_full_candidate_space(group_summaries, run_summaries)
     ranked = sorted(
         group_summaries,
@@ -2359,7 +2847,7 @@ def dominant_tail_regime(summary: dict[str, Any]) -> str:
     return max(values, key=values.get)
 
 
-def stability_score_raw(summary: dict[str, Any]) -> float:
+def _legacy_stability_score_raw(summary: dict[str, Any]) -> float:
     score = 1.0
     score -= 0.35 * float(summary.get("edge_loaded_flag", False))
     score -= 0.35 * float(summary.get("scale_jump_flag", False))
@@ -2368,6 +2856,19 @@ def stability_score_raw(summary: dict[str, Any]) -> float:
     score += 0.5 * float(summary.get("central_area_share_mean", 0.0))
     score -= 0.1 * float(summary.get("response_spread_q", 0.0))
     return score
+
+
+def stability_score_raw(summary: dict[str, Any]) -> float:
+    legacy = _legacy_stability_score_raw(summary)
+    if "boundary_support_score_raw" not in summary:
+        return legacy
+    # Boundary persistence is the scientific support term. The established
+    # response score remains a bounded plausibility multiplier, so a stable
+    # tessellation with implausible scale-response statistics cannot rank high.
+    plausibility = max(0.0, min(1.0, legacy))
+    return plausibility * max(
+        0.0, min(1.0, float(summary["boundary_support_score_raw"]))
+    )
 
 
 def stability_score(summary: dict[str, Any]) -> float:
@@ -2395,6 +2896,10 @@ def decision_reasons(summary: dict[str, Any]) -> list[str]:
         f"response_spread_q={summary.get('response_spread_q', 0.0):.6f}",
         f"distribution_flutter_score={summary.get('distribution_flutter_score', 0.0):.6f}",
         f"matrix_distribution_distance={summary.get('matrix_distribution_distance', 0.0):.6f}",
+        f"seed_realization_boundary_agreement={summary.get('seed_realization_boundary_agreement', 0.0):.6f}",
+        f"ranger_boundary_agreement={summary.get('ranger_boundary_agreement', 0.0):.6f}",
+        f"radius_boundary_agreement={summary.get('radius_boundary_agreement', 0.0):.6f}",
+        f"boundary_support_score_raw={summary.get('boundary_support_score_raw', 0.0):.6f}",
         f"scale_jump_flag={summary.get('scale_jump_flag')}",
     ]
     return reasons
@@ -2479,6 +2984,12 @@ def _run_or_reuse_segmentation(
         ram_mb=cfg.ram_mb,
         overwrite=cfg.overwrite or run_artifacts_exist,
         debug_command_output=cfg.debug_command_output,
+        seed_scaffold_dir=(
+            out_dir
+            / "seed_scaffolds"
+            / _safe_name(group_id)
+            / _safe_name(str(row.get("seed_realization_id", "phase_00")))
+        ),
     )
     report = run_one_scale_segmentation_smoke(segmentation_cfg)
     if report.get("status") != "ok":
@@ -2533,6 +3044,9 @@ def _expected_run_metadata(
         "run_contract_version": RUN_CONTRACT_VERSION,
         "segmentation_backend": "saga_seeded_region_growing",
         "saga_seed_policy": "hex_lattice_local_variance_minimum",
+        "seed_realization_id": str(row.get("seed_realization_id", "phase_00")),
+        "seed_phase_u": float(row.get("seed_phase_u", 0.0)),
+        "seed_phase_v": float(row.get("seed_phase_v", 0.0)),
         "merged_labels_path": str(paths["labels"]),
         "pre_segmentation_mask_applied": True,
         "post_mask_applied": True,
@@ -3104,6 +3618,9 @@ def _write_incremental_run_q_statistics_from_counts(
             "run_contract_version": expected_metadata["run_contract_version"],
             "segmentation_backend": expected_metadata["segmentation_backend"],
             "saga_seed_policy": expected_metadata["saga_seed_policy"],
+            "seed_realization_id": expected_metadata["seed_realization_id"],
+            "seed_phase_u": expected_metadata["seed_phase_u"],
+            "seed_phase_v": expected_metadata["seed_phase_v"],
             "merged_labels_path": expected_metadata["merged_labels_path"],
             "pre_lsms_mask_applied": False,
             "pre_segmentation_mask_applied": True,
@@ -3199,6 +3716,27 @@ def _write_outputs(
     _write_json(out_dir / OUTPUT_FILENAMES["accepted"], accepted)
     _write_json(out_dir / OUTPUT_FILENAMES["removed"], removed)
     _write_json(out_dir / OUTPUT_FILENAMES["failed"], failed_runs)
+    _write_json(
+        out_dir / OUTPUT_FILENAMES["boundary_support_index"],
+        [
+            {
+                "candidate_scale_group_id": row["candidate_scale_group_id"],
+                "boundary_support_raster": row.get("boundary_support_raster"),
+                "boundary_support_summary_json": row.get("boundary_support_summary_json"),
+                "boundary_medoid_run_id": row.get("boundary_medoid_run_id"),
+                "seed_realization_boundary_agreement": row.get(
+                    "seed_realization_boundary_agreement"
+                ),
+                "ranger_boundary_agreement": row.get(
+                    "ranger_boundary_agreement"
+                ),
+                "radius_boundary_agreement": row.get(
+                    "radius_boundary_agreement"
+                ),
+            }
+            for row in ranked
+        ],
+    )
 
 
 def _top_report(

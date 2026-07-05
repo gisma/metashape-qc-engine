@@ -47,17 +47,20 @@ backend this value is provenance only: SAGA does not perform a later
 minimum-size merge, and Step-9b does not perturb minsize independently.
 
 One-scale execution uses SAGA's multiband local-variance surface followed by a
-deterministic controlled-seed construction and SAGA Seeded Region Growing. The
-old unconstrained set of all variance minima is not used as the region-growing
-seed set. For each candidate radius, a raster-origin-anchored hexagonal lattice
-has support-cell area `pi * radius_px^2`. Each centre can snap at most
-`0.45 * radius_px` to a valid local variance minimum, seeds remain at least
-`radius_px` apart, and exact SAGA proximity must show every valid pixel within
-`2 * radius_px` of a seed. Any uncovered support receives deterministic
-farthest-point completion seeds. `spatialr_px` also supplies positional
-variance; `ranger` controls feature-space variance. The similarity threshold
-is zero, four-neighbour connectivity is used, and label zero remains invalid
-support. Canonical SAGA feature grids are reused by all candidate runs.
+controlled seed construction and SAGA Seeded Region Growing. The old
+unconstrained set of all variance minima is not used as the region-growing seed
+set. For every candidate radius, four deterministic translations of the same
+metric hexagonal lattice are evaluated (`[0,0]`, `[0.5,0]`, `[0,0.5]`, and
+`[0.5,0.5]` in lattice coordinates). A support cell has area
+`pi * radius_px^2`. Each centre can snap at most `0.45 * radius_px` to a valid
+local variance minimum, seeds remain at least `radius_px` apart, and exact SAGA
+proximity must show every valid pixel within `2 * radius_px` of a seed. Any
+uncovered support receives deterministic farthest-point completion seeds.
+`spatialr_px` also supplies positional variance; `ranger` controls feature-space
+variance. The similarity threshold is zero, four-neighbour connectivity is
+used, and label zero remains invalid support. Canonical SAGA feature grids are
+reused by all runs; radius/phase seed scaffolds are reused across ranger levels
+when their exact provenance matches.
 
 The same pre-screen evaluates kNN ranks
 `[8, 10, 13, 16, 21, 27, 34, 44, 55]` on valid scaled feature vectors. The
@@ -66,10 +69,12 @@ that mode and the positive unique lower/upper bounds of its shortest
 half-sample interval. These are controlled positions in the plausible main
 interval, not tail quantiles.
 
-Pre-screening performs no segmentation, ranking, or final selection. It fails
-rather than restoring fixed YAML anchors when fewer than two stable spatial
-support points are available or when the configured candidate budget is
-insufficient.
+Pre-screening performs no segmentation, ranking, or final selection. It
+materializes the factorial population `scale family × ranger level × seed
+phase`; the current four scale supports, three ranger positions, and four seed
+phases require a budget of 48. It fails rather than restoring fixed YAML
+anchors when fewer than two stable spatial support points are available or
+when the configured candidate budget is insufficient.
 
 There is no CLI option for an alternative Level-1B config path.
 ### Proxy-stack parameters

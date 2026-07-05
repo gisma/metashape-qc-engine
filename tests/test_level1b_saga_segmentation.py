@@ -198,6 +198,7 @@ def test_run_saga_uses_controlled_seeds_explicit_environment_and_exports_labels(
     stack, mask_path, _values, _mask = write_inputs(tmp_path)
     grid = tmp_path / "feature_001.sgrd"
     grid.write_text("grid", encoding="utf-8")
+    grid.with_suffix(".sdat").write_bytes(b"feature-data")
     calls = []
 
     def fake_run(command, **kwargs):
@@ -264,3 +265,20 @@ def test_run_saga_uses_controlled_seeds_explicit_environment_and_exports_labels(
     assert calls[1][0][2:4] == ["grid_tools", "26"]
     assert calls[2][0][calls[2][0].index("-SIG_1") + 1] == "0.40000000000000002"
     assert (tmp_path / "labels.tif").is_file()
+
+    calls.clear()
+    reused = saga.run_saga_seeded_region_growing(
+        saga_cmd_path="/usr/bin/saga_cmd",
+        feature_grid_paths=[grid],
+        work_dir=tmp_path,
+        reference_raster_path=stack,
+        valid_mask_path=mask_path,
+        output_labels_path=tmp_path / "labels.tif",
+        spatial_radius_px=2,
+        feature_variance=0.6,
+    )
+
+    assert reused["seed_report"]["preparation_status"] == "reused"
+    assert len(calls) == 1
+    assert calls[0][0][2:4] == ["imagery_segmentation", "3"]
+    assert calls[0][0][calls[0][0].index("-SIG_1") + 1] == "0.59999999999999998"

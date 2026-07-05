@@ -48,6 +48,7 @@ class Level1BCandidatePrescreeningConfig:
     plateau_rel_tol: float
     anisotropy_ratio_threshold: float
     candidate_budget: int
+    seed_phase_offsets: tuple[tuple[float, float], ...]
     ranger_level_policy: str
     sample_n: int
     knn_k_policy: str
@@ -136,6 +137,28 @@ def validate_candidate_prescreening_config(
         failures.append("plateau_rel_tol must be in (0, 1]")
     if not _finite_positive(config.anisotropy_ratio_threshold) or float(config.anisotropy_ratio_threshold) < 1:
         failures.append("anisotropy_ratio_threshold must be finite and >= 1")
+    phases = tuple(config.seed_phase_offsets)
+    if (
+        not phases
+        or any(
+            len(phase) != 2
+            or any(
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(float(value))
+                or not 0.0 <= float(value) < 1.0
+                for value in phase
+            )
+            for phase in phases
+        )
+        or len({(float(phase[0]), float(phase[1])) for phase in phases}) != len(phases)
+        or (0.0, 0.0) not in {
+            (float(phase[0]), float(phase[1])) for phase in phases
+        }
+    ):
+        failures.append(
+            "seed_phase_offsets must contain unique [u, v] pairs in [0, 1) including [0, 0]"
+        )
     if config.ranger_level_policy != RANGER_LEVEL_POLICY:
         failures.append(f"ranger_level_policy must be exactly {RANGER_LEVEL_POLICY}")
     if config.knn_k_policy != KNN_K_POLICY:
@@ -447,7 +470,16 @@ def materialize_candidate_population(
         by_lag.setdefault(int(row["lag_px"]), []).append(row)
     if len(by_lag) < 2:
         raise ValueError("fewer than two distinct stable sill-fraction scale candidates were found")
-    planned_count = len(by_lag) * len(ranger_levels)
+    phases = [
+        {
+            "seed_realization_id": f"phase_{index:02d}",
+            "seed_phase_u": float(offset[0]),
+            "seed_phase_v": float(offset[1]),
+            "seed_realization_is_reference": index == 0,
+        }
+        for index, offset in enumerate(config.seed_phase_offsets)
+    ]
+    planned_count = len(by_lag) * len(ranger_levels) * len(phases)
     if planned_count > config.candidate_budget:
         raise ValueError(
             f"candidate budget {config.candidate_budget} is smaller than planned population {planned_count}"
@@ -471,52 +503,66 @@ def materialize_candidate_population(
         targets = [float(row["sill_fraction_target"]) for row in support_rows]
         for ranger_index, ranger_level in enumerate(ranger_levels, start=1):
             ranger = float(ranger_level["ranger"])
-            is_baseline = bool(ranger_level["is_baseline"])
-            run_id = f"{source_candidate_id}__ranger_{ranger_index:03d}"
-            candidates.append(
-                {
-                    "candidate_id": run_id,
-                    "perturbation_id": run_id,
-                    "source_candidate_id": source_candidate_id,
-                    "candidate_scale_group_id": scale_id,
-                    "scale_id": scale_id,
-                    "scale_index": scale_index,
-                    "spatialr_px": int(lag_px),
-                    "minsize_px": int(common_minsize_px),
-                    "ranger": ranger,
-                    "deltas": {
-                        "spatialr_px_delta": 0,
-                        "minsize_px_delta": 0,
-                        "ranger_delta": ranger - float(ranger_levels[0]["ranger"]),
-                        "minsize_delta_fraction": 0.0,
-                        "ranger_delta_fraction": ranger / float(ranger_levels[0]["ranger"]) - 1.0,
-                    },
-                    "is_baseline": is_baseline,
-                    "perturbation_rule": PERTURBATION_RULE,
-                    "radius_m": radius_m,
-                    "source_candidate_radius_m": radius_m,
-                    "area_m2": area_m2,
-                    "pixel_size_m": float(config.pixel_size_m),
-                    "pixel_area_m2": float(config.pixel_size_m) ** 2,
-                    "technical_minsize_source_radius_m": float(
-                        config.radius_min_m
-                    ),
-                    "technical_minsize_radius_px": int(
-                        technical_minsize_radius_px
-                    ),
-                    "technical_minsize_diameter_px": int(
-                        technical_minsize_diameter_px
-                    ),
-                    "coupling_rule": COUPLING_RULE,
-                    "scale_source": PRESCREENING_METHOD,
-                    "sill_fraction_targets": targets,
-                    "primary_sill_fraction_target": min(targets),
-                    "ranger_position": ranger_level["ranger_position"],
-                    "near_variogram_knee": int(lag_px) == int(diagnostics["knee_lag_px"]),
-                    "in_variogram_saturation_region": max(targets) >= 0.95,
-                    "directional_anisotropy_present": diagnostics["directional_anisotropy_present"],
-                }
-            )
+            for phase in phases:
+                is_baseline = bool(ranger_level["is_baseline"]) and bool(
+                    phase["seed_realization_is_reference"]
+                )
+                run_id = (
+                    f"{source_candidate_id}__ranger_{ranger_index:03d}__"
+                    f"{phase['seed_realization_id']}"
+                )
+                candidates.append(
+                    {
+                        "candidate_id": run_id,
+                        "perturbation_id": run_id,
+                        "source_candidate_id": source_candidate_id,
+                        "candidate_scale_group_id": scale_id,
+                        "scale_id": scale_id,
+                        "scale_index": scale_index,
+                        "spatialr_px": int(lag_px),
+                        "minsize_px": int(common_minsize_px),
+                        "ranger": ranger,
+                        "deltas": {
+                            "spatialr_px_delta": 0,
+                            "minsize_px_delta": 0,
+                            "ranger_delta": ranger - float(ranger_levels[0]["ranger"]),
+                            "minsize_delta_fraction": 0.0,
+                            "ranger_delta_fraction": ranger
+                            / float(ranger_levels[0]["ranger"])
+                            - 1.0,
+                            "seed_phase_u_delta": float(phase["seed_phase_u"]),
+                            "seed_phase_v_delta": float(phase["seed_phase_v"]),
+                        },
+                        "is_baseline": is_baseline,
+                        "perturbation_rule": PERTURBATION_RULE,
+                        "radius_m": radius_m,
+                        "source_candidate_radius_m": radius_m,
+                        "area_m2": area_m2,
+                        "pixel_size_m": float(config.pixel_size_m),
+                        "pixel_area_m2": float(config.pixel_size_m) ** 2,
+                        "technical_minsize_source_radius_m": float(
+                            config.radius_min_m
+                        ),
+                        "technical_minsize_radius_px": int(
+                            technical_minsize_radius_px
+                        ),
+                        "technical_minsize_diameter_px": int(
+                            technical_minsize_diameter_px
+                        ),
+                        "coupling_rule": COUPLING_RULE,
+                        "scale_source": PRESCREENING_METHOD,
+                        "sill_fraction_targets": targets,
+                        "primary_sill_fraction_target": min(targets),
+                        "ranger_position": ranger_level["ranger_position"],
+                        **phase,
+                        "near_variogram_knee": int(lag_px)
+                        == int(diagnostics["knee_lag_px"]),
+                        "in_variogram_saturation_region": max(targets) >= 0.95,
+                        "directional_anisotropy_present": diagnostics[
+                            "directional_anisotropy_present"
+                        ],
+                    }
+                )
     return candidates
 
 

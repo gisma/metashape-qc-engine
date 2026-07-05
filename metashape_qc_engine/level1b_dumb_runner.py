@@ -266,6 +266,10 @@ def run_level1b_dumb_chain(
                 "anisotropy_ratio_threshold"
             ],
             candidate_budget=prescreen_cfg["candidate_budget"],
+            seed_phase_offsets=tuple(
+                tuple(float(value) for value in phase)
+                for phase in prescreen_cfg["seed_phase_offsets"]
+            ),
             ranger_level_policy=prescreen_cfg["ranger_level_policy"],
             sample_n=prescreen_cfg["sample_n"],
             knn_k_policy=prescreen_cfg["knn_k_policy"],

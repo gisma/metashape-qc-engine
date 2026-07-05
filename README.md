@@ -60,7 +60,7 @@ OVERWRITE=1 \
 bash metashape_qc_engine/run_level1b_dumb_with_user_header.sh
 ```
 
-The YAML defines an admissible segmentation-radius domain; scene-adaptive multiband variogram pre-screening materializes the concrete Step-9a scale families. DGLCM measurement radii and channel names do not define that ladder. One-scale labels are produced with deterministic, radius-controlled seeds and SAGA Seeded Region Growing. See [RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) for dependencies, statuses, final products, and quality evidence.
+The YAML defines an admissible segmentation-radius domain; scene-adaptive multiband variogram pre-screening materializes the concrete Step-9a scale families. DGLCM measurement radii and channel names do not define that ladder. Each scale/ranger combination is evaluated with four deterministic translations of a radius-controlled hexagonal seed lattice and SAGA Seeded Region Growing; Step 9 ranks boundary persistence across seed phase, ranger, and radius. See [RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) for dependencies, statuses, final products, and quality evidence.
 
 ## Scope boundaries
 

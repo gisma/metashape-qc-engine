@@ -124,13 +124,16 @@ a metre or pixel scale.
 The pre-screen writes
 `level1b/candidate_pre_screening/candidate_population.json`. Each selected
 spatial support point defines one `candidate_scale_group_id`. Its ranger
-levels are rows in that family, with exactly one central row marked
-`is_baseline=true`.
+levels and four translated hex-lattice seed realizations form a factorial
+family. Exactly one reference row—the central ranger at phase `[0,0]`—is
+marked `is_baseline=true`; that marker defines midpoint parameters, not the
+final raster representative.
 
 Rows contain the opaque run and family IDs, `spatialr_px`, coupled
-`minsize_px`, `ranger`, explicit source radius, sill-support metadata,
-variogram plausibility flags, and provenance. The configured candidate budget
-is a hard cap; it does not silently truncate the population.
+`minsize_px`, `ranger`, seed-realization ID and lattice phase, explicit source
+radius, sill-support metadata, variogram plausibility flags, and provenance.
+The configured candidate budget is a hard cap across scale, ranger, and seed
+phase; it does not silently truncate the population.
 
 The same directory contains `variogram_diagnostics.json`,
 `variogram_curve.csv`, and `candidate_pre_screening_report.json`.
@@ -141,15 +144,23 @@ old runs but are not called by the normal runner.
 
 ## 7. Step 9a response-surface evidence
 
-`level1b_candidate_response_surface.py` runs or reuses one-scale segmentation for every planned perturbation. `level1b_saga_segmentation.py` materializes reusable masked SAGA feature grids and uses SAGA Seed Generation only for its multiband local-variance surface. The unconstrained variance-minimum seed output is not materialized or used. A raster-origin-anchored hexagonal lattice makes the target support-cell area equal to `pi * radius_px^2`; bounded snapping chooses local variance minima, a spatial hash enforces `radius_px` minimum seed distance, and SAGA Proximity Grid verifies a `2 * radius_px` maximum coverage distance with deterministic farthest-point completion where necessary. Seeded Region Growing then uses `SIG_1=ranger`, `SIG_2=spatialr_px`, feature-plus-position similarity, four-neighbour connectivity, and threshold zero. Each run preserves a `controlled_seed_report.json`; output IDs are shifted so label zero remains invalid support. Run-Q and Step-9 evidence are computed unchanged.
+`level1b_candidate_response_surface.py` runs or reuses one-scale segmentation for every planned ensemble member. `level1b_saga_segmentation.py` materializes reusable masked SAGA feature grids and uses SAGA Seed Generation only for its multiband local-variance surface. The unconstrained variance-minimum seed output is not materialized or used. Four translated realizations of one metric hexagonal lattice make the target support-cell area equal to `pi * radius_px^2`; bounded snapping chooses local variance minima, a spatial hash enforces `radius_px` minimum seed distance, and SAGA Proximity Grid verifies a `2 * radius_px` maximum coverage distance with deterministic farthest-point completion where necessary. Radius/phase seed scaffolds have exact feature/mask/parameter provenance and are reused across ranger levels. Seeded Region Growing then uses `SIG_1=ranger`, `SIG_2=spatialr_px`, feature-plus-position similarity, four-neighbour connectivity, and threshold zero. Each run preserves its `controlled_seed_report.json`; output IDs are shifted so label zero remains invalid support.
 
-Evidence has three linked views:
+Evidence has four linked views:
 
-- **population statistics** — segment counts and areas, size-class distributions, central/tail shares, distribution distances, compatible combinations, and medoid-run context
+- **population statistics** — segment counts and areas, size-class distributions, central/tail shares, distribution distances, and compatible combinations
 - **spatial response** — analysis-cell dominance, pattern agreement, persistence, and spatial distribution distances
-- **stability response** — edge loading, scale jumps, distribution flutter, spatial jumps, central mass, and response spread
+- **boundary ensemble response** — per-pixel boundary-support rasters plus exact Jaccard and one-pixel-tolerant boundary agreement across seed phase, ranger, and adjacent radius
+- **stability response** — edge loading, scale jumps, distribution flutter, spatial jumps, central mass, response spread, and boundary persistence
 
-The raw score starts at 1.0, applies fixed penalties for edge loading, scale jumps, distribution flutter, and spatial jumps, rewards mean central-area share, and penalizes response spread. `stability_score` clamps the raw score to `[0, 1]`.
+Label IDs are never compared between runs; binary boundary rasters are compared.
+The boundary medoid is the actually computed run with the highest mean tolerant
+boundary agreement and becomes the representative raster for a family. The
+boundary support term is the geometric mean of seed-phase, ranger, and radius
+boundary agreement. The established response score is retained as a bounded
+plausibility multiplier. Thus `stability_score_raw = clamp(legacy_response,
+0, 1) * boundary_support_score_raw`; `stability_score` clamps the result to
+`[0, 1]`.
 
 True ranking is:
 
@@ -166,7 +177,7 @@ Core outputs are `run_population_summary.json`, `candidate_group_response_summar
 Step-9b starts from the top two true-ranked candidates but independently orders them on the numeric scale ladder.
 
 - Non-adjacent: write both as supported alternatives, require analyst choice, and stop before Step 10.
-- Adjacent: reuse lower and upper anchors by reference, construct exactly one midpoint central candidate, and execute only its perturbation family.
+- Adjacent: reuse lower and upper anchors by reference, construct exactly one midpoint central candidate, expand its perturbation family over the same seed-phase ensemble, and execute only that midpoint ensemble.
 
 After midpoint-family raw support `SM` is available:
 
@@ -188,9 +199,9 @@ Key outputs include:
 
 ## 9. Step 10 product and quality evidence
 
-`level1b_materialization.py` first creates one canonical finalist-evidence object recording numeric boundaries, midpoint, display order, selected candidate and baseline run, group/run rows, source paths, and aggregations. Later Step-10 parts consume it without reranking.
+`level1b_materialization.py` first creates one canonical finalist-evidence object recording numeric boundaries, midpoint, display order, selected candidate and boundary-medoid representative run, group/run rows, source paths, and aggregations. Later Step-10 parts consume it without reranking.
 
-The selected baseline labels are copied to `selected_labels.tif` without recomputing labels, then polygonized to the `selected_segments` GeoPackage layer with `segment_id` and provenance. The R script computes exactextractr named summaries as one wide row per segment against the selected run's masked feature stack.
+The selected representative labels are copied to `selected_labels.tif` without recomputing labels, then polygonized to the `selected_segments` GeoPackage layer with `segment_id` and provenance. The R script computes exactextractr named summaries as one wide row per segment against the selected representative run's masked feature stack.
 
 Final products:
 

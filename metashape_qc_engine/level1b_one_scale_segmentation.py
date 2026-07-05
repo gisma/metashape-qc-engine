@@ -83,7 +83,11 @@ REPORT_KEYS = (
     "otb_commands",
     "saga_cmd_path",
     "saga_feature_grids_dir",
+    "saga_seed_scaffold_dir",
     "saga_seed_policy",
+    "seed_realization_id",
+    "seed_phase_u",
+    "seed_phase_v",
     "saga_seed_report_path",
     "saga_seed_report",
     "saga_variance_band_width_px",
@@ -146,7 +150,7 @@ class Level1BOneScaleSegmentationConfig:
     segmentation_stack_source: str = "proxy_stack"
     masked_segmentation_stack_path: str | Path | None = None
     masked_segmentation_stack_scope: str = "per_run_generated"
-    run_contract_version: int = 4
+    run_contract_version: int = 5
     segmentation_nodata_value: float = 0.0
     tilesizex: int = 512
     tilesizey: int = 512
@@ -154,6 +158,7 @@ class Level1BOneScaleSegmentationConfig:
     cleanup: bool = True
     overwrite: bool = False
     debug_command_output: bool = False
+    seed_scaffold_dir: str | Path | None = None
 
 
 def build_level1b_one_scale_segmentation_layout(output_dir, perturbation_id) -> dict[str, Path]:
@@ -680,7 +685,15 @@ def _base_report(config, layout, checks, failure_reasons, apps) -> dict[str, obj
         "otb_commands": [],
         "saga_cmd_path": apps.get("saga_cmd"),
         "saga_feature_grids_dir": str(_masked_segmentation_stack_path(config, layout).parent / "saga_feature_grids"),
+        "saga_seed_scaffold_dir": (
+            str(Path(config.seed_scaffold_dir))
+            if config.seed_scaffold_dir is not None
+            else str(layout["tmp_dir"])
+        ),
         "saga_seed_policy": None,
+        "seed_realization_id": None,
+        "seed_phase_u": None,
+        "seed_phase_v": None,
         "saga_seed_report_path": None,
         "saga_seed_report": {},
         "saga_variance_band_width_px": None,
@@ -765,6 +778,11 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
         report["minsize_px"] = parameters["minsize"]
         report["radius_m"] = selected_candidate_radius_m(selected_candidate)
         report["ranger"] = parameters["ranger"]
+        report["seed_realization_id"] = str(
+            selected_candidate.get("seed_realization_id", "phase_00")
+        )
+        report["seed_phase_u"] = float(selected_candidate.get("seed_phase_u", 0.0))
+        report["seed_phase_v"] = float(selected_candidate.get("seed_phase_v", 0.0))
         report["saga_variance_band_width_px"] = parameters["spatialr"]
         report["saga_feature_variance"] = parameters["ranger"]
         report["saga_position_variance_px"] = parameters["spatialr"]
@@ -818,6 +836,10 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
             output_labels_path=layout["smoke_dir"] / "merged_labels.tif",
             spatial_radius_px=int(parameters["spatialr"]),
             feature_variance=float(parameters["ranger"]),
+            seed_realization_id=str(report["seed_realization_id"]),
+            seed_phase_u=float(report["seed_phase_u"]),
+            seed_phase_v=float(report["seed_phase_v"]),
+            seed_scaffold_dir=Path(str(report["saga_seed_scaffold_dir"])),
         )
         report["saga_commands"] = saga_result["commands"]
         report["saga_seed_policy"] = saga_result["seed_policy"]

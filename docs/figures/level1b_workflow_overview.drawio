@@ -32,7 +32,7 @@
         <mxCell id="prescreen_band" value="&lt;b&gt;Scene-adaptive candidate pre-screening&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;segmentation-free · no ranking · no final selection&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f7ef;strokeColor=#82b366;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
           <mxGeometry x="60" y="450" width="1680" height="260" as="geometry" />
         </mxCell>
-        <mxCell id="domain" value="&lt;b&gt;YAML parameter domain&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;radius min/max · lag policy&lt;br&gt;directions · sill policy&lt;br&gt;candidate budget · seed&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="domain" value="&lt;b&gt;YAML parameter domain&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;radius min/max · lag policy&lt;br&gt;directions · sill policy&lt;br&gt;candidate budget · seed phases&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="100" y="530" width="260" height="130" as="geometry" />
         </mxCell>
         <mxCell id="variogram" value="&lt;b&gt;Robust multiband variogram&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;logarithmic lags × directions&lt;br&gt;median half-squared feature distance&lt;br&gt;tail-median sill&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
@@ -44,7 +44,7 @@
         <mxCell id="ranger" value="&lt;b&gt;Feature-space ranger&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;k → HSM curve → first stable plateau&lt;br&gt;main-interval lower · mode · upper&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="1100" y="530" width="290" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="population" value="&lt;b&gt;Candidate population JSON&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;opaque IDs · scale families&lt;br&gt;spatialr_px · minsize_px · ranger&lt;br&gt;exactly one baseline per family&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="population" value="&lt;b&gt;Candidate population JSON&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;opaque IDs · scale × ranger × 4 seed phases&lt;br&gt;spatialr_px · minsize_px · ranger&lt;br&gt;one parameter-reference baseline per family&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="1440" y="530" width="260" height="130" as="geometry" />
         </mxCell>
         <mxCell id="diagnostics" value="&lt;b&gt;Diagnostic metadata only&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;variogram knee · tail plateau · saturation · directional anisotropy&lt;br&gt;never changes downstream evaluation rules&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
@@ -53,10 +53,10 @@
         <mxCell id="formula" value="&lt;b&gt;Spatial coupling&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;area = π · radius²&lt;br&gt;minsize_px = round(area / pixel_area)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="1190" y="740" width="360" height="95" as="geometry" />
         </mxCell>
-        <mxCell id="step9a" value="&lt;b&gt;Step 9a — Candidate response surface&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;execute/reuse every candidate run&lt;br&gt;segment-population + spatial-response evidence&lt;br&gt;raw support score and true family ranking&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="step9a" value="&lt;b&gt;Step 9a — Candidate response surface&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;execute/reuse every ensemble member&lt;br&gt;boundary persistence over seed · ranger · radius&lt;br&gt;boundary medoid + true family ranking&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="590" y="870" width="560" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="step9evidence" value="&lt;b&gt;Step-9a evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;run_population_summary&lt;br&gt;candidate_group_response_summary&lt;br&gt;ranked_candidate_scales&lt;br&gt;scale-continuity / boundary metadata&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="step9evidence" value="&lt;b&gt;Step-9a evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;run_population_summary&lt;br&gt;candidate_group_response_summary&lt;br&gt;boundary_support rasters + index&lt;br&gt;ranking + scale-continuity metadata&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="1220" y="870" width="390" height="130" as="geometry" />
         </mxCell>
         <mxCell id="sizeformula" value="&lt;b&gt;Scale-relative size evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;area = n_px · GSD²&lt;br&gt;r_eq = √(area / π)&lt;br&gt;q = r_eq / source radius&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
@@ -68,7 +68,7 @@
         <mxCell id="nonadjacent" value="&lt;b&gt;Non-adjacent branch&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;forward No1 + No2&lt;br&gt;no midpoint · no automatic choice&lt;br&gt;analyst scale choice required&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="1110" y="1080" width="360" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="midpoint" value="&lt;b&gt;Adjacent branch&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;one midpoint inside interval&lt;br&gt;execute midpoint family only&lt;br&gt;reuse endpoints by reference&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="midpoint" value="&lt;b&gt;Adjacent branch&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;one midpoint inside interval&lt;br&gt;execute midpoint perturbations × seed phases&lt;br&gt;reuse endpoints by reference&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="330" y="1080" width="330" height="120" as="geometry" />
         </mxCell>
         <mxCell id="gainshare" value="&lt;b&gt;Gain-share handoff&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;(SM − S2) / (S1 − S2)&lt;br&gt;&amp;gt; 0.5 → midpoint&lt;br&gt;≤ 0.5 → retain No1&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
@@ -77,7 +77,7 @@
         <mxCell id="step9boundary" value="&lt;b&gt;Method boundary&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;Step 9b is local support refinement&lt;br&gt;not optimization, best-scale search or final ecological selection&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="1090" y="1250" width="400" height="105" as="geometry" />
         </mxCell>
-        <mxCell id="step10" value="&lt;b&gt;Step 10 — Materialization and quality evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;1 collect finalist evidence · 2 aggregate numeric evidence · 3 figures&lt;br&gt;4 materialize selected baseline labels and polygons · 5 exactextractr statistics and quality information&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="step10" value="&lt;b&gt;Step 10 — Materialization and quality evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;1 collect finalist evidence · 2 aggregate numeric evidence · 3 figures&lt;br&gt;4 materialize selected boundary-medoid labels and polygons · 5 exactextractr statistics and quality information&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="480" y="1430" width="820" height="130" as="geometry" />
         </mxCell>
         <mxCell id="products" value="&lt;b&gt;Selected geospatial products&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;selected_labels.tif&lt;br&gt;selected_segments.gpkg&lt;br&gt;selected_segments_manifest.json&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">

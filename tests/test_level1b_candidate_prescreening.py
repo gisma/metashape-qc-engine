@@ -45,7 +45,13 @@ def _config(tmp_path: Path, **overrides: object) -> Level1BCandidatePrescreening
         "stable_crossing_window": 2,
         "plateau_rel_tol": 0.1,
         "anisotropy_ratio_threshold": 1.5,
-        "candidate_budget": 12,
+        "candidate_budget": 48,
+        "seed_phase_offsets": (
+            (0.0, 0.0),
+            (0.5, 0.0),
+            (0.0, 0.5),
+            (0.5, 0.5),
+        ),
         "ranger_level_policy": "hsm_main_interval_lower_mode_upper",
         "sample_n": 100,
         "knn_k_policy": "auto_hsm_plateau",
@@ -150,7 +156,7 @@ def test_step_materializes_step9_compatible_scene_adaptive_population(
     report = run_candidate_prescreening_step(_config(tmp_path))
     assert report["status"] == "ok"
     assert report["scale_family_count"] == 4
-    assert report["candidate_count"] == 12
+    assert report["candidate_count"] == 48
 
     population_path = (
         tmp_path
@@ -163,8 +169,14 @@ def test_step_materializes_step9_compatible_scene_adaptive_population(
     assert payload["no_segmentation_performed"] is True
     assert payload["no_ranking_performed"] is True
     assert payload["no_final_selection_performed"] is True
-    assert len({row["candidate_id"] for row in rows}) == 12
-    assert len({row["perturbation_id"] for row in rows}) == 12
+    assert len({row["candidate_id"] for row in rows}) == 48
+    assert len({row["perturbation_id"] for row in rows}) == 48
+    assert {row["seed_realization_id"] for row in rows} == {
+        "phase_00",
+        "phase_01",
+        "phase_02",
+        "phase_03",
+    }
 
     groups = group_rows_by_candidate_scale(rows)
     assert [group["candidate_scale_group_id"] for group in groups] == [
@@ -174,7 +186,7 @@ def test_step_materializes_step9_compatible_scene_adaptive_population(
         "scale_004",
     ]
     for group in groups:
-        assert len(group["rows"]) == 3
+        assert len(group["rows"]) == 12
         assert sum(bool(row["is_baseline"]) for row in group["rows"]) == 1
         for row in group["rows"]:
             assert source_candidate_radius_m(row) == row["radius_m"]
@@ -199,11 +211,11 @@ def test_candidate_budget_fails_instead_of_truncating(
 ) -> None:
     _install_data_stubs(monkeypatch)
     report = run_candidate_prescreening_step(
-        _config(tmp_path, candidate_budget=11)
+        _config(tmp_path, candidate_budget=47)
     )
     assert report["status"] == "failed"
     assert report["candidate_count"] == 0
-    assert any("candidate budget 11" in reason for reason in report["failure_reasons"])
+    assert any("candidate budget 47" in reason for reason in report["failure_reasons"])
     assert not (
         tmp_path
         / "level1b"

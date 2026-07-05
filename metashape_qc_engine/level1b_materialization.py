@@ -44,13 +44,13 @@ def _write_step10_finalist_evidence(path: Path, evidence: dict) -> None:
     path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
 
 
-def _selected_baseline_run(evidence: dict) -> dict:
+def _selected_representative_run(evidence: dict) -> dict:
     [selected_row] = [
         row
         for row in evidence["finalist_run_rows"]
-        if row["run_id"] == evidence["selected_baseline_run_id"]
+        if row["run_id"] == evidence["selected_representative_run_id"]
         and row["step10_selected_candidate"] is True
-        and row["original_row_metadata"]["is_baseline"] is True
+        and row.get("ensemble_representative") is True
     ]
     return selected_row
 
@@ -208,15 +208,18 @@ def run_level1b_step10_collect_finalist_evidence(
     decision_evidence_dir = _step10_decision_evidence_dir(output_root)
     decision_evidence_dir.mkdir(parents=True, exist_ok=True)
     evidence_json_path = _step10_finalist_evidence_path(output_root)
-    [selected_baseline_row] = [
+    selected_group_row = group_rows_by_role[selected_role]
+    selected_representative_run_id = str(selected_group_row["medoid_run_id"])
+    [selected_representative_row] = [
         row
         for row in run_rows
         if row["step10_selected_candidate"] is True
-        and row["original_row_metadata"]["is_baseline"] is True
+        and str(row["run_id"]) == selected_representative_run_id
+        and row.get("ensemble_representative") is True
     ]
     evidence = {
         "schema": STEP10_FINALIST_EVIDENCE_SCHEMA,
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "step10_part1_finalist_evidence_collected",
         "source_artifacts": {
             "step9b_handoff_json": str(handoff_json),
@@ -237,7 +240,7 @@ def run_level1b_step10_collect_finalist_evidence(
         "display_order": ordered_roles,
         "selected_candidate_id": selected_candidate_id,
         "selected_role": selected_role,
-        "selected_baseline_run_id": selected_baseline_row["run_id"],
+        "selected_representative_run_id": selected_representative_row["run_id"],
         "finalist_group_rows": group_rows,
         "finalist_run_rows": run_rows,
         "group_aggregation_rows": [],
@@ -312,7 +315,7 @@ def run_level1b_step10_collect_finalist_evidence(
         "decision_evidence_dir": str(decision_evidence_dir),
         "selected_candidate_id": selected_candidate_id,
         "selected_role": selected_role,
-        "selected_baseline_run_id": selected_baseline_row["run_id"],
+        "selected_representative_run_id": selected_representative_row["run_id"],
         "finalist_evidence_json": str(evidence_json_path),
         "finalist_group_summary_json": str(group_json_path),
         "finalist_group_summary_csv": str(group_csv_path),
@@ -890,7 +893,7 @@ def run_level1b_step10_materialize_selected_segments(
     output_root = Path(output_dir)
     evidence_json_path = _step10_finalist_evidence_path(output_root)
     evidence = _read_step10_finalist_evidence(output_root)
-    selected_row = _selected_baseline_run(evidence)
+    selected_row = _selected_representative_run(evidence)
 
     source_label_raster = _selected_label_raster_path(selected_row)
     final_segments_dir = (
@@ -1019,7 +1022,7 @@ def run_level1b_step10_compute_exactextractr_segment_stats_and_quality_info(
 
     json.loads(selected_segments_manifest_json.read_text(encoding="utf-8"))
     evidence = _read_step10_finalist_evidence(output_root)
-    selected_row = _selected_baseline_run(evidence)
+    selected_row = _selected_representative_run(evidence)
     [selected_group_aggregation_row] = [
         row
         for row in evidence["group_aggregation_rows"]

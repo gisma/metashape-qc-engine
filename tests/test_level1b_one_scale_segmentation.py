@@ -249,7 +249,7 @@ def test_one_scale_reuses_prebuilt_masked_stack_and_canonical_saga_grids(
         candidate_id="candidate", output_dir=tmp_path / "out", feature_space_stack_path=stack,
         segmentation_stack_path=stack, segmentation_stack_source="scaled_proxy_stack",
         masked_segmentation_stack_path=canonical, masked_segmentation_stack_scope="response_surface_canonical",
-        run_contract_version=4, valid_mask_path=mask, perturbation_candidates_json_path=candidates,
+        run_contract_version=5, valid_mask_path=mask, perturbation_candidates_json_path=candidates,
         perturbation_id="run-a",
     ))
 
@@ -259,7 +259,7 @@ def test_one_scale_reuses_prebuilt_masked_stack_and_canonical_saga_grids(
     assert saga_calls[0]["reference_raster_path"] == canonical
     assert report["masked_segmentation_stack_path"] == str(canonical)
     assert report["masked_segmentation_stack_scope"] == "response_surface_canonical"
-    assert report["run_contract_version"] == 4
+    assert report["run_contract_version"] == 5
     assert report["segmentation_backend"] == "saga_seeded_region_growing"
     assert "masked_segmentation_stack.tif" not in report["files_written"]
 

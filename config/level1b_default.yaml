@@ -58,7 +58,7 @@ level1b:
     # Admissible radius domain in metres, not concrete Step-9a anchors. Stable
     # variogram sill crossings materialize the scene-specific scale ladder.
     # For SAGA, each materialized radius also defines a deterministic seed
-    # density: the raster-origin-anchored hexagonal support-cell area equals
+    # density: each translated metric-hex support-cell area equals
     # pi * radius_px^2. Each nominal centre may snap by at most 0.45*radius_px
     # to a local multiband-variance minimum; seeds remain at least radius_px
     # apart and every valid pixel must lie within 2*radius_px of a seed.
@@ -96,8 +96,19 @@ level1b:
     # Diagnostic-only anisotropy flag threshold; it never selects candidates.
     anisotropy_ratio_threshold: 1.5
 
-    # Hard cap. Pre-screening fails instead of truncating the population.
-    candidate_budget: 12
+    # Four translations of the same metric hexagonal lattice form the
+    # deterministic seed-realization ensemble. Coordinates are fractions of
+    # the two lattice basis vectors, not metres or pixels. Phase [0,0] is the
+    # reference realization; all phases receive identical downstream rules.
+    seed_phase_offsets:
+      - [0.0, 0.0]
+      - [0.5, 0.0]
+      - [0.0, 0.5]
+      - [0.5, 0.5]
+
+    # Hard cap across scale x ranger x seed phase. Pre-screening fails instead
+    # of truncating the factorial ensemble.
+    candidate_budget: 48
 
     # Central HSM plus positive unique bounds of its shortest half interval.
     # No feature-distance tail quantiles are used.

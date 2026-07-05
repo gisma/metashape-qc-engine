@@ -457,7 +457,13 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert prescreen_config.lag_count == 32
     assert prescreen_config.lag_spacing == "logarithmic"
     assert prescreen_config.sill_fraction_targets == (0.25, 0.5, 0.75, 0.95)
-    assert prescreen_config.candidate_budget == 12
+    assert prescreen_config.candidate_budget == 48
+    assert prescreen_config.seed_phase_offsets == (
+        (0.0, 0.0),
+        (0.5, 0.0),
+        (0.0, 0.5),
+        (0.5, 0.5),
+    )
     assert prescreen_config.ranger_level_policy == (
         "hsm_main_interval_lower_mode_upper"
     )
