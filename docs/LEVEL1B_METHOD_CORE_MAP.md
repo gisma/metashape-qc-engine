@@ -2,7 +2,7 @@
 
 Level-1B is the candidate-scale stability and segmentation-evidence workflow. Its logical method is implemented mostly in `metashape_qc_engine/level1b_*.py`, with orchestration in `level1b_dumb_runner.py`, environment setup in one shell wrapper, and final segment statistics in one R script.
 
-[Editable current workflow diagram](figures/level1b_workflow_overview.drawio)
+![Infographic Level1b workflow](figures/level1b.png)
 
 
 Operational commands are in [RUN_LEVEL1B.md](RUN_LEVEL1B.md). This file maps the scientific method, principal levers, and artifact contracts.

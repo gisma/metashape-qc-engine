@@ -2,7 +2,7 @@
 
 Level-1A is the Metashape product-analysis and reproducibility workflow. The repository layout is historical: the method is implemented across `python/`, `scripts/`, and `metashape_qc_engine/cli.py`, rather than in files named `level1a_*`.
 
-![](figures/level1a.png)
+![Infographic Level1a workflow](figures/level1a.png)
 
 This map separates methodological decisions from execution infrastructure. Operational commands are in [RUN_LEVEL1A.md](RUN_LEVEL1A.md).
 
