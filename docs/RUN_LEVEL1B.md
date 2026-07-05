@@ -76,6 +76,29 @@ phases require a budget of 48. It fails rather than restoring fixed YAML
 anchors when fewer than two stable spatial support points are available or
 when the configured candidate budget is insufficient.
 
+### Multiscale centroid-seed stabilization
+
+The Step-9 population is also the bootstrap evidence for the final seed
+realization. After the adjacent Step-9b handoff and Step-10 finalist collection,
+the runner reads all initial Step-9a label rasters. For every spatial scale it
+forms a centroid-density surface from the twelve `ranger × seed phase` runs.
+A local maximum is retained only when it is supported by at least six runs,
+three of the four phases, and two ranger positions. Mutually nearest supported
+maxima are tracked between adjacent scales; a usable track must occur at two or
+more scales.
+
+Tracks present at the selected scale—or at the nearest initial scale when the
+handoff selected the midpoint—supply the final seed scaffold. Their locations
+are the median positions of their multiscale tracks. Seeds are separated by at
+least the selected `spatialr_px`.
+
+SAGA seeded region growing then runs once with the handed-off `spatialr_px` and
+`ranger` and this multiscale-supported seed scaffold. This stage does not merge
+boundaries and does not invent a consensus polygon. It converts the complete
+Step-9 ensemble into one reproducible seed realization at the already selected
+parameter pair. The active support controls are in the
+`centroid_seed_stabilization` YAML block.
+
 There is no CLI option for an alternative Level-1B config path.
 ### Proxy-stack parameters
 
@@ -154,7 +177,7 @@ There is no separate Level-1B resume command. Candidate response-surface executi
 
 | Chain status | CLI exit | Meaning |
 |---|---:|---|
-| `level1b_dumb_chain_complete` | 0 | adjacent midpoint branch and all Step-10 functions completed |
+| `level1b_dumb_chain_complete` | 0 | adjacent midpoint branch, centroid-seed stabilization, and all Step-10 functions completed |
 | `step9b_non_adjacent_choice_required` | 2 | top two Step-9a candidates are not adjacent; alternatives were written, no choice was made, and Step 10 did not run |
 | `level1b_dumb_chain_failed` | 1 | an exception or failed contract stopped the chain; the report contains `error_type` and `error` |
 
@@ -222,6 +245,10 @@ Under `RUN_ROOT/level1b/`:
 - `local_transition_refinement/step9b_interval_preflight.json`
 - `local_transition_refinement/step9b_midpoint_gain_share_handoff.json` on the adjacent branch
 - `local_transition_refinement/step9b_supported_scale_alternatives.json` on the non-adjacent branch
+- `step10_materialization/centroid_seed_stabilization/centroid_seed_stabilization_report.json`
+- `step10_materialization/centroid_seed_stabilization/stabilized_seeds.csv`
+- `step10_materialization/centroid_seed_stabilization/stabilized_seeds.sgrd`
+- `step10_materialization/centroid_seed_stabilization/stabilized_labels.tif`
 
 ## Final products
 
@@ -232,6 +259,10 @@ On a complete adjacent run:
 - `RUN_ROOT/level1b/step10_materialization/final_segments/selected_segments_manifest.json`
 
 The GeoPackage layer is `selected_segments`; segment labels are stored as `segment_id`.
+
+`selected_labels.tif` is copied from the multiscale-seeded
+`centroid_seed_stabilization/stabilized_labels.tif`, not from the Step-9
+boundary-medoid run. The medoid remains selection and stability evidence.
 
 ## Quality evidence
 
@@ -264,7 +295,8 @@ It lists six PNGs covering decision scores, stability/support distributions, seg
 4. For preflight failure, verify required OTB applications—including `DimensionalityReduction` and `HaralickTextureExtraction`—plus `saga_cmd` and `gdal_edit.py` in the wrapper's effective `PATH`.
 5. For Step-9a failure, inspect `candidate_response_surface_report.json` and referenced per-run reports. Do not treat a partial response surface as complete.
 6. For a non-adjacent exit, inspect `step9b_supported_scale_alternatives.json`; this is an analyst-choice branch, not a crash.
-7. For Step-10 quality failure, verify selected segments, the selected masked value raster, `Rscript`, and required R packages.
+7. For stabilization failure, inspect `centroid_seed_stabilization_report.json`, its support counts, selected parameters, seed count, and output segment count.
+8. For Step-10 quality failure, verify selected segments, the selected masked value raster, `Rscript`, and required R packages.
 
 ## What Level-1B does not do
 
@@ -274,3 +306,4 @@ It lists six PNGs covering decision scores, stability/support distributions, seg
 - no automatic choice between non-adjacent supported alternatives
 - no final quality class
 - no alternate-path search when a required artifact is missing
+- no consensus boundary merge after Step 9

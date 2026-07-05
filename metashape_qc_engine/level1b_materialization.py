@@ -894,8 +894,21 @@ def run_level1b_step10_materialize_selected_segments(
     evidence_json_path = _step10_finalist_evidence_path(output_root)
     evidence = _read_step10_finalist_evidence(output_root)
     selected_row = _selected_representative_run(evidence)
-
-    source_label_raster = _selected_label_raster_path(selected_row)
+    stabilization_report_path = (
+        output_root
+        / "level1b"
+        / "step10_materialization"
+        / "centroid_seed_stabilization"
+        / "centroid_seed_stabilization_report.json"
+    )
+    stabilization_report = json.loads(
+        stabilization_report_path.read_text(encoding="utf-8")
+    )
+    if stabilization_report["status"] != (
+        "multiscale_centroid_seed_stabilization_ready"
+    ):
+        raise RuntimeError("centroid seed stabilization is not converged")
+    source_label_raster = Path(stabilization_report["stabilized_labels_tif"])
     final_segments_dir = (
         output_root / "level1b" / "step10_materialization" / "final_segments"
     )
@@ -963,6 +976,10 @@ def run_level1b_step10_materialize_selected_segments(
             "candidate_scale_group_id"
         ],
         "source_label_raster": str(source_label_raster),
+        "centroid_seed_stabilization_report_json": str(
+            stabilization_report_path
+        ),
+        "centroid_seed_stabilization_source_run_id": selected_row["run_id"],
         "selected_labels_tif": str(selected_labels_tif),
         "selected_segments_gpkg": str(selected_segments_gpkg),
         "selected_candidate_id": selected_row["candidate_scale_group_id"],
@@ -979,6 +996,7 @@ def run_level1b_step10_materialize_selected_segments(
         status="step10_part4_selected_segments_materialized",
         inputs={
             "finalist_evidence_json": evidence_json_path,
+            "centroid_seed_stabilization_report_json": stabilization_report_path,
             "source_label_raster": source_label_raster,
         },
         artifacts={
@@ -998,6 +1016,10 @@ def run_level1b_step10_materialize_selected_segments(
             "candidate_scale_group_id"
         ],
         "source_label_raster": str(source_label_raster),
+        "centroid_seed_stabilization_report_json": str(
+            stabilization_report_path
+        ),
+        "centroid_seed_stabilization_source_run_id": selected_row["run_id"],
         "selected_labels_tif": str(selected_labels_tif),
         "selected_segments_gpkg": str(selected_segments_gpkg),
         "manifest_json": str(manifest_path),

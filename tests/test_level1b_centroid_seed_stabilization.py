@@ -7,6 +7,7 @@ import numpy as np
 from metashape_qc_engine import level1b_centroid_seed_stabilization as stabilization
 
 
+
 def test_density_support_and_multiscale_tracks_recover_persistent_centres() -> None:
     rows = []
     point_sets = []

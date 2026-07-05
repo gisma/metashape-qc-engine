@@ -287,8 +287,21 @@ def test_step10_parts_share_canonical_evidence_without_step9_reread(
     assert figure_manifest["selected_candidate_id"] == "midpoint-id"
 
     selected_row = materialization._selected_representative_run(aggregated_evidence)
-    source_labels = Path(selected_row["merged_labels_path"])
+    stabilization_dir = (
+        tmp_path
+        / "level1b"
+        / "step10_materialization"
+        / "centroid_seed_stabilization"
+    )
+    source_labels = stabilization_dir / "stabilized_labels.tif"
     _write_selected_source_labels(source_labels)
+    _write_json(
+        stabilization_dir / "centroid_seed_stabilization_report.json",
+        {
+            "status": "multiscale_centroid_seed_stabilization_ready",
+            "stabilized_labels_tif": str(source_labels),
+        },
+    )
     materialize_result = run_level1b_step10_materialize_selected_segments(
         tmp_path
     )

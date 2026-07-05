@@ -2,7 +2,7 @@
 
 Level-1B is the candidate-scale stability and segmentation-evidence workflow. Its logical method is implemented mostly in `metashape_qc_engine/level1b_*.py`, with orchestration in `level1b_dumb_runner.py`, environment setup in one shell wrapper, and final segment statistics in one R script.
 
-![](figures/level1b.png)
+[Editable current workflow diagram](figures/level1b_workflow_overview.drawio)
 
 
 Operational commands are in [RUN_LEVEL1B.md](RUN_LEVEL1B.md). This file maps the scientific method, principal levers, and artifact contracts.
@@ -11,7 +11,7 @@ Operational commands are in [RUN_LEVEL1B.md](RUN_LEVEL1B.md). This file maps the
 
 | Layer | Current code | Responsibility |
 |---|---|---|
-| Method steps | `level1b_valid_mask.py`, `level1b_proxy_stack_rgb_dglcm.py`, `level1b_channels.py`, `level1b_scaling.py`, `level1b_candidate_prescreening.py`, `level1b_candidate_response_surface.py`, `level1b_materialization.py` | Define domain, features, scale candidates, perturbations, response evidence, handoff, and products |
+| Method steps | `level1b_valid_mask.py`, `level1b_proxy_stack_rgb_dglcm.py`, `level1b_channels.py`, `level1b_scaling.py`, `level1b_candidate_prescreening.py`, `level1b_candidate_response_surface.py`, `level1b_centroid_seed_stabilization.py`, `level1b_materialization.py` | Define domain, features, scale candidates, ensemble response evidence, handoff, stabilized seeds, and products |
 | Segment statistics | `R/level1b_step10_exactextractr_segment_stats.R` | Compute exactextractr summaries for materialized selected segments |
 | Contract validation | `level1b_preflight.py`, `level1b_step_manifest.py` | Validate runtime inputs/tools and expose stable per-step input/artifact keys |
 | Wrapper | `level1b_dumb_runner.py`, `run_level1b_dumb_with_user_header.sh` | Establish environment, call steps in order, enforce branch/status contracts, and write a compact report |
@@ -155,9 +155,10 @@ Evidence has four linked views:
 
 Label IDs are never compared between runs; binary boundary rasters are compared.
 The boundary medoid is the actually computed run with the highest mean tolerant
-boundary agreement and becomes the representative raster for a family. The
-boundary support term is the geometric mean of seed-phase, ranger, and radius
-boundary agreement. The established response score is retained as a bounded
+boundary agreement and becomes the representative evidence row for a family.
+It does not become the final materialized label raster after centroid-seed
+stabilization. The boundary support term is the geometric mean of seed-phase,
+ranger, and radius boundary agreement. The established response score is retained as a bounded
 plausibility multiplier. Thus `stability_score_raw = clamp(legacy_response,
 0, 1) * boundary_support_score_raw`; `stability_score` clamps the result to
 `[0, 1]`.
@@ -197,11 +198,46 @@ Key outputs include:
 - nested `midpoint_response_surface_eval/` outputs
 - `step9b_midpoint_gain_share_handoff.json`
 
-## 9. Step 10 product and quality evidence
+## 9. Multiscale centroid-seed stabilization
+
+After Step-10 finalist collection has fixed the handoff candidate and its
+representative parameter row, `level1b_centroid_seed_stabilization.py` reuses
+the complete initial Step-9a label population as bootstrap evidence.
+
+For each initial spatial scale, every segment contributes its centroid to one
+of twelve realizations: three ranger positions by four translated seed phases.
+The centroid impulses are Gaussian-smoothed with `sigma = spatialr_px / 2`, and
+local maxima are searched in a `2 * spatialr_px + 1` window. A maximum survives
+only with the configured minimum support across runs, seed phases, and ranger
+positions. Supported maxima are joined between adjacent scales only when they
+are mutual nearest neighbours within the larger adjacent radius. Tracks must
+span at least two scales.
+
+At the handed-off scale, the multiscale median of each track supplies a seed.
+If Step 9b handed off a midpoint, the nearest initial scale supplies track
+membership while the midpoint's own `spatialr_px` and `ranger` control the new
+segmentation. Seeds are filtered to the selected `spatialr_px` minimum distance.
+
+SAGA seeded region growing runs once from this evidence-derived seed scaffold
+at the handed-off parameters. This deliberately preserves the successful
+multiscale seed result; segment centroids are not recursively fed back into a
+new seed set. There is no boundary union, consensus merge, or polygon fusion.
+
+Canonical outputs are `centroid_seed_stabilization_report.json`,
+`stabilized_seeds.csv`, `stabilized_seeds.sgrd`, and
+`stabilized_labels.tif` under
+`level1b/step10_materialization/centroid_seed_stabilization/`.
+
+## 10. Step 10 product and quality evidence
 
 `level1b_materialization.py` first creates one canonical finalist-evidence object recording numeric boundaries, midpoint, display order, selected candidate and boundary-medoid representative run, group/run rows, source paths, and aggregations. Later Step-10 parts consume it without reranking.
 
-The selected representative labels are copied to `selected_labels.tif` without recomputing labels, then polygonized to the `selected_segments` GeoPackage layer with `segment_id` and provenance. The R script computes exactextractr named summaries as one wide row per segment against the selected representative run's masked feature stack.
+After finalist collection, centroid-seed stabilization creates the final labels
+at the handed-off spatial and feature parameters. Those labels are copied to
+`selected_labels.tif` and polygonized to the `selected_segments` GeoPackage
+layer with `segment_id` and provenance. The R script computes exactextractr
+named summaries as one wide row per segment against the selected representative
+run's masked feature stack.
 
 Final products:
 
@@ -239,6 +275,7 @@ Each contains `step`, `status`, `inputs`, `artifacts`, and `provenance.candidate
 - Step-9b midpoint perturbation settings define only the local refinement family
 - Step-9a score terms define family ranking
 - Step-9b adjacency and fixed `> 0.5` rule define local handoff
+- centroid support thresholds define which ensemble centres become final seeds
 
 The normal CLI does not expose these as ad hoc arguments. Wired operational parameters are read from `config/level1b_default.yaml`; the proxy-stack band count is derived from the active recipe output rather than configured separately.
 
@@ -250,3 +287,4 @@ The normal CLI does not expose these as ad hoc arguments. Wired operational para
 - no scale extrapolation beyond the deterministic ladder
 - no automatic resolution of non-adjacent alternatives
 - no final categorical quality class
+- no post-hoc consensus merge of Step-9 boundaries

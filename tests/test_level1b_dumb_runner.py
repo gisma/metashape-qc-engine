@@ -293,6 +293,32 @@ def _install_stubs(
         )
         return {"status": "step10_part1_finalist_evidence_collected"}
 
+    def stabilize(path, **kwargs):
+        calls.append("centroid_seed_stabilization")
+        assert Path(path) == output_dir
+        captured["centroid_seed_stabilization"] = kwargs
+        stabilization = (
+            level1b
+            / "step10_materialization"
+            / "centroid_seed_stabilization"
+        )
+        _write(stabilization / "centroid_seed_stabilization_report.json")
+        _write(stabilization / "stabilized_seeds.sgrd")
+        _write(stabilization / "stabilized_seeds.csv")
+        _write(stabilization / "stabilized_labels.tif")
+        manifest(
+            "centroid_seed_stabilization",
+            "multiscale_centroid_seed_stabilization_ready",
+            {
+                "stabilization_report_json": stabilization
+                / "centroid_seed_stabilization_report.json",
+                "stabilized_seed_grid": stabilization / "stabilized_seeds.sgrd",
+                "stabilized_seed_csv": stabilization / "stabilized_seeds.csv",
+                "stabilized_labels_tif": stabilization / "stabilized_labels.tif",
+            },
+        )
+        return {"status": "multiscale_centroid_seed_stabilization_ready"}
+
     def aggregate(path):
         calls.append("step10_aggregate")
         assert Path(path) == output_dir
@@ -393,6 +419,9 @@ def _install_stubs(
         runner, "run_level1b_step10_collect_finalist_evidence", collect
     )
     monkeypatch.setattr(
+        runner, "run_multiscale_centroid_seed_stabilization", stabilize
+    )
+    monkeypatch.setattr(
         runner, "run_level1b_step10_aggregate_finalist_evidence", aggregate
     )
     monkeypatch.setattr(runner, "run_level1b_step10_make_finalist_figures", figures)
@@ -432,6 +461,7 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
         "step9b_prepare",
         "step9b_midpoint_handoff",
         "step10_collect",
+        "centroid_seed_stabilization",
         "step10_aggregate",
         "step10_figures",
         "step10_materialize",
@@ -477,6 +507,11 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert prescreen_config.max_distance_sample_n == 15000
     assert not hasattr(prescreen_config, "baseline_candidate_radii_m")
     assert not hasattr(prescreen_config, "quantile_probs")
+    assert captured["centroid_seed_stabilization"] == {
+        "minimum_run_support": 6,
+        "minimum_phase_support": 3,
+        "minimum_ranger_support": 2,
+    }
 
     step9a_config = captured["step9a"]
     assert isinstance(step9a_config, Level1BCandidateResponseSurfaceConfig)

@@ -1,12 +1,12 @@
-"""Multiscale centroid-vote seed stabilization prototype for Level-1B."""
+"""Multiscale centroid-vote seed stabilization for Level-1B."""
 
 from __future__ import annotations
 
 import csv
 import json
-import math
 import os
 from pathlib import Path
+import shutil
 import subprocess
 from typing import Any
 
@@ -15,6 +15,7 @@ import rasterio
 from scipy import ndimage
 from scipy.spatial import cKDTree
 
+from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 from metashape_qc_engine.level1b_saga_segmentation import (
     SAGA_NODATA,
     _write_saga_grid_header,
@@ -24,8 +25,8 @@ from metashape_qc_engine.level1b_saga_segmentation import (
 )
 
 
-PROTOTYPE_RELATIVE_DIR = Path(
-    "level1b/step10_materialization/centroid_seed_stabilization_prototype"
+STABILIZATION_RELATIVE_DIR = Path(
+    "level1b/step10_materialization/centroid_seed_stabilization"
 )
 
 
@@ -278,25 +279,74 @@ def _write_seed_grid(
     )
 
 
-def run_multiscale_centroid_seed_prototype(
+def _write_seed_csv(
+    path: Path,
+    seeds: list[dict[str, Any]],
+    transform: Any,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "seed_id",
+        "row",
+        "col",
+        "x",
+        "y",
+        "scale_support",
+        "total_run_support",
+        "source_segment_id",
+        "source_segment_pixel_count",
+    ]
+    with path.open("w", newline="", encoding="utf-8") as file_obj:
+        writer = csv.DictWriter(file_obj, fieldnames=fieldnames)
+        writer.writeheader()
+        for seed_id, seed in enumerate(seeds, start=1):
+            x, y = rasterio.transform.xy(
+                transform, seed["row"], seed["col"], offset="center"
+            )
+            writer.writerow(
+                {
+                    "seed_id": seed_id,
+                    "row": seed["row"],
+                    "col": seed["col"],
+                    "x": x,
+                    "y": y,
+                    "scale_support": seed.get("scale_support"),
+                    "total_run_support": seed.get("total_run_support"),
+                    "source_segment_id": seed.get("source_segment_id"),
+                    "source_segment_pixel_count": seed.get(
+                        "source_segment_pixel_count"
+                    ),
+                }
+            )
+
+
+def run_multiscale_centroid_seed_stabilization(
     output_dir: str | Path,
     *,
-    minimum_run_support: int = 6,
-    minimum_phase_support: int = 3,
-    minimum_ranger_support: int = 2,
+    minimum_run_support: int,
+    minimum_phase_support: int,
+    minimum_ranger_support: int,
 ) -> dict[str, Any]:
     root = Path(output_dir)
+
     response_dir = root / "level1b/candidate_response_surface"
     run_rows = json.loads(
         (response_dir / "run_population_summary.json").read_text(encoding="utf-8")
     )
-    evidence = json.loads(
-        (
-            root
-            / "level1b/step10_materialization/decision_evidence/finalist_evidence.json"
-        ).read_text(encoding="utf-8")
+    evidence_path = (
+        root
+        / "level1b/step10_materialization/decision_evidence/finalist_evidence.json"
     )
-    selected_group_id = str(evidence["selected_candidate_id"])
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    selected_candidate_id = str(evidence["selected_candidate_id"])
+    selected_run_id = str(evidence["selected_representative_run_id"])
+    [selected_row] = [
+        row
+        for row in evidence["finalist_run_rows"]
+        if str(row["run_id"]) == selected_run_id
+        and row["step10_selected_candidate"] is True
+    ]
+
     by_group: dict[str, list[dict[str, Any]]] = {}
     for row in run_rows:
         by_group.setdefault(str(row["candidate_scale_group_id"]), []).append(row)
@@ -304,16 +354,21 @@ def run_multiscale_centroid_seed_prototype(
         by_group,
         key=lambda group_id: float(by_group[group_id][0]["source_candidate_radius_m"]),
     )
-    if selected_group_id not in by_group:
-        raise ValueError("selected candidate is not an initial Step-9a scale family")
+    selected_radius = float(selected_row["source_candidate_radius_m"])
+    selected_scale_index = min(
+        range(len(ordered_groups)),
+        key=lambda index: abs(
+            float(by_group[ordered_groups[index]][0]["source_candidate_radius_m"])
+            - selected_radius
+        ),
+    )
 
-    prototype_dir = root / PROTOTYPE_RELATIVE_DIR
-    prototype_dir.mkdir(parents=True, exist_ok=True)
-    peaks_by_scale = []
-    radii_px = []
-    shape = None
+    stabilization_dir = root / STABILIZATION_RELATIVE_DIR
+    stabilization_dir.mkdir(parents=True, exist_ok=True)
+    peaks_by_scale: list[list[dict[str, Any]]] = []
+    radii_px: list[int] = []
+    shape: tuple[int, int] | None = None
     transform = None
-    crs = None
     for group_id in ordered_groups:
         rows = sorted(by_group[group_id], key=lambda row: str(row["run_id"]))
         point_sets = [
@@ -324,7 +379,6 @@ def run_multiscale_centroid_seed_prototype(
             if shape is None:
                 shape = current_shape
                 transform = dataset.transform
-                crs = dataset.crs
             elif shape != current_shape:
                 raise ValueError("Step-9a label rasters do not share one grid")
         radius_px = max(1, int(round(float(rows[0]["spatialr_px"]))))
@@ -347,19 +401,18 @@ def run_multiscale_centroid_seed_prototype(
     assert shape is not None and transform is not None
 
     tracks = _mutual_scale_tracks(peaks_by_scale, radii_px)
-    selected_scale_index = ordered_groups.index(selected_group_id)
     seeds = _stable_seed_points(
         tracks,
         peaks_by_scale,
         selected_scale_index,
-        radii_px[selected_scale_index],
+        max(1, int(round(float(selected_row["spatialr_px"])))),
     )
     if not seeds:
         raise ValueError("multiscale centroid support produced no stable seeds")
-    with rasterio.open(
-        by_group[selected_group_id][0]["merged_labels_path"]
-    ) as selected_reference:
-        valid = selected_reference.read(1) > 0
+
+    valid_mask_path = root / "level1b/mask/valid_mask.tif"
+    with rasterio.open(valid_mask_path) as mask_dataset:
+        valid = mask_dataset.read(1) > 0
     invalid = [seed for seed in seeds if not valid[seed["row"], seed["col"]]]
     if invalid:
         indices = ndimage.distance_transform_edt(
@@ -370,40 +423,18 @@ def run_multiscale_centroid_seed_prototype(
             seed["row"] = int(indices[0, source_row, source_col])
             seed["col"] = int(indices[1, source_row, source_col])
 
-    seed_grid = prototype_dir / "multiscale_centroid_seeds.sgrd"
-    _write_seed_grid(seed_grid, shape, seeds)
-    seed_csv = prototype_dir / "multiscale_centroid_seeds.csv"
-    with seed_csv.open("w", newline="", encoding="utf-8") as file_obj:
-        fieldnames = [
-            "track_id",
-            "row",
-            "col",
-            "x",
-            "y",
-            "scale_support",
-            "total_run_support",
-        ]
-        writer = csv.DictWriter(file_obj, fieldnames=fieldnames)
-        writer.writeheader()
-        for seed in seeds:
-            x, y = rasterio.transform.xy(
-                transform, seed["row"], seed["col"], offset="center"
-            )
-            writer.writerow(
-                {
-                    **{key: seed[key] for key in fieldnames if key not in {"x", "y"}},
-                    "x": x,
-                    "y": y,
-                }
-            )
-
-    selected_row = next(
-        row
-        for row in by_group[selected_group_id]
-        if str(row["run_id"]) == str(evidence["selected_representative_run_id"])
-    )
     feature_grids = sorted((response_dir / "saga_feature_grids").glob("feature_*.sgrd"))
-    work_dir = prototype_dir / "selected_scale_resegmentation"
+    if not feature_grids:
+        raise FileNotFoundError("canonical SAGA feature grids are missing")
+    feature_stack_path = root / "level1b/scaling/scaled_feature_stack.tif"
+    minimum_distance_px = max(1, int(round(float(selected_row["spatialr_px"]))))
+
+    stabilized_seed_grid = stabilization_dir / "stabilized_seeds.sgrd"
+    _write_seed_grid(stabilized_seed_grid, shape, seeds)
+    seed_csv = stabilization_dir / "stabilized_seeds.csv"
+    _write_seed_csv(seed_csv, seeds, transform)
+
+    work_dir = stabilization_dir / "selected_scale_resegmentation"
     work_dir.mkdir(parents=True, exist_ok=True)
     command = build_saga_region_growing_command(
         "/usr/bin/saga_cmd",
@@ -411,7 +442,7 @@ def run_multiscale_centroid_seed_prototype(
         work_dir,
         feature_variance=float(selected_row["run_ranger"]),
         position_variance_px=float(selected_row["spatialr_px"]),
-        seed_grid_path=seed_grid,
+        seed_grid_path=stabilized_seed_grid,
     )
     process = subprocess.run(
         command,
@@ -421,58 +452,57 @@ def run_multiscale_centroid_seed_prototype(
     )
     if process.returncode != 0:
         raise RuntimeError(process.stderr or process.stdout)
-    output_labels = prototype_dir / "centroid_seeded_labels.tif"
+    stabilized_labels = stabilization_dir / "stabilized_labels.tif"
     export = export_saga_segments_to_geotiff(
         work_dir / "segments.sgrd",
-        root / "level1b/scaling/scaled_feature_stack.tif",
-        root / "level1b/mask/valid_mask.tif",
-        output_labels,
+        feature_stack_path,
+        valid_mask_path,
+        stabilized_labels,
     )
-    output_segments = prototype_dir / "centroid_seeded_segments.gpkg"
-    if output_segments.exists():
-        output_segments.unlink()
-    gdal_env = os.environ.copy()
-    gdal_env.pop("PYTHONPATH", None)
-    gdal_env.pop("LD_LIBRARY_PATH", None)
-    for name in ("GDAL_DATA", "PROJ_LIB"):
-        if "otb" in gdal_env.get(name, "").lower():
-            gdal_env.pop(name, None)
-    subprocess.run(
-        [
-            "gdal_polygonize.py",
-            str(output_labels),
-            "-f",
-            "GPKG",
-            str(output_segments),
-            "centroid_seeded_segments",
-            "segment_id",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=gdal_env,
-    )
+    shutil.rmtree(work_dir)
+
+    status = "multiscale_centroid_seed_stabilization_ready"
     report = {
-        "status": "multiscale_centroid_seed_prototype_ready",
-        "selected_candidate_scale_group_id": selected_group_id,
-        "selected_source_run_id": selected_row["run_id"],
+        "status": status,
+        "output_dir": str(root),
+        "selected_candidate_id": selected_candidate_id,
+        "selected_role": evidence["selected_role"],
+        "selected_source_run_id": selected_run_id,
+        "selected_spatialr_px": int(selected_row["spatialr_px"]),
+        "selected_ranger": float(selected_row["run_ranger"]),
         "scale_group_ids": ordered_groups,
+        "selected_support_scale_group_id": ordered_groups[selected_scale_index],
         "supported_peak_counts_by_scale": [len(rows) for rows in peaks_by_scale],
         "multiscale_track_count": len(tracks),
-        "final_seed_count": len(seeds),
-        "minimum_seed_distance_px": radii_px[selected_scale_index],
+        "stable_seed_count": len(seeds),
+        "output_segment_count": int(export["max_label"]),
+        "minimum_seed_distance_px": minimum_distance_px,
         "minimum_run_support": minimum_run_support,
         "minimum_phase_support": minimum_phase_support,
         "minimum_ranger_support": minimum_ranger_support,
-        "seed_grid": str(seed_grid),
-        "seed_csv": str(seed_csv),
-        "centroid_seeded_labels": str(output_labels),
-        "centroid_seeded_segments": str(output_segments),
-        "saga_command": command,
-        "saga_stdout": process.stdout,
-        "saga_stderr": process.stderr,
-        **export,
+        "stabilized_seed_grid": str(stabilized_seed_grid),
+        "stabilized_seed_csv": str(seed_csv),
+        "stabilized_labels_tif": str(stabilized_labels),
+        "source_finalist_evidence_json": str(evidence_path),
     }
-    report_path = prototype_dir / "centroid_seed_stabilization_report.json"
+    report_path = stabilization_dir / "centroid_seed_stabilization_report.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    write_step_manifest(
+        root,
+        step="centroid_seed_stabilization",
+        status=status,
+        inputs={
+            "finalist_evidence_json": evidence_path,
+            "step9a_run_population_json": response_dir / "run_population_summary.json",
+            "scaled_feature_stack": feature_stack_path,
+            "valid_mask": valid_mask_path,
+        },
+        artifacts={
+            "stabilization_report_json": report_path,
+            "stabilized_seed_grid": stabilized_seed_grid,
+            "stabilized_seed_csv": seed_csv,
+            "stabilized_labels_tif": stabilized_labels,
+        },
+        candidate_id=selected_candidate_id,
+    )
     return {**report, "report_json": str(report_path)}

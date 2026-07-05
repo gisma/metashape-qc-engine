@@ -64,8 +64,10 @@ orthomosaic
   -> materialized scale x ranger x seed-phase ensemble
   -> four translated controlled hex/variance-minimum seed realizations
   -> SAGA seeded region growing per ensemble member
-  -> Step 9a boundary-persistence response surface
+  -> Step 9a boundary-persistence + centroid-support response surface
   -> Step 9b adjacency/midpoint handoff
+  -> Step 10 finalist evidence collection
+  -> multiscale centroid-seed stabilization at handed-off parameters
   -> Step 10 materialization and quality evidence
 ```
 
@@ -94,8 +96,10 @@ segmentation, ranking, or final selection.
 Step 9a executes or reuses every materialized ensemble member, writes run/group
 response summaries and boundary-support rasters, compares boundaries across
 seed phase, ranger, and adjacent radius, selects an actual boundary-medoid run
-as each family's representative, computes raw/clamped support scores, ranks
-candidate families, and diagnoses numeric scale adjacency and boundaries.
+as each family's representative evidence row, computes raw/clamped support
+scores, ranks candidate families, and diagnoses numeric scale adjacency and
+boundaries. The same label population later supplies multiscale centroid
+support; the boundary medoid is not copied directly as the final label raster.
 
 Step 9b either:
 
@@ -103,9 +107,25 @@ Step 9b either:
 - evaluates one midpoint family inside an adjacent interval and applies the fixed gain-share handoff.
 
 No scale outside the pre-screened ladder is introduced.
+
+### Centroid-seed stabilization
+
+After the adjacent handoff and finalist-evidence collection, centroid-density
+maxima must be supported across runs, ranger positions, and translated seed
+phases. Mutual-nearest tracks across adjacent scales define multiscale stable
+centres. Tracks present at the handed-off scale supply the final seeds; for a
+midpoint handoff, track membership comes from the nearest initial scale.
+
+SAGA runs once at the handed-off `spatialr_px` and `ranger` with this seed
+scaffold. This is evidence-derived seed stabilization, not recursive centroid
+feedback and not a consensus boundary merge.
+
 ### Step 10
 
-On the adjacent handoff branch, Step 10 collects finalist evidence, aggregates it, writes diagnostic figures, materializes selected labels and polygons, and computes exactextractr segment statistics plus run-level quality information.
+On the adjacent handoff branch, Step 10 collects finalist evidence, triggers
+centroid-seed stabilization, aggregates evidence, writes diagnostic figures,
+materializes the stabilized labels and polygons, and computes exactextractr
+segment statistics plus run-level quality information.
 
 Principal outputs are:
 

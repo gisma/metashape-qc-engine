@@ -148,3 +148,16 @@ level1b:
 
     # Controls both valid-pair sampling and feature-vector subsampling.
     seed: 1
+
+  centroid_seed_stabilization:
+    # A centroid-density peak must be supported by at least this many of the
+    # twelve runs at one initial scale (3 ranger positions x 4 seed phases).
+    minimum_run_support: 6
+
+    # At least three of the four translated hex-seed realizations must place a
+    # segment centroid within the scale's existing spatialr_px neighbourhood.
+    minimum_phase_support: 3
+
+    # At least two of the three HSM main-interval ranger positions must support
+    # the same local centroid-density maximum.
+    minimum_ranger_support: 2

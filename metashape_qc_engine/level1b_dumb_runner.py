@@ -25,6 +25,9 @@ from metashape_qc_engine.level1b_candidate_prescreening import (
     Level1BCandidatePrescreeningConfig,
     run_candidate_prescreening_step,
 )
+from metashape_qc_engine.level1b_centroid_seed_stabilization import (
+    run_multiscale_centroid_seed_stabilization,
+)
 from metashape_qc_engine.level1b_materialization import (
     run_level1b_step10_aggregate_finalist_evidence,
     run_level1b_step10_collect_finalist_evidence,
@@ -440,6 +443,31 @@ def run_level1b_dumb_chain(
     step10_evidence = step10_collect_artifacts["finalist_evidence_json"]
     step_results["step10_collect"] = _compact_step_result(
         output_dir, step10_collect_manifest
+    )
+
+    stabilization_cfg = cfg["centroid_seed_stabilization"]
+    stabilization_result = run_multiscale_centroid_seed_stabilization(
+        output_dir,
+        minimum_run_support=stabilization_cfg["minimum_run_support"],
+        minimum_phase_support=stabilization_cfg["minimum_phase_support"],
+        minimum_ranger_support=stabilization_cfg["minimum_ranger_support"],
+    )
+    _raise_on_failed_status("centroid_seed_stabilization", stabilization_result)
+    stabilization_manifest = _consume_step_manifest(
+        output_dir, "centroid_seed_stabilization", stabilization_result
+    )
+    _manifest_artifacts(
+        "centroid_seed_stabilization",
+        stabilization_manifest,
+        (
+            "stabilization_report_json",
+            "stabilized_seed_grid",
+            "stabilized_seed_csv",
+            "stabilized_labels_tif",
+        ),
+    )
+    step_results["centroid_seed_stabilization"] = _compact_step_result(
+        output_dir, stabilization_manifest
     )
 
     step10_aggregate_result = run_level1b_step10_aggregate_finalist_evidence(
