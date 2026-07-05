@@ -55,7 +55,7 @@ OUTPUT_FILENAMES = {
     "canonical_masked_stack_report": "masked_segmentation_stack_report.json",
 }
 
-RUN_CONTRACT_VERSION = 2
+RUN_CONTRACT_VERSION = 4
 CANONICAL_MASKED_STACK_SCOPE = "response_surface_canonical"
 
 SCALE_COORDINATE_FIELDS = (
@@ -2531,8 +2531,10 @@ def _expected_run_metadata(
         ),
         "masked_segmentation_stack_scope": CANONICAL_MASKED_STACK_SCOPE,
         "run_contract_version": RUN_CONTRACT_VERSION,
+        "segmentation_backend": "saga_seeded_region_growing",
+        "saga_seed_policy": "hex_lattice_local_variance_minimum",
         "merged_labels_path": str(paths["labels"]),
-        "pre_lsms_mask_applied": True,
+        "pre_segmentation_mask_applied": True,
         "post_mask_applied": True,
     }
 
@@ -3100,8 +3102,11 @@ def _write_incremental_run_q_statistics_from_counts(
                 "masked_segmentation_stack_scope"
             ],
             "run_contract_version": expected_metadata["run_contract_version"],
+            "segmentation_backend": expected_metadata["segmentation_backend"],
+            "saga_seed_policy": expected_metadata["saga_seed_policy"],
             "merged_labels_path": expected_metadata["merged_labels_path"],
-            "pre_lsms_mask_applied": True,
+            "pre_lsms_mask_applied": False,
+            "pre_segmentation_mask_applied": True,
             "post_mask_applied": True,
             "label_invalid_support_value": 0,
             "labels_postmasked": True,

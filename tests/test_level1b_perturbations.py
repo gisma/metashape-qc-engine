@@ -165,13 +165,14 @@ def test_06_perturbation_ids_are_deterministic_and_start_at_one(tmp_path: Path) 
     ]
 
 
-def test_07_local_grid_is_created_from_spatialr_ranger_and_minsize_around_each_candidate(tmp_path: Path) -> None:
+def test_07_local_grid_varies_spatialr_and_ranger_but_keeps_minsize_as_provenance(tmp_path: Path) -> None:
     rows = build_perturbation_candidates(make_config(tmp_path, K=99), one_complete_candidate(spatialr_px=10, minsize_px=100, ranger=2.0))
     non_baseline = rows[1:]
 
-    assert len(rows) == 27
+    assert len(rows) == 9
     assert {row["spatialr_px"] for row in non_baseline} == {9, 10, 11}
-    assert {row["minsize_px"] for row in non_baseline} == {80, 100, 120}
+    assert {row["minsize_px"] for row in non_baseline} == {100}
+    assert {row["deltas"]["minsize_px_delta"] for row in non_baseline} == {0}
     assert {row["ranger"] for row in non_baseline} == {1.8, 2.0, 2.2}
 
 
@@ -185,7 +186,7 @@ def test_09_small_scale_spatial_lock_forces_ds_zero(tmp_path: Path) -> None:
     rows = build_perturbation_candidates(make_config(tmp_path, K=99), one_complete_candidate(spatialr_px=3))
 
     assert {row["spatialr_px"] for row in rows} == {3}
-    assert len(rows) == 9
+    assert len(rows) == 3
 
 
 def test_10_adaptive_dr_default_is_max_of_floor_and_ten_percent_ranger(tmp_path: Path) -> None:
@@ -196,19 +197,19 @@ def test_10_adaptive_dr_default_is_max_of_floor_and_ten_percent_ranger(tmp_path:
     assert {row["ranger"] for row in normal} == {1.8, 2.0, 2.2}
 
 
-def test_11_adaptive_dm_default_is_max_of_five_and_twenty_percent_minsize(tmp_path: Path) -> None:
+def test_11_minsize_is_not_an_active_saga_perturbation_axis(tmp_path: Path) -> None:
     small = build_perturbation_candidates(make_config(tmp_path, K=99), one_complete_candidate(minsize_px=10))
     normal = build_perturbation_candidates(make_config(tmp_path, K=99), one_complete_candidate(minsize_px=100))
 
-    assert {row["minsize_px"] for row in small} == {8, 10, 15}
-    assert {row["minsize_px"] for row in normal} == {80, 100, 120}
+    assert {row["minsize_px"] for row in small} == {10}
+    assert {row["minsize_px"] for row in normal} == {100}
 
 
-def test_12_minsize_floor_clamp_applies_to_perturbations(tmp_path: Path) -> None:
+def test_12_explicit_dm_does_not_create_duplicate_saga_runs(tmp_path: Path) -> None:
     rows = build_perturbation_candidates(make_config(tmp_path, dm=50, K=99, minsize_floor_frac=0.8), one_complete_candidate(minsize_px=100))
 
-    assert min(row["minsize_px"] for row in rows if not row["is_baseline"]) >= 80
-    assert any(row["deltas"]["minsize_px_delta"] == -20 for row in rows if not row["is_baseline"])
+    assert {row["minsize_px"] for row in rows} == {100}
+    assert {row["deltas"]["minsize_px_delta"] for row in rows} == {0}
 
 
 def test_13_k_limits_non_baseline_perturbations_and_does_not_count_baseline(tmp_path: Path) -> None:

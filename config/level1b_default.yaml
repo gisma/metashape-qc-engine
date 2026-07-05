@@ -57,12 +57,18 @@ level1b:
   candidate_pre_screening:
     # Admissible radius domain in metres, not concrete Step-9a anchors. Stable
     # variogram sill crossings materialize the scene-specific scale ladder.
-    # radius_min_m also defines the common technical SmallRegionsMerging floor:
+    # For SAGA, each materialized radius also defines a deterministic seed
+    # density: the raster-origin-anchored hexagonal support-cell area equals
+    # pi * radius_px^2. Each nominal centre may snap by at most 0.45*radius_px
+    # to a local multiband-variance minimum; seeds remain at least radius_px
+    # apart and every valid pixel must lie within 2*radius_px of a seed.
+    # radius_min_m also defines the common technical minsize provenance:
     # radius_px = round_half_up(radius_min_m / pixel_size_m), diameter_px = 2*radius_px,
-    # minsize_px = diameter_px^2. This minsize suppresses tiny regions; it is
-    # not a target segment area and does not grow with candidate radius.
+    # minsize_px = diameter_px^2. The SAGA backend does not perform a later
+    # minimum-size merge; minsize_px remains descriptive scale metadata and is
+    # deliberately not an independent perturbation axis.
     radius_min_m: 0.1
-    radius_max_m: 1.0
+    radius_max_m: 4.0
 
     # Logarithmic lag sampling inside the radius domain. Pixel rounding can
     # reduce the number of distinct sampled lags.

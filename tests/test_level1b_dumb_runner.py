@@ -439,7 +439,7 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     ]
     channel_config = captured["channels"]
     assert channel_config.input_type == "rgb"
-    assert channel_config.dglcm_pc1_small_radius_m == 0.25
+    assert channel_config.dglcm_pc1_small_radius_m == 0.2
     assert channel_config.dglcm_pc1_large_radius_m == 0.5
     assert channel_config.pc1_clip_quantiles == (0.02, 0.98)
     assert channel_config.pc1_output_min == 0
@@ -452,8 +452,8 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     prescreen_config = captured["candidate_pre_screening"]
     assert isinstance(prescreen_config, Level1BCandidatePrescreeningConfig)
     assert prescreen_config.band_count == 6
-    assert prescreen_config.radius_min_m == 0.2
-    assert prescreen_config.radius_max_m == 3.87
+    assert prescreen_config.radius_min_m == 0.1
+    assert prescreen_config.radius_max_m == 4.0
     assert prescreen_config.lag_count == 32
     assert prescreen_config.lag_spacing == "logarithmic"
     assert prescreen_config.sill_fraction_targets == (0.25, 0.5, 0.75, 0.95)

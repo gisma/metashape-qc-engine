@@ -857,7 +857,7 @@ def test_rejected_input_suffix_returns_failed(tmp_path: Path, monkeypatch) -> No
     assert any("input_path suffix must be one of" in reason for reason in report["failure_reasons"])
 
 
-def test_discovery_uses_shutil_which_only(monkeypatch) -> None:
+def test_discovery_uses_shutil_which_only_for_current_otb_apps(monkeypatch) -> None:
     calls: list[str] = []
 
     def record_which(executable_name: str) -> str:
@@ -865,55 +865,25 @@ def test_discovery_uses_shutil_which_only(monkeypatch) -> None:
         return fake_otb_path(executable_name)
 
     monkeypatch.setattr("shutil.which", record_which)
+    availability, small_regions_merging_app = discover_required_otb_apps(
+        DEFAULT_REQUIRED_OTB_APPS
+    )
 
-    availability, small_regions_merging_app = discover_required_otb_apps(DEFAULT_REQUIRED_OTB_APPS)
-
-    assert small_regions_merging_app == "SmallRegionsMerging"
-    assert set(availability) == set(DEFAULT_REQUIRED_OTB_APPS) | {LEGACY_SMALL_REGIONS_MERGING_APP}
-    expected_calls: list[str] = []
-    for app in DEFAULT_REQUIRED_OTB_APPS:
-        expected_calls.append(f"otbcli_{app}")
-        if app == "SmallRegionsMerging":
-            expected_calls.append(f"otbcli_{LEGACY_SMALL_REGIONS_MERGING_APP}")
-    assert calls == expected_calls
-
-
-def test_small_regions_merging_prefers_primary_when_both_exist(monkeypatch) -> None:
-    monkeypatch.setattr("shutil.which", fake_otb_path)
-
-    availability, small_regions_merging_app = discover_required_otb_apps(DEFAULT_REQUIRED_OTB_APPS)
-
-    assert small_regions_merging_app == "SmallRegionsMerging"
-    assert availability["SmallRegionsMerging"]["available"] is True
-    assert availability[LEGACY_SMALL_REGIONS_MERGING_APP]["available"] is True
+    assert small_regions_merging_app is None
+    assert set(availability) == set(DEFAULT_REQUIRED_OTB_APPS)
+    assert calls == [f"otbcli_{app}" for app in DEFAULT_REQUIRED_OTB_APPS]
+    assert "MeanShiftSmoothing" not in DEFAULT_REQUIRED_OTB_APPS
+    assert "LSMSSegmentation" not in DEFAULT_REQUIRED_OTB_APPS
+    assert "SmallRegionsMerging" not in DEFAULT_REQUIRED_OTB_APPS
 
 
-def test_legacy_small_regions_merging_is_reported_only_when_primary_missing(monkeypatch) -> None:
-    def only_legacy(executable_name: str) -> str | None:
-        if executable_name == "otbcli_SmallRegionsMerging":
+def test_missing_saga_cmd_fails_preflight(tmp_path: Path, monkeypatch) -> None:
+    def missing_saga(executable_name: str) -> str | None:
+        if executable_name == "saga_cmd":
             return None
         return fake_otb_path(executable_name)
 
-    monkeypatch.setattr("shutil.which", only_legacy)
-
-    availability, small_regions_merging_app = discover_required_otb_apps(DEFAULT_REQUIRED_OTB_APPS)
-
-    assert small_regions_merging_app == LEGACY_SMALL_REGIONS_MERGING_APP
-    assert availability["SmallRegionsMerging"]["available"] is False
-    assert availability[LEGACY_SMALL_REGIONS_MERGING_APP]["available"] is True
-
-
-def test_missing_primary_and_legacy_small_regions_merging_fails(tmp_path: Path, monkeypatch) -> None:
-    def no_small_regions(executable_name: str) -> str | None:
-        if executable_name in {
-            "otbcli_SmallRegionsMerging",
-            f"otbcli_{LEGACY_SMALL_REGIONS_MERGING_APP}",
-        }:
-            return None
-        return fake_otb_path(executable_name)
-
-    monkeypatch.setattr("shutil.which", no_small_regions)
-
+    monkeypatch.setattr("shutil.which", missing_saga)
     report = run_preflight(
         Level1BPreflightConfig(
             candidate_id="candidate-1",
@@ -924,11 +894,9 @@ def test_missing_primary_and_legacy_small_regions_merging_fails(tmp_path: Path, 
     )
 
     assert report["status"] == "failed"
-    assert report["small_regions_merging_app"] is None
-    assert any(
-        "SmallRegionsMerging or " in reason and LEGACY_SMALL_REGIONS_MERGING_APP in reason
-        for reason in report["failure_reasons"]
-    )
+    assert report["checks"]["saga_cmd_discoverable"] is False
+    assert report["saga_cmd_path"] is None
+    assert "missing required executable: saga_cmd" in report["failure_reasons"]
 
 
 def test_missing_any_non_legacy_required_otb_app_fails(tmp_path: Path, monkeypatch) -> None:
@@ -982,15 +950,16 @@ def test_module_source_omits_forbidden_controller_symbols() -> None:
         encoding="utf-8"
     )
     assert {
+        "BandMathX",
         "DimensionalityReduction",
         "HaralickTextureExtraction",
-        "MeanShiftSmoothing",
-        "LSMSSegmentation",
-        "LSMSVectorization",
-        "HooverCompareSegmentation",
-    } <= set(DEFAULT_REQUIRED_OTB_APPS)
+        "ComputeImagesStatistics",
+    } == set(DEFAULT_REQUIRED_OTB_APPS)
     assert "LocalStatisticExtraction" not in DEFAULT_REQUIRED_OTB_APPS
-    assert LEGACY_SMALL_REGIONS_MERGING_APP == "LSMSSmallRegionsMerging"
+    assert "MeanShiftSmoothing" not in DEFAULT_REQUIRED_OTB_APPS
+    assert "LSMSSegmentation" not in DEFAULT_REQUIRED_OTB_APPS
+    assert "SmallRegionsMerging" not in DEFAULT_REQUIRED_OTB_APPS
+    assert 'shutil.which("saga_cmd")' in source
 
     forbidden = [
         "run_" + "otb_app",

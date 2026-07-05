@@ -487,7 +487,7 @@ def test_20_proxy_stack_is_default_and_mask_is_forwarded(tmp_path: Path, monkeyp
     assert captured[0].masked_segmentation_stack_scope == (
         "response_surface_canonical"
     )
-    assert captured[0].run_contract_version == 2
+    assert captured[0].run_contract_version == 4
     assert captured[0].debug_command_output is True
     assert report["segmentation_stack_path"] == str(proxy)
     assert report["segmentation_stack_source"] == "proxy_stack"
@@ -523,7 +523,8 @@ def test_22_invalid_support_is_zero_and_excluded_from_run_statistics(tmp_path: P
     assert summary_json["total_labelled_area_m2"] == 2.0
     assert {row["label"] for row in segment_rows} == {"1"}
     assert summary_json["invalid_support_excluded_from_q_statistics"] is True
-    assert summary_json["pre_lsms_mask_applied"] is True
+    assert summary_json["pre_lsms_mask_applied"] is False
+    assert summary_json["pre_segmentation_mask_applied"] is True
     assert summary_json["post_mask_applied"] is True
     assert summary_json["label_invalid_support_value"] == 0
     assert summary_json["segmentation_stack_path"] == str(feature)
@@ -539,7 +540,7 @@ def test_22_invalid_support_is_zero_and_excluded_from_run_statistics(tmp_path: P
     assert summary_json["masked_segmentation_stack_scope"] == (
         "response_surface_canonical"
     )
-    assert summary_json["run_contract_version"] == 2
+    assert summary_json["run_contract_version"] == 4
     assert summary_json["merged_labels_path"].endswith("merged_labels.tif")
     assert {"scale_id", "candidate_id", "perturbation_id", "radius_m", "spatialr_px", "minsize_px", "ranger", "n_segments", "q_p10", "q_p25", "q_median", "q_p75", "q_p90"}.issubset(summary_json)
     assert {f"{size}_frac_{weight}" for size in rs.SIZE_CLASSES for weight in ("n", "area")}.issubset(summary_json)

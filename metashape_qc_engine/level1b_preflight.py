@@ -23,12 +23,6 @@ DEFAULT_REQUIRED_OTB_APPS = (
     "DimensionalityReduction",
     "HaralickTextureExtraction",
     "ComputeImagesStatistics",
-    "MeanShiftSmoothing",
-    "LSMSSegmentation",
-    "SmallRegionsMerging",
-    "LSMSVectorization",
-    "ZonalStatistics",
-    "HooverCompareSegmentation",
 )
 
 VALID_INPUT_TYPES = {"rgb", "multichannel"}
@@ -369,6 +363,11 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
     if missing_apps:
         failure_reasons.append("missing required OTB app(s): " + ", ".join(missing_apps))
 
+    saga_cmd_path = shutil.which("saga_cmd")
+    checks["saga_cmd_discoverable"] = saga_cmd_path is not None
+    if saga_cmd_path is None:
+        failure_reasons.append("missing required executable: saga_cmd")
+
     gdal_edit_path = shutil.which("gdal_edit.py")
     checks["gdal_edit_discoverable"] = gdal_edit_path is not None
     if gdal_edit_path is None:
@@ -412,6 +411,7 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
         "app_availability": app_availability,
         "small_regions_merging_app": small_regions_merging_app,
         "gdal_edit_path": gdal_edit_path,
+        "saga_cmd_path": saga_cmd_path,
         "checks": checks,
         "input_contract": input_contract,
         "mask_contract": normalized_mask_contract,

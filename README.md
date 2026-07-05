@@ -21,7 +21,7 @@ For Level-1B:
 bash scripts/setup_level1b.sh
 ```
 
-The setup scripts create or reuse `.venv`, install the local Python package, verify required Python imports, and check external tools. They do **not** install licensed or system software such as Agisoft Metashape, OTB, GDAL CLI tools, or R itself.
+The setup scripts create or reuse `.venv`, install the local Python package, verify required Python imports, and check external tools. They do **not** install licensed or system software such as Agisoft Metashape, SAGA GIS, OTB, GDAL CLI tools, or R itself.
 
 ## Active documentation
 
@@ -60,7 +60,7 @@ OVERWRITE=1 \
 bash metashape_qc_engine/run_level1b_dumb_with_user_header.sh
 ```
 
-The YAML defines an admissible segmentation-radius domain; scene-adaptive multiband variogram pre-screening materializes the concrete Step-9a scale families. DGLCM measurement radii and channel names do not define that ladder. See [RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) for dependencies, statuses, final products, and quality evidence.
+The YAML defines an admissible segmentation-radius domain; scene-adaptive multiband variogram pre-screening materializes the concrete Step-9a scale families. DGLCM measurement radii and channel names do not define that ladder. One-scale labels are produced with deterministic, radius-controlled seeds and SAGA Seeded Region Growing. See [RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) for dependencies, statuses, final products, and quality evidence.
 
 ## Scope boundaries
 
@@ -72,7 +72,7 @@ The YAML defines an admissible segmentation-radius domain; scene-adaptive multib
 
 ## External software
 
-Level-1A execution requires Agisoft Metashape. Its analyzer/evaluator also imports GDAL Python bindings. Level-1B requires OTB—including `DimensionalityReduction` and `HaralickTextureExtraction` for its deterministic six-band RGB proxy stack—GDAL Python/CLI components, and R packages used by exactextractr. These components must be installed compatibly with the local operating system and Python/R environments; the setup scripts report their availability but do not install the system software.
+Level-1A execution requires Agisoft Metashape. Its analyzer/evaluator also imports GDAL Python bindings. Level-1B requires OTB—including `DimensionalityReduction` and `HaralickTextureExtraction` for its deterministic six-band RGB proxy stack—SAGA GIS for Seeded Region Growing, GDAL Python/CLI components, and R packages used by exactextractr. These components must be installed compatibly with the local operating system and Python/R environments; the setup scripts report their availability but do not install the system software.
 
 The installation method for compatible GDAL Python bindings when `gdal-config` is unavailable is **UNRESOLVED** and system-specific.
 

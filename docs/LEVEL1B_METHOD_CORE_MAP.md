@@ -47,7 +47,7 @@ The structure path is:
 6. take the pixelwise maximum Inertia across directions separately for the small and large bands
 7. compute `DGLCM_PC1_SMALL / (DGLCM_PC1_LARGE + 1e-6)`
 
-Active radii are `dglcm_pc1_small_radius_m: 0.25` and `dglcm_pc1_large_radius_m: 0.5`. They are converted with `max(1, round(radius_m / pixel_size_m))`. Radius choice remains a methodological risk because it defines which local structure enters feature-space distances, ranger derivation, and segmentation. It does not define the segmentation candidate radii.
+Active radii are `dglcm_pc1_small_radius_m: 0.2` and `dglcm_pc1_large_radius_m: 0.5`. They are converted with `max(1, round(radius_m / pixel_size_m))`. Radius choice remains a methodological risk because it defines which local structure enters feature-space distances, ranger derivation, and segmentation. It does not define the segmentation candidate radii.
 
 The previous five-channel ExGR neighborhood-variance stack and its historical `TEX_*` labels are legacy and are not the current normal RGB path. Current RGB structure is directional GLCM/Haralick Inertia on RGB-PC1, not undirected neighborhood variance.
 
@@ -92,15 +92,12 @@ family receives exactly the same Step-9 evaluation.
 
 The YAML domain bounds are `radius_min_m` and `radius_max_m`. Candidate
 radii are constrained to this domain and to executable raster-pixel lags.
-For every selected radius:
-
-- `spatialr_px` is the selected pixel lag
-- `area_m2 = pi * radius_m²`
-- `minsize_px = round(area_m2 / pixel_area_m2)`, minimum 1
-
-Thus `minsize_px` is coupled to the spatial radius and is not an independent
-coverage axis. DGLCM measurement radii and channel names do not create the
-segmentation scale ladder.
+For every selected radius, `spatialr_px` is the selected pixel lag. The lower
+radius-domain bound also defines one common technical `minsize_px` provenance
+value using `(2 * round_half_up(radius_min_m / pixel_size_m))²`. SAGA does not
+apply this value as a post-segmentation merge threshold, and local
+perturbations keep it fixed. DGLCM measurement radii and channel names do not
+create the segmentation scale ladder.
 
 Knee location, tail plateau, directional 95%-ranges, and their anisotropy
 ratio are diagnostic metadata only. They do not add, remove, rank, or
@@ -144,7 +141,7 @@ old runs but are not called by the normal runner.
 
 ## 7. Step 9a response-surface evidence
 
-`level1b_candidate_response_surface.py` runs or reuses one-scale segmentation for every planned perturbation. Each run contributes segment-area distributions, tail/central shares, spatial summaries, and run-Q evidence. Candidate families are summarized across perturbations.
+`level1b_candidate_response_surface.py` runs or reuses one-scale segmentation for every planned perturbation. `level1b_saga_segmentation.py` materializes reusable masked SAGA feature grids and uses SAGA Seed Generation only for its multiband local-variance surface. The unconstrained variance-minimum seed output is not materialized or used. A raster-origin-anchored hexagonal lattice makes the target support-cell area equal to `pi * radius_px^2`; bounded snapping chooses local variance minima, a spatial hash enforces `radius_px` minimum seed distance, and SAGA Proximity Grid verifies a `2 * radius_px` maximum coverage distance with deterministic farthest-point completion where necessary. Seeded Region Growing then uses `SIG_1=ranger`, `SIG_2=spatialr_px`, feature-plus-position similarity, four-neighbour connectivity, and threshold zero. Each run preserves a `controlled_seed_report.json`; output IDs are shifted so label zero remains invalid support. Run-Q and Step-9 evidence are computed unchanged.
 
 Evidence has three linked views:
 

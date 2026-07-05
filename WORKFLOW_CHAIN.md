@@ -62,6 +62,8 @@ orthomosaic
   -> stable sill-fraction spatial support points
   -> HSM main-interval ranger levels
   -> materialized Step-9a candidate families
+  -> controlled hex/variance-minimum seeds per candidate
+  -> SAGA seeded region growing per candidate
   -> Step 9a response surface
   -> Step 9b adjacency/midpoint handoff
   -> Step 10 materialization and quality evidence

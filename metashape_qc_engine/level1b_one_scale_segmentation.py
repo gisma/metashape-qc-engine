@@ -6,6 +6,12 @@ import shutil
 import subprocess
 
 from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+from metashape_qc_engine.level1b_saga_segmentation import (
+    SAGA_SEGMENTATION_BACKEND,
+    discover_saga_cmd,
+    prepare_saga_feature_grids,
+    run_saga_seeded_region_growing,
+)
 
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
@@ -24,6 +30,7 @@ OUTPUT_ARTIFACT_FILENAMES = {
     "meanshift_position_masked": "meanshift_position_masked.tif",
     "lsms_labels": "lsms_labels.tif",
     "merged_labels": "merged_labels.tif",
+    "controlled_seed_report": "controlled_seed_report.json",
     "report": REPORT_FILENAME,
     "masked_segmentation_stack": "masked_segmentation_stack.tif",
     "merged_labels_unmasked": "merged_labels_unmasked.tif",
@@ -41,6 +48,7 @@ REPORT_KEYS = (
     "masked_segmentation_stack_path",
     "masked_segmentation_stack_scope",
     "run_contract_version",
+    "segmentation_backend",
     "merged_labels_path",
     "meanshift_smoothed_path",
     "meanshift_position_path",
@@ -48,6 +56,7 @@ REPORT_KEYS = (
     "meanshift_position_masked_path",
     "segmentation_nodata_value",
     "pre_lsms_mask_applied",
+    "pre_segmentation_mask_applied",
     "post_mask_applied",
     "label_invalid_support_value",
     "labels_postmasked",
@@ -72,6 +81,16 @@ REPORT_KEYS = (
     "failure_reasons",
     "otb_apps",
     "otb_commands",
+    "saga_cmd_path",
+    "saga_feature_grids_dir",
+    "saga_seed_policy",
+    "saga_seed_report_path",
+    "saga_seed_report",
+    "saga_variance_band_width_px",
+    "saga_feature_variance",
+    "saga_position_variance_px",
+    "saga_similarity_threshold",
+    "saga_commands",
     "command_results",
     "output_artifacts",
     "output_artifact_exists",
@@ -107,6 +126,7 @@ CHECK_KEYS = (
     "otb_lsms_segmentation_discoverable",
     "otb_small_regions_merging_discoverable",
     "otb_bandmathx_discoverable",
+    "saga_cmd_discoverable",
     "gdal_edit_discoverable",
     "prebuilt_masked_segmentation_stack_exists_if_provided",
     "prebuilt_masked_segmentation_stack_non_empty_if_provided",
@@ -126,7 +146,7 @@ class Level1BOneScaleSegmentationConfig:
     segmentation_stack_source: str = "proxy_stack"
     masked_segmentation_stack_path: str | Path | None = None
     masked_segmentation_stack_scope: str = "per_run_generated"
-    run_contract_version: int = 1
+    run_contract_version: int = 4
     segmentation_nodata_value: float = 0.0
     tilesizex: int = 512
     tilesizey: int = 512
@@ -147,6 +167,7 @@ def build_level1b_one_scale_segmentation_layout(output_dir, perturbation_id) -> 
 def discover_one_scale_segmentation_otb_apps() -> dict[str, str | None]:
     apps = {name: shutil.which(cli_name) for name, cli_name in OTB_APP_CLI_NAMES.items()}
     apps["gdal_edit"] = shutil.which(GDAL_EDIT_CLI_NAME)
+    apps["saga_cmd"] = discover_saga_cmd()
     return apps
 
 
@@ -241,16 +262,12 @@ def validate_one_scale_segmentation_config(config, layout, apps) -> tuple[dict[s
         if blocked_outputs:
             checks["output_artifacts_available"] = False
             failure_reasons.append("output artifacts already exist and overwrite is false")
-    app_checks = {
-        "BandMathX": "otb_bandmathx_discoverable",
-        "MeanShiftSmoothing": "otb_meanshift_smoothing_discoverable",
-        "LSMSSegmentation": "otb_lsms_segmentation_discoverable",
-        "SmallRegionsMerging": "otb_small_regions_merging_discoverable",
-    }
-    for app_name, check_key in app_checks.items():
-        if not apps.get(app_name):
-            checks[check_key] = False
-            failure_reasons.append(f"no OTB {app_name} app discoverable")
+    if not apps.get("saga_cmd"):
+        checks["saga_cmd_discoverable"] = False
+        failure_reasons.append("no saga_cmd executable discoverable")
+    if prebuilt_masked_stack is None and not apps.get("BandMathX"):
+        checks["otb_bandmathx_discoverable"] = False
+        failure_reasons.append("no OTB BandMathX app discoverable")
     if prebuilt_masked_stack is None and not apps.get("gdal_edit"):
         checks["gdal_edit_discoverable"] = False
         failure_reasons.append("no GDAL gdal_edit.py discoverable")
@@ -628,6 +645,7 @@ def _base_report(config, layout, checks, failure_reasons, apps) -> dict[str, obj
             config.masked_segmentation_stack_scope
         ),
         "run_contract_version": int(config.run_contract_version),
+        "segmentation_backend": SAGA_SEGMENTATION_BACKEND,
         "merged_labels_path": str(layout["smoke_dir"] / "merged_labels.tif"),
         "meanshift_smoothed_path": str(layout["smoke_dir"] / "meanshift_smoothed.tif"),
         "meanshift_position_path": str(layout["smoke_dir"] / "meanshift_position.tif"),
@@ -635,6 +653,7 @@ def _base_report(config, layout, checks, failure_reasons, apps) -> dict[str, obj
         "meanshift_position_masked_path": str(layout["smoke_dir"] / "meanshift_position_masked.tif"),
         "segmentation_nodata_value": config.segmentation_nodata_value,
         "pre_lsms_mask_applied": False,
+        "pre_segmentation_mask_applied": False,
         "post_mask_applied": False,
         "label_invalid_support_value": 0,
         "labels_postmasked": False,
@@ -659,6 +678,16 @@ def _base_report(config, layout, checks, failure_reasons, apps) -> dict[str, obj
         "failure_reasons": failure_reasons,
         "otb_apps": apps,
         "otb_commands": [],
+        "saga_cmd_path": apps.get("saga_cmd"),
+        "saga_feature_grids_dir": str(_masked_segmentation_stack_path(config, layout).parent / "saga_feature_grids"),
+        "saga_seed_policy": None,
+        "saga_seed_report_path": None,
+        "saga_seed_report": {},
+        "saga_variance_band_width_px": None,
+        "saga_feature_variance": None,
+        "saga_position_variance_px": None,
+        "saga_similarity_threshold": 0.0,
+        "saga_commands": [],
         "command_results": [],
         "output_artifacts": artifacts,
         "output_artifact_exists": _artifact_exists(artifacts),
@@ -674,7 +703,7 @@ def _base_report(config, layout, checks, failure_reasons, apps) -> dict[str, obj
         "no_" + "stabi" + "lity_analysis_performed": True,
         "no_scale_selection_performed": True,
         "no_" + "zon" + "al_statistics_performed": True,
-        "no_python_raster_processing": True,
+        "no_python_raster_processing": False,
     }
     return {key: values[key] for key in REPORT_KEYS}
 
@@ -708,17 +737,25 @@ def _write_report(report, layout) -> dict[str, object]:
 
 
 def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
-    layout = build_level1b_one_scale_segmentation_layout(config.output_dir, config.perturbation_id)
+    layout = build_level1b_one_scale_segmentation_layout(
+        config.output_dir, config.perturbation_id
+    )
     apps = discover_one_scale_segmentation_otb_apps()
-    checks, failure_reasons = validate_one_scale_segmentation_config(config, layout, apps)
+    checks, failure_reasons = validate_one_scale_segmentation_config(
+        config, layout, apps
+    )
     report = _base_report(config, layout, checks, failure_reasons, apps)
 
     if failure_reasons:
         return _write_report(report, layout)
 
     try:
-        candidates = read_perturbation_candidates(config.perturbation_candidates_json_path)
-        selected_candidate = select_one_perturbation_candidate(candidates, str(config.perturbation_id).strip())
+        candidates = read_perturbation_candidates(
+            config.perturbation_candidates_json_path
+        )
+        selected_candidate = select_one_perturbation_candidate(
+            candidates, str(config.perturbation_id).strip()
+        )
         parameters = selected_candidate_to_parameters(selected_candidate)
         report["selected_candidate"] = selected_candidate
         report["scale_id"] = str(selected_candidate["scale_id"])
@@ -728,99 +765,82 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
         report["minsize_px"] = parameters["minsize"]
         report["radius_m"] = selected_candidate_radius_m(selected_candidate)
         report["ranger"] = parameters["ranger"]
-        command_steps = []
+        report["saga_variance_band_width_px"] = parameters["spatialr"]
+        report["saga_feature_variance"] = parameters["ranger"]
+        report["saga_position_variance_px"] = parameters["spatialr"]
+
         if config.masked_segmentation_stack_path is None:
-            command_steps.extend(
-                [
-                    (
-                        build_masked_segmentation_stack_command(config, layout),
-                        ("masked_segmentation_stack",),
-                        None,
-                    ),
-                    (
-                        build_set_nodata_command(config, layout),
-                        ("masked_segmentation_stack",),
-                        None,
-                    ),
-                ]
-            )
-        command_steps.extend(
-            [
-                (
-                    build_meanshift_smoothing_command(
-                        config, apps, layout, selected_candidate
-                    ),
-                    ("meanshift_smoothed", "meanshift_position"),
-                    None,
-                ),
-                (
-                    build_masked_meanshift_smoothed_command(config, layout),
-                    ("meanshift_smoothed_masked",),
-                    None,
-                ),
-                (
-                    build_masked_meanshift_position_command(config, layout),
-                    ("meanshift_position_masked",),
-                    "pre_lsms_mask_applied",
-                ),
-                (
-                    build_lsms_segmentation_command(
-                        config, apps, layout, selected_candidate
-                    ),
-                    ("lsms_labels",),
-                    None,
-                ),
-                (
-                    build_small_regions_merging_command(
-                        config, apps, layout, selected_candidate
-                    ),
-                    ("merged_labels_unmasked",),
-                    None,
-                ),
-                (
-                    build_postmask_labels_command(config, layout),
-                    ("merged_labels",),
-                    "post_mask_applied",
-                ),
+            mask_commands = [
+                build_masked_segmentation_stack_command(config, layout),
+                build_set_nodata_command(config, layout),
             ]
+            report["otb_commands"] = mask_commands
+            for command in mask_commands:
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    **otb_subprocess_kwargs(command),
+                )
+                report["command_results"].append(
+                    {
+                        "command": command,
+                        "returncode": result.returncode,
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                    }
+                )
+                if result.returncode != 0:
+                    report["failure_reasons"].append(
+                        f"command failed with returncode {result.returncode}"
+                    )
+                    return _write_report(report, layout)
+
+        masked_stack = _masked_segmentation_stack_path(config, layout)
+        if not masked_stack.is_file() or masked_stack.stat().st_size == 0:
+            report["failure_reasons"].append(
+                "masked segmentation stack is missing or empty"
+            )
+            return _write_report(report, layout)
+
+        feature_grids = prepare_saga_feature_grids(
+            masked_stack,
+            Path(config.valid_mask_path),
+            Path(report["saga_feature_grids_dir"]),
+            overwrite=False,
         )
-        report["otb_commands"] = [step[0] for step in command_steps]
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        saga_result = run_saga_seeded_region_growing(
+            saga_cmd_path=str(apps["saga_cmd"]),
+            feature_grid_paths=feature_grids["grid_paths"],
+            work_dir=layout["tmp_dir"],
+            reference_raster_path=masked_stack,
+            valid_mask_path=Path(config.valid_mask_path),
+            output_labels_path=layout["smoke_dir"] / "merged_labels.tif",
+            spatial_radius_px=int(parameters["spatialr"]),
+            feature_variance=float(parameters["ranger"]),
+        )
+        report["saga_commands"] = saga_result["commands"]
+        report["saga_seed_policy"] = saga_result["seed_policy"]
+        report["saga_seed_report"] = saga_result["seed_report"]
+        controlled_seed_report_path = (
+            layout["smoke_dir"] / "controlled_seed_report.json"
+        )
+        controlled_seed_report_path.write_text(
+            json.dumps(saga_result["seed_report"], indent=2), encoding="utf-8"
+        )
+        report["saga_seed_report_path"] = str(controlled_seed_report_path)
+        report["command_results"].extend(saga_result["command_results"])
+        report["pre_segmentation_mask_applied"] = True
+        report["post_mask_applied"] = True
+        report["labels_postmasked"] = True
+        report["invalid_support_excluded_from_q_statistics"] = True
+        labels_path = layout["smoke_dir"] / "merged_labels.tif"
+        if not labels_path.is_file() or labels_path.stat().st_size == 0:
+            report["failure_reasons"].append("missing or empty merged_labels.tif")
+            return _write_report(report, layout)
+    except (OSError, json.JSONDecodeError, RuntimeError, ValueError) as exc:
         report["failure_reasons"].append(str(exc))
         return _write_report(report, layout)
-
-    for command, expected_artifacts, completion_flag in command_steps:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            **otb_subprocess_kwargs(command),
-        )
-        report["command_results"].append(
-            {
-                "command": command,
-                "returncode": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            }
-        )
-        if result.returncode != 0:
-            report["failure_reasons"].append(f"command failed with returncode {result.returncode}")
-            return _write_report(report, layout)
-        for filename in expected_artifacts:
-            output_path = Path(report["output_artifacts"][filename])
-            if not output_path.exists():
-                report["failure_reasons"].append(f"missing expected output {output_path.name}")
-                return _write_report(report, layout)
-            if output_path.stat().st_size == 0:
-                report["failure_reasons"].append(f"empty expected output {output_path.name}")
-                return _write_report(report, layout)
-        if completion_flag == "pre_lsms_mask_applied":
-            report["pre_lsms_mask_applied"] = True
-        if completion_flag == "post_mask_applied":
-            report["post_mask_applied"] = True
-            report["labels_postmasked"] = True
-            report["invalid_support_excluded_from_q_statistics"] = True
 
     report["status"] = "ok"
     if config.cleanup and layout["tmp_dir"].exists():

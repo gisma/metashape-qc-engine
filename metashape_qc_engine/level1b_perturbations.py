@@ -8,7 +8,7 @@ import random
 from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 
-PERTURBATION_RULE = "r_make_param_perturbations_local_grid"
+PERTURBATION_RULE = "saga_spatial_feature_local_grid"
 REQUIRED_CANDIDATE_FIELDS = ("candidate_id", "scale_id", "spatialr_px", "minsize_px", "ranger")
 OPTIONAL_PASSTHROUGH_FIELDS = ("radius_m", "area_m2", "ranger_id", "ranger_source", "assignment_rule")
 ROW_FIELDS = (
@@ -194,30 +194,28 @@ def build_perturbation_candidates(config, complete_candidates) -> list[dict[str,
 
         dr = float(config.dr) if config.dr is not None else max(0.005, 0.10 * baseline["ranger"])
         ds = int(config.ds)
-        dm = int(round(float(config.dm))) if config.dm is not None else max(5, round(0.20 * baseline["minsize_px"]))
         if baseline["spatialr_px"] <= 3:
             ds = 0
 
         cand_spatialr = _unique(max(1, baseline["spatialr_px"] + delta) for delta in (-ds, 0, ds))
         cand_ranger = _unique(max(1e-6, baseline["ranger"] + delta) for delta in (-dr, 0.0, dr))
-        cand_minsize = _unique(max(1, baseline["minsize_px"] + delta) for delta in (-dm, 0, dm))
-        floor_m = round(baseline["minsize_px"] * float(config.minsize_floor_frac))
         local_rows: list[tuple[int, int, float]] = []
         seen: set[tuple[int, int, float]] = set()
 
+        # SAGA Seeded Region Growing has no minimum-size merge parameter.
+        # Keep minsize_px as scale provenance, but never vary it independently:
+        # minsize-only rows would execute identical segmentations and inflate
+        # stability evidence with duplicate results.
         for spatialr_px in cand_spatialr:
             for ranger in cand_ranger:
-                for minsize_px in cand_minsize:
-                    if _same_parameters(spatialr_px, minsize_px, ranger, baseline):
-                        continue
-                    clamped_minsize_px = max(floor_m, minsize_px)
-                    if _same_parameters(spatialr_px, clamped_minsize_px, ranger, baseline):
-                        continue
-                    key = (spatialr_px, clamped_minsize_px, ranger)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    local_rows.append(key)
+                minsize_px = baseline["minsize_px"]
+                if _same_parameters(spatialr_px, minsize_px, ranger, baseline):
+                    continue
+                key = (spatialr_px, minsize_px, ranger)
+                if key in seen:
+                    continue
+                seen.add(key)
+                local_rows.append(key)
 
         if len(local_rows) > int(config.K):
             local_rows = random.Random(config.seed).sample(local_rows, int(config.K))

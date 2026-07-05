@@ -7,6 +7,7 @@ PYTHON_VENV_STATUS="OK"
 PYTHON_IMPORTS_STATUS="OK"
 GDAL_PYTHON_STATUS="MISSING"
 OTB_STATUS="OK"
+SAGA_STATUS="MISSING"
 GDAL_CLI_STATUS="OK"
 RSCRIPT_STATUS="MISSING"
 R_PACKAGES_STATUS="MISSING"
@@ -88,10 +89,9 @@ fi
 
 OTB_TOOLS=(
   otbcli_BandMathX
-  otbcli_LocalStatisticExtraction
-  otbcli_MeanShiftSmoothing
-  otbcli_LSMSSegmentation
-  otbcli_SmallRegionsMerging
+  otbcli_DimensionalityReduction
+  otbcli_HaralickTextureExtraction
+  otbcli_ComputeImagesStatistics
 )
 MISSING_OTB=()
 for tool in "${OTB_TOOLS[@]}"; do
@@ -103,6 +103,13 @@ for tool in "${OTB_TOOLS[@]}"; do
     missing "$tool"
   fi
 done
+
+if command -v saga_cmd >/dev/null 2>&1; then
+  SAGA_STATUS="OK"
+  ok "saga_cmd: $(command -v saga_cmd)"
+else
+  missing "saga_cmd"
+fi
 
 GDAL_CLI_TOOLS=(gdal_edit.py ogr2ogr)
 MISSING_GDAL_CLI=()
@@ -146,6 +153,7 @@ printf '  GDAL Python bindings: %s\n' "$GDAL_PYTHON_STATUS"
 printf '  OTB CLI tools: %s' "$OTB_STATUS"
 if [[ "${#MISSING_OTB[@]}" -gt 0 ]]; then printf ' (%s)' "${MISSING_OTB[*]}"; fi
 printf '\n'
+printf '  SAGA Seeded Region Growing: %s\n' "$SAGA_STATUS"
 printf '  GDAL CLI tools: %s' "$GDAL_CLI_STATUS"
 if [[ "${#MISSING_GDAL_CLI[@]}" -gt 0 ]]; then printf ' (%s)' "${MISSING_GDAL_CLI[*]}"; fi
 printf '\n'
@@ -153,7 +161,7 @@ printf '  Rscript: %s\n' "$RSCRIPT_STATUS"
 printf '  R packages: %s' "$R_PACKAGES_STATUS"
 if [[ "${#MISSING_R_PACKAGES[@]}" -gt 0 ]]; then printf ' (%s)' "${MISSING_R_PACKAGES[*]}"; fi
 printf '\n'
-printf '  Note: this script does not install OTB, GDAL CLI tools, R, or Agisoft Metashape.\n'
+printf '  Note: this script does not install SAGA, OTB, GDAL CLI tools, R, or Agisoft Metashape.\n'
 
 if [[ "$PYTHON_VENV_STATUS" != "OK" || "$PYTHON_IMPORTS_STATUS" != "OK" ]]; then
   exit 1

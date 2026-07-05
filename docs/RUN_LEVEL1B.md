@@ -9,6 +9,7 @@ The repository layout is historical. Processing code is mostly in `metashape_qc_
 - an RGB orthomosaic readable by GDAL
 - the repository's Python environment
 - OTB command-line applications available through the configured OTB installation, including `DimensionalityReduction` for RGB-PC1 and `HaralickTextureExtraction` for directional GLCM Inertia
+- SAGA GIS with `saga_cmd` and the `imagery_segmentation` tools
 - GDAL, including `gdal_edit.py`
 - `Rscript` with `sf`, `terra`, `exactextractr`, and `jsonlite`
 - sufficient storage for response-surface candidate runs
@@ -28,8 +29,8 @@ RUN_ROOT/level1b/resolved_level1b_config.yaml
 ### Scene-adaptive scale and ranger pre-screening
 
 The YAML block `candidate_pre_screening` defines an admissible radius domain,
-not concrete scale anchors. The active bounds are `radius_min_m: 0.2` and
-`radius_max_m: 3.87` metres.
+not concrete scale anchors. The active bounds are `radius_min_m: 0.1` and
+`radius_max_m: 1.0` metres.
 
 Before segmentation, the workflow samples valid pixel pairs from the scaled
 six-band stack over logarithmic lags and four directions. It computes a robust
@@ -39,16 +40,24 @@ materialize the actual scene-specific scale families. Knee, plateau, saturation,
 and directional-anisotropy values are diagnostics only; they never change how
 Step 9 evaluates a family.
 
-For each selected radius the workflow derives:
+For each selected radius, `spatialr_px` is the selected raster lag. A common
+technical `minsize_px` is recorded from the lower domain radius as
+`(2 * round_half_up(radius_min_m / pixel_size_m))²`. Under the active SAGA
+backend this value is provenance only: SAGA does not perform a later
+minimum-size merge, and Step-9b does not perturb minsize independently.
 
-```text
-spatialr_px = selected raster lag
-area_m2     = pi * radius_m^2
-minsize_px  = max(1, round(area_m2 / pixel_area_m2))
-```
-
-`minsize_px` is therefore coupled to the spatial radius rather than searched
-as an independent axis.
+One-scale execution uses SAGA's multiband local-variance surface followed by a
+deterministic controlled-seed construction and SAGA Seeded Region Growing. The
+old unconstrained set of all variance minima is not used as the region-growing
+seed set. For each candidate radius, a raster-origin-anchored hexagonal lattice
+has support-cell area `pi * radius_px^2`. Each centre can snap at most
+`0.45 * radius_px` to a valid local variance minimum, seeds remain at least
+`radius_px` apart, and exact SAGA proximity must show every valid pixel within
+`2 * radius_px` of a seed. Any uncovered support receives deterministic
+farthest-point completion seeds. `spatialr_px` also supplies positional
+variance; `ranger` controls feature-space variance. The similarity threshold
+is zero, four-neighbour connectivity is used, and label zero remains invalid
+support. Canonical SAGA feature grids are reused by all candidate runs.
 
 The same pre-screen evaluates kNN ranks
 `[8, 10, 13, 16, 21, 27, 34, 44, 55]` on valid scaled feature vectors. The
@@ -247,7 +256,7 @@ It lists six PNGs covering decision scores, stability/support distributions, seg
 1. Read `RUN_ROOT/level1b_dumb_chain_report.json` for status and exception text.
 2. Read the end of `RUN_ROOT/level1b_chain.log` and identify the last completed step.
 3. Inspect `RUN_ROOT/level1b/manifests/<step>.json` for that step's status, inputs, and artifacts.
-4. For preflight failure, verify required OTB applications—including `DimensionalityReduction` and `HaralickTextureExtraction`—and `gdal_edit.py` in the wrapper's effective `PATH`.
+4. For preflight failure, verify required OTB applications—including `DimensionalityReduction` and `HaralickTextureExtraction`—plus `saga_cmd` and `gdal_edit.py` in the wrapper's effective `PATH`.
 5. For Step-9a failure, inspect `candidate_response_surface_report.json` and referenced per-run reports. Do not treat a partial response surface as complete.
 6. For a non-adjacent exit, inspect `step9b_supported_scale_alternatives.json`; this is an analyst-choice branch, not a crash.
 7. For Step-10 quality failure, verify selected segments, the selected masked value raster, `Rscript`, and required R packages.
