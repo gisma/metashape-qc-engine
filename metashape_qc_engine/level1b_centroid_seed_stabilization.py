@@ -20,6 +20,7 @@ from metashape_qc_engine.level1b_saga_segmentation import (
     SAGA_NODATA,
     _write_saga_grid_header,
     build_saga_region_growing_command,
+    discover_saga_cmd,
     export_saga_segments_to_geotiff,
     saga_cli_env,
 )
@@ -436,8 +437,11 @@ def run_multiscale_centroid_seed_stabilization(
 
     work_dir = stabilization_dir / "selected_scale_resegmentation"
     work_dir.mkdir(parents=True, exist_ok=True)
+    saga_cmd_path = discover_saga_cmd()
+    if saga_cmd_path is None:
+        raise FileNotFoundError("saga_cmd executable is not discoverable")
     command = build_saga_region_growing_command(
-        "/usr/bin/saga_cmd",
+        saga_cmd_path,
         feature_grids,
         work_dir,
         feature_variance=float(selected_row["run_ranger"]),

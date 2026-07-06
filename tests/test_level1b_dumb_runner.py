@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -817,3 +818,24 @@ def test_runner_propagates_recipe_band_count_without_yaml_duplicate(
 
     assert captured["scaling"].band_count == 7
     assert captured["candidate_pre_screening"].band_count == 7
+
+
+def test_windows_next_commands_use_native_powershell_wrapper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream = io.StringIO()
+    monkeypatch.setattr(runner, "_is_windows", lambda: True)
+
+    runner.print_next_commands(
+        "step9b_non_adjacent_choice_required",
+        tmp_path / "run",
+        tmp_path / "ortho.tif",
+        stream=stream,
+    )
+
+    output = stream.getvalue()
+    assert "run_level1b_dumb_with_user_header.ps1" in output
+    assert "powershell -ExecutionPolicy Bypass -File" in output
+    assert "$env:ORTHO=" in output
+    assert "run_level1b_dumb_with_user_header.sh" not in output

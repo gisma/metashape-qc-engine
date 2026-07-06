@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from metashape_qc_engine.level1b_otb_env import (
+    discover_otb_cli,
     is_otb_cli_command,
+    otb_subprocess_command,
     otb_subprocess_kwargs,
 )
 
@@ -43,3 +45,27 @@ def test_non_otb_command_receives_no_environment_override() -> None:
 def test_otb_detection_uses_executable_basename() -> None:
     assert is_otb_cli_command([Path("/opt/otb/bin/otbcli_MeanShiftSmoothing")])
     assert not is_otb_cli_command([Path("/usr/bin/gdal_edit.py")])
+
+
+def test_windows_otb_batch_launcher_uses_cmd(monkeypatch) -> None:
+    import metashape_qc_engine.level1b_otb_env as runtime
+
+    monkeypatch.setattr(runtime.os, "name", "nt")
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    command = [r"C:\OTB\bin\otbcli_BandMathX.bat", "-help"]
+
+    prepared = otb_subprocess_command(command)
+
+    assert prepared[:4] == [r"C:\Windows\System32\cmd.exe", "/d", "/s", "/c"]
+    assert "otbcli_BandMathX.bat" in prepared[4]
+
+
+def test_otb_discovery_prefers_saved_runtime_path(monkeypatch) -> None:
+    import metashape_qc_engine.level1b_otb_env as runtime
+
+    calls = []
+    monkeypatch.setenv("LEVEL1B_OTB_PATH_ORIG", r"C:\OTB\bin")
+    monkeypatch.setattr(runtime.shutil, "which", lambda name, path=None: calls.append((name, path)) or r"C:\OTB\bin\otbcli_BandMathX.bat")
+
+    assert discover_otb_cli("otbcli_BandMathX").endswith(".bat")
+    assert calls == [("otbcli_BandMathX", r"C:\OTB\bin")]

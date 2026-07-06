@@ -16,6 +16,58 @@ function Ok([string]$Text) { Write-Host "OK: $Text" }
 function Missing([string]$Text) { Write-Warning "MISSING: $Text" }
 
 Set-Location $RepoRoot
+function Resolve-MetashapeExecutable {
+    $Candidates = @()
+
+    if ($env:METASHAPE_DIR) {
+        if (Test-Path $env:METASHAPE_DIR -PathType Leaf) {
+            $Candidates += $env:METASHAPE_DIR
+        } elseif (Test-Path $env:METASHAPE_DIR -PathType Container) {
+            $Candidates += (Join-Path $env:METASHAPE_DIR "metashape.exe")
+            $Candidates += (Join-Path $env:METASHAPE_DIR "MetashapePro.exe")
+        }
+    }
+
+    $OnPath = Get-Command metashape.exe -ErrorAction SilentlyContinue
+    if ($OnPath) { $Candidates += $OnPath.Source }
+
+    $ProgramRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) |
+        Where-Object { $_ -and (Test-Path $_ -PathType Container) }
+    foreach ($Root in $ProgramRoots) {
+        $Candidates += (Join-Path $Root "Agisoft\Metashape Pro\metashape.exe")
+        $Candidates += (Join-Path $Root "Agisoft\Metashape\metashape.exe")
+    }
+
+    $RegistryRoots = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+    foreach ($RegistryRoot in $RegistryRoots) {
+        $Products = Get-ItemProperty $RegistryRoot -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.PSObject.Properties["DisplayName"] -and
+                [string]$_.PSObject.Properties["DisplayName"].Value -like "Agisoft Metashape*"
+            }
+        foreach ($Product in $Products) {
+            $InstallLocation = $Product.PSObject.Properties["InstallLocation"]
+            if ($InstallLocation -and $InstallLocation.Value) {
+                $Candidates += (Join-Path ([string]$InstallLocation.Value) "metashape.exe")
+                $Candidates += (Join-Path ([string]$InstallLocation.Value) "MetashapePro.exe")
+            }
+            $DisplayIcon = $Product.PSObject.Properties["DisplayIcon"]
+            if ($DisplayIcon -and $DisplayIcon.Value) {
+                $IconPath = ([string]$DisplayIcon.Value -replace ',\d+$', '').Trim('"')
+                $Candidates += $IconPath
+            }
+        }
+    }
+
+    return $Candidates |
+        Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } |
+        Select-Object -First 1
+}
+
 function Resolve-CondaExecutable {
     $Command = Get-Command conda.exe -ErrorAction SilentlyContinue
     if ($Command) { return $Command.Source }
@@ -75,20 +127,18 @@ else { $ImportStatus = "MISSING"; Missing "Python imports: numpy, yaml, rasterio
 if ($LASTEXITCODE -eq 0) { $GdalStatus = "OK"; Ok "GDAL Python bindings: osgeo.gdal, osgeo.ogr, osgeo.osr" }
 else { Missing "conda-forge GDAL Python bindings" }
 
-$Candidates = @()
-if ($env:METASHAPE_DIR) {
-    $Candidates += (Join-Path $env:METASHAPE_DIR "metashape.exe")
-    $Candidates += (Join-Path $env:METASHAPE_DIR "MetashapePro.exe")
-}
-$OnPath = Get-Command metashape.exe -ErrorAction SilentlyContinue
-if ($OnPath) { $Candidates += $OnPath.Source }
-$Found = $Candidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+$Found = Resolve-MetashapeExecutable
 if ($Found) {
-    $MetashapeStatus = "FOUND_NOT_WIRED"
-    Ok "Agisoft Metashape executable: $Found"
-    Missing "current production launcher is Bash-based and calls metashape.sh; native Windows execution is not wired"
+    $WindowsLauncher = Join-Path $RepoRoot "scripts\run_metashape_workflow.ps1"
+    if (Test-Path $WindowsLauncher -PathType Leaf) {
+        $MetashapeStatus = "OK"
+        Ok "Agisoft Metashape executable: $Found"
+        Ok "native Windows launcher: $WindowsLauncher"
+    } else {
+        Missing "native Windows launcher: $WindowsLauncher"
+    }
 } else {
-    Missing "Agisoft Metashape executable via METASHAPE_DIR or PATH"
+    Missing "Agisoft Metashape executable via METASHAPE_DIR, PATH, Program Files, or uninstall registry"
 }
 
 Write-Host "`nLevel-1A Windows setup summary"
@@ -97,7 +147,7 @@ Write-Host "  Python package/CLI: $PythonStatus"
 Write-Host "  Base Python imports: $ImportStatus"
 Write-Host "  GDAL Python bindings: $GdalStatus"
 Write-Host "  Agisoft Metashape: $MetashapeStatus"
-Write-Host "  Native workflow launcher: UNRESOLVED (current launcher uses Bash/metashape.sh)"
+Write-Host "  Native workflow launcher: $MetashapeStatus"
 Write-Host "  Activate later with: conda activate `"$EnvDir`""
 Write-Host "  This script does not install Agisoft Metashape."
 

@@ -7,7 +7,7 @@ The repository layout is historical: Level-1A is split across `python/`, `script
 ## Prerequisites
 
 - the repository's Python environment and `metashape-qc` command
-- a Metashape installation available through `METASHAPE_DIR` or `metashape.sh` on `PATH`
+- a Metashape installation available as `metashape.sh` on Linux/macOS/WSL or `metashape.exe` on Windows; `METASHAPE_DIR` can identify either installation
 - an image directory containing supported input images
 - a product-analysis preset JSON accepted by `metashape-qc prepare`
 - enough storage for per-variant, per-replicate Metashape projects and orthomosaics
@@ -20,10 +20,12 @@ The repository layout is historical: Level-1A is split across `python/`, `script
 
 The native Windows setup installs Miniforge through `winget` when needed and
 uses `.conda-env` so GDAL and `osgeo` come from one compatible conda-forge
-build. The production Level-1A launcher itself remains
-Bash-based. For the complete chain on Windows, run the Linux setup and launcher
-inside WSL2. WSL must see a Linux `metashape.sh`; finding `metashape.exe` on the
-Windows side does not satisfy the current launcher contract.
+build. It detects Metashape through `METASHAPE_DIR`, `PATH`, the normal
+`Program Files\Agisoft\Metashape Pro` location, and Windows uninstall-registry
+metadata. Level-1A selects `scripts/run_metashape_workflow.ps1` on Windows
+and calls the detected `metashape.exe -r`; Linux, macOS, and WSL continue to use
+`scripts/run_metashape_workflow.sh` and `metashape.sh`. The complete Level-1A
+plus Level-1B chain still requires WSL for Level-1B's Bash runtime wrapper.
 
 ## Normal prepare, run, and evaluate example
 

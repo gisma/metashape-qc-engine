@@ -12,7 +12,7 @@ The runner can operate in two modes:
    one base YAML + CSV variant table -> variants x N independent replicate builds
 
 The runner does not change the photogrammetric workflow itself.
-It generates temporary YAML files, runs scripts/run_metashape_workflow.sh,
+It generates temporary YAML files, runs the platform-specific Metashape launcher,
 and writes a manifest for later orthomosaic stability analysis.
 """
 
@@ -25,6 +25,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -675,6 +676,31 @@ def choose_run_label(
     return f"{rep}_attempt_{len(prior_rows) + 1:03d}"
 
 
+def metashape_wrapper_command(repo_root: Path, config_file: Path) -> list[str]:
+    if os.name != "nt":
+        return [
+            str(repo_root / "scripts" / "run_metashape_workflow.sh"),
+            str(config_file),
+        ]
+
+    powershell = (
+        shutil.which("pwsh")
+        or shutil.which("powershell.exe")
+        or shutil.which("powershell")
+    )
+    if powershell is None:
+        raise RuntimeError("PowerShell is required for the Windows Metashape launcher.")
+    return [
+        powershell,
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(repo_root / "scripts" / "run_metashape_workflow.ps1"),
+        str(config_file),
+    ]
+
+
 def run_replicate(
     repo_root: Path,
     config_file: Path,
@@ -686,10 +712,7 @@ def run_replicate(
     if metashape_dir:
         env["METASHAPE_DIR"] = metashape_dir
 
-    cmd = [
-        str(repo_root / "scripts" / "run_metashape_workflow.sh"),
-        str(config_file),
-    ]
+    cmd = metashape_wrapper_command(repo_root, config_file)
 
     launcher_log.parent.mkdir(parents=True, exist_ok=True)
 

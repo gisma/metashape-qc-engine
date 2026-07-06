@@ -5,7 +5,11 @@ import re
 import shutil
 import subprocess
 
-from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+from metashape_qc_engine.level1b_otb_env import (
+    discover_otb_cli,
+    otb_subprocess_command,
+    otb_subprocess_kwargs,
+)
 
 
 HOOVER_APP_NAME = "otbcli_HooverCompareSegmentation"
@@ -74,7 +78,7 @@ def discover_hoover_compare_app(otb_bin_dir=None) -> str | None:
     if otb_bin_dir is not None:
         app_path = Path(otb_bin_dir) / HOOVER_APP_NAME
         return str(app_path) if app_path.exists() else None
-    return shutil.which(HOOVER_APP_NAME)
+    return discover_otb_cli(HOOVER_APP_NAME)
 
 
 def _expected_app_path(otb_bin_dir=None) -> str:
@@ -206,7 +210,7 @@ def run_hoover_compare(config: Level1BHooverCompareConfig) -> dict[str, object]:
 
     layout["compare_dir"].mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
-        command,
+        otb_subprocess_command(command),
         capture_output=True,
         text=True,
         **otb_subprocess_kwargs(command),

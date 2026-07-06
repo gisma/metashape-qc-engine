@@ -959,7 +959,7 @@ def test_module_source_omits_forbidden_controller_symbols() -> None:
     assert "MeanShiftSmoothing" not in DEFAULT_REQUIRED_OTB_APPS
     assert "LSMSSegmentation" not in DEFAULT_REQUIRED_OTB_APPS
     assert "SmallRegionsMerging" not in DEFAULT_REQUIRED_OTB_APPS
-    assert 'shutil.which("saga_cmd")' in source
+    assert "saga_cmd_path = discover_saga_cmd()" in source
 
     forbidden = [
         "run_" + "otb_app",

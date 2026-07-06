@@ -25,6 +25,11 @@ SEED_MAX_COVERAGE_FRACTION = 2.0
 
 
 def discover_saga_cmd() -> str | None:
+    saved_path = os.environ.get("LEVEL1B_SAGA_PATH_ORIG")
+    if saved_path:
+        discovered = shutil.which(SAGA_CMD, path=saved_path)
+        if discovered:
+            return discovered
     return shutil.which(SAGA_CMD)
 
 
@@ -32,6 +37,8 @@ def saga_cli_env() -> dict[str, str]:
     """Return a system-oriented environment for the external SAGA process."""
 
     env = os.environ.copy()
+    if os.environ.get("LEVEL1B_SAGA_PATH_ORIG"):
+        env["PATH"] = os.environ["LEVEL1B_SAGA_PATH_ORIG"]
     # OTB's bundled libraries and projection database are incompatible with the
     # system SAGA build. SAGA is a separate external CLI and must not inherit
     # those runtime overrides from an interactive OTB shell.

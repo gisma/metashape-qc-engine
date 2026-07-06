@@ -282,3 +282,13 @@ def test_run_saga_uses_controlled_seeds_explicit_environment_and_exports_labels(
     assert len(calls) == 1
     assert calls[0][0][2:4] == ["imagery_segmentation", "3"]
     assert calls[0][0][calls[0][0].index("-SIG_1") + 1] == "0.59999999999999998"
+
+
+def test_saga_discovery_and_environment_use_saved_windows_path(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setenv("LEVEL1B_SAGA_PATH_ORIG", r"C:\SAGA;C:\Windows\System32")
+    monkeypatch.setattr(saga.shutil, "which", lambda name, path=None: calls.append((name, path)) or r"C:\SAGA\saga_cmd.exe")
+
+    assert saga.discover_saga_cmd().endswith("saga_cmd.exe")
+    assert calls == [("saga_cmd", r"C:\SAGA;C:\Windows\System32")]
+    assert saga.saga_cli_env()["PATH"] == r"C:\SAGA;C:\Windows\System32"

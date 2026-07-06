@@ -5,7 +5,11 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+from metashape_qc_engine.level1b_otb_env import (
+    discover_otb_cli,
+    otb_subprocess_command,
+    otb_subprocess_kwargs,
+)
 
 from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
@@ -111,7 +115,7 @@ def discover_bandmathx(otb_bin_dir: str | Path | None = None) -> tuple[str | Non
         if candidate.is_file():
             return "BandMathX", str(candidate)
         return None, None
-    path = shutil.which("otbcli_BandMathX")
+    path = discover_otb_cli("otbcli_BandMathX")
     if path:
         return "BandMathX", path
     return None, None
@@ -260,7 +264,7 @@ def run_valid_mask_step(config: Level1BValidMaskConfig) -> dict[str, object]:
                     status = "dry_run"
                 else:
                     result = subprocess.run(
-                        command,
+                        otb_subprocess_command(command),
                         capture_output=True,
                         text=True,
                         **otb_subprocess_kwargs(command),

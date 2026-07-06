@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -591,6 +592,10 @@ def shell_join(command: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 def print_next_commands(
     status: str,
     run_root: Path,
@@ -612,19 +617,33 @@ def print_next_commands(
         print(f"  {shell_join(['ls', '-la', str(manifests_dir)])}", file=stream)
         return
 
-    wrapper_path = (
-        Path(__file__).resolve().parent
-        / "run_level1b_dumb_with_user_header.sh"
+    wrapper_name = (
+        "run_level1b_dumb_with_user_header.ps1"
+        if _is_windows()
+        else "run_level1b_dumb_with_user_header.sh"
     )
+    wrapper_path = Path(__file__).resolve().parent / wrapper_name
     if wrapper_path.exists():
-        rerun_command = " ".join(
-            [
-                f"ORTHO={shlex.quote(str(input_ortho))}",
-                f"RUN_ROOT={shlex.quote(str(run_root))}",
-                "OVERWRITE=1",
-                shell_join(["bash", str(wrapper_path)]),
-            ]
-        )
+        if _is_windows():
+            ps_quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            rerun_command = "; ".join(
+                [
+                    f"$env:ORTHO={ps_quote(input_ortho)}",
+                    f"$env:RUN_ROOT={ps_quote(run_root)}",
+                    "$env:OVERWRITE='1'",
+                    "powershell -ExecutionPolicy Bypass -File "
+                    + ps_quote(wrapper_path),
+                ]
+            )
+        else:
+            rerun_command = " ".join(
+                [
+                    f"ORTHO={shlex.quote(str(input_ortho))}",
+                    f"RUN_ROOT={shlex.quote(str(run_root))}",
+                    "OVERWRITE=1",
+                    shell_join(["bash", str(wrapper_path)]),
+                ]
+            )
         print(f"  {rerun_command}", file=stream)
     else:
         print(

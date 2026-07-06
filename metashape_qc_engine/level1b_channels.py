@@ -6,7 +6,11 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+from metashape_qc_engine.level1b_otb_env import (
+    discover_otb_cli,
+    otb_subprocess_command,
+    otb_subprocess_kwargs,
+)
 from metashape_qc_engine.level1b_proxy_stack_rgb_dglcm import (
     DEFAULT_GLCM_DIRECTIONS,
     DEFAULT_PC1_CLIP_QUANTILES,
@@ -152,7 +156,7 @@ def build_level1b_channel_layout(output_dir, tmp_dir=None) -> dict[str, Path]:
 def discover_channel_otb_apps(input_type) -> dict[str, str | None]:
     required_apps = RGB_REQUIRED_OTB_APPS if input_type == "rgb" else ("BandMathX",)
     return {
-        name: shutil.which(f"otbcli_{name}")
+        name: discover_otb_cli(f"otbcli_{name}")
         for name in required_apps
     }
 
@@ -384,7 +388,7 @@ def build_multichannel_stack_command(
 
 def _run_command(command) -> tuple[dict[str, object], bool]:
     result = subprocess.run(
-        command,
+        otb_subprocess_command(command),
         capture_output=True,
         text=True,
         **otb_subprocess_kwargs(command),

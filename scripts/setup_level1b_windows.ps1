@@ -27,6 +27,42 @@ function Find-Tool([string[]]$Names) {
 }
 
 Set-Location $RepoRoot
+function Resolve-OtbEnvironmentScript {
+    $Candidates = @()
+    if ($env:OTB_ROOT) {
+        $Candidates += (Join-Path $env:OTB_ROOT "otbenv.bat")
+        $Candidates += (Join-Path $env:OTB_ROOT "bin\otbenv.bat")
+    }
+    $OnPath = Get-Command otbenv.bat -ErrorAction SilentlyContinue
+    if ($OnPath) { $Candidates += $OnPath.Source }
+    return $Candidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
+}
+
+function Import-BatchEnvironment([string]$BatchFile) {
+    $Lines = & $env:ComSpec /d /s /c "call `"$BatchFile`" >nul && set"
+    if ($LASTEXITCODE -ne 0) { throw "OTB environment script failed: $BatchFile" }
+    foreach ($Line in $Lines) {
+        if ($Line -match '^([^=]+)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], "Process")
+        }
+    }
+}
+
+function Resolve-SagaExecutable {
+    $Candidates = @()
+    if ($env:SAGA_ROOT) {
+        if (Test-Path $env:SAGA_ROOT -PathType Leaf) { $Candidates += $env:SAGA_ROOT }
+        else { $Candidates += (Join-Path $env:SAGA_ROOT "saga_cmd.exe") }
+    }
+    $OnPath = Get-Command saga_cmd.exe -ErrorAction SilentlyContinue
+    if ($OnPath) { $Candidates += $OnPath.Source }
+    foreach ($Root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }) {
+        $Candidates += (Join-Path $Root "SAGA-GIS\saga_cmd.exe")
+        $Candidates += (Join-Path $Root "SAGA GIS\saga_cmd.exe")
+    }
+    return $Candidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
+}
+
 function Resolve-CondaExecutable {
     $Command = Get-Command conda.exe -ErrorAction SilentlyContinue
     if ($Command) { return $Command.Source }
@@ -80,6 +116,15 @@ else { $ImportStatus = "MISSING"; Missing "Python imports: numpy, yaml, rasterio
 if ($LASTEXITCODE -eq 0) { $GdalStatus = "OK"; Ok "GDAL Python bindings: osgeo.gdal, osgeo.ogr, osgeo.osr" }
 else { Missing "conda-forge GDAL Python bindings" }
 
+$OtbEnv = Resolve-OtbEnvironmentScript
+if ($OtbEnv) {
+    Import-BatchEnvironment $OtbEnv
+    Ok "OTB environment: $OtbEnv"
+} else {
+    $OtbStatus = "MISSING"
+    Missing "otbenv.bat; set OTB_ROOT to the extracted Windows OTB package root"
+}
+
 $MissingOtb = @()
 foreach ($Name in @("BandMathX", "DimensionalityReduction", "HaralickTextureExtraction", "ComputeImagesStatistics")) {
     $Tool = Find-Tool @("otbcli_$Name", "otbcli_$Name.bat", "otbcli_$Name.exe")
@@ -87,9 +132,9 @@ foreach ($Name in @("BandMathX", "DimensionalityReduction", "HaralickTextureExtr
     else { $OtbStatus = "MISSING"; $MissingOtb += "otbcli_$Name"; Missing "otbcli_$Name" }
 }
 
-$Saga = Find-Tool @("saga_cmd", "saga_cmd.exe")
+$Saga = Resolve-SagaExecutable
 if ($Saga) { $SagaStatus = "OK"; Ok "saga_cmd: $Saga" }
-else { Missing "saga_cmd" }
+else { Missing "saga_cmd.exe; set SAGA_ROOT to the SAGA installation directory" }
 
 $MissingGdal = @()
 foreach ($Name in @("gdal_edit.py", "ogr2ogr")) {
@@ -127,7 +172,7 @@ Write-Host "  SAGA Seeded Region Growing: $SagaStatus"
 Write-Host "  GDAL CLI tools: $GdalCliStatus $($MissingGdal -join ' ')"
 Write-Host "  Rscript: $RscriptStatus"
 Write-Host "  R packages: $RPackagesStatus $($MissingR -join ' ')"
-Write-Host "  Native workflow wrapper: UNRESOLVED (current normal wrapper is Bash-based)"
+Write-Host "  Native workflow wrapper: metashape_qc_engine\run_level1b_dumb_with_user_header.ps1"
 Write-Host "  Activate later with: conda activate `"$EnvDir`""
 Write-Host "  This script does not install SAGA, OTB, R, or Agisoft Metashape."
 

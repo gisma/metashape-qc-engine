@@ -7,7 +7,11 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+from metashape_qc_engine.level1b_otb_env import (
+    discover_otb_cli,
+    otb_subprocess_command,
+    otb_subprocess_kwargs,
+)
 
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}
@@ -92,8 +96,8 @@ def build_level1b_pca_layout(output_dir, tmp_dir=None) -> dict[str, Path]:
 
 def discover_pca_otb_apps() -> dict[str, str | None]:
     return {
-        "DimensionalityReduction": shutil.which("otbcli_DimensionalityReduction"),
-        "BandMathX": shutil.which("otbcli_BandMathX"),
+        "DimensionalityReduction": discover_otb_cli("otbcli_DimensionalityReduction"),
+        "BandMathX": discover_otb_cli("otbcli_BandMathX"),
     }
 
 
@@ -220,7 +224,7 @@ def run_pca_step(config) -> dict[str, object]:
         return report
 
     result = subprocess.run(
-        pca_command,
+        otb_subprocess_command(pca_command),
         capture_output=True,
         text=True,
         **otb_subprocess_kwargs(pca_command),
@@ -234,7 +238,7 @@ def run_pca_step(config) -> dict[str, object]:
         return report
 
     result = subprocess.run(
-        remask_command,
+        otb_subprocess_command(remask_command),
         capture_output=True,
         text=True,
         **otb_subprocess_kwargs(remask_command),

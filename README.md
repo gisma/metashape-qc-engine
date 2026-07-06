@@ -43,8 +43,8 @@ the manual Miniforge download address.
 
 ### Windows via WSL2
 
-WSL2 is the direct Windows route for the current Bash-based production
-launchers. Install/open an Ubuntu WSL distribution, enter the repository from
+Both levels have native PowerShell launchers. WSL2 remains an alternative
+when OTB, SAGA, GDAL, R, and Metashape are maintained as Linux installations. Install/open an Ubuntu WSL distribution, enter the repository from
 WSL, and run the normal Linux setup scripts:
 
 ```powershell
@@ -62,9 +62,12 @@ bash scripts/setup_level1b.sh
 
 OTB, SAGA, GDAL, R, and a Linux `metashape.sh` required by Level-1A must be
 installed or exposed inside WSL. Native Windows installations are not silently
-reused by the Linux runners. The PowerShell setup scripts are therefore useful
-for native dependency inspection, but they do not replace WSL for the current
-complete workflow chain.
+reused by the Linux runners.
+
+Native Level-1B requires `OTB_ROOT` to identify the extracted Windows OTB
+package and `SAGA_ROOT` when `saga_cmd.exe` is not on `PATH`. The PowerShell
+wrapper loads `otbenv.bat` only for OTB subprocesses so its GDAL DLLs do not
+replace the conda-forge Python GDAL runtime.
 
 No setup script installs Agisoft Metashape, SAGA GIS, OTB, R itself, or other
 licensed/system software automatically.
@@ -120,7 +123,7 @@ The YAML defines an admissible segmentation-radius domain; scene-adaptive multib
 
 Level-1A execution requires Agisoft Metashape. Its analyzer/evaluator also imports GDAL Python bindings. Level-1B requires OTB—including `DimensionalityReduction` and `HaralickTextureExtraction` for its deterministic six-band RGB proxy stack—SAGA GIS for Seeded Region Growing, GDAL Python/CLI components, and R packages used by exactextractr. These components must be installed compatibly with the local operating system and Python/R environments; the setup scripts report their availability but do not install the system software.
 
-The installation method for compatible GDAL Python bindings when `gdal-config` is unavailable is **UNRESOLVED** and system-specific.
+On native Windows, the setup scripts install matching GDAL Python bindings from conda-forge inside `.conda-env`. Linux/macOS retain their platform-specific GDAL installation contract.
 
 ## License and attribution
 

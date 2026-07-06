@@ -15,6 +15,8 @@ from pathlib import Path
 import shutil
 from typing import Any, Iterable
 
+from metashape_qc_engine.level1b_otb_env import discover_otb_cli
+from metashape_qc_engine.level1b_saga_segmentation import discover_saga_cmd
 from metashape_qc_engine.level1b_step_manifest import write_step_manifest
 
 
@@ -56,7 +58,7 @@ def otb_executable_name(app_name: str) -> str:
 def discover_otb_app(app_name: str) -> str | None:
     """Discover an OTB CLI app by executable path without executing it."""
 
-    return shutil.which(otb_executable_name(app_name))
+    return discover_otb_cli(otb_executable_name(app_name))
 
 
 def discover_required_otb_apps(
@@ -363,7 +365,7 @@ def run_preflight(config: Level1BPreflightConfig) -> dict[str, Any]:
     if missing_apps:
         failure_reasons.append("missing required OTB app(s): " + ", ".join(missing_apps))
 
-    saga_cmd_path = shutil.which("saga_cmd")
+    saga_cmd_path = discover_saga_cmd()
     checks["saga_cmd_discoverable"] = saga_cmd_path is not None
     if saga_cmd_path is None:
         failure_reasons.append("missing required executable: saga_cmd")

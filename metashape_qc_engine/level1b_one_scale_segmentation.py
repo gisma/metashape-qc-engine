@@ -5,7 +5,11 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+from metashape_qc_engine.level1b_otb_env import (
+    discover_otb_cli,
+    otb_subprocess_command,
+    otb_subprocess_kwargs,
+)
 from metashape_qc_engine.level1b_saga_segmentation import (
     SAGA_SEGMENTATION_BACKEND,
     discover_saga_cmd,
@@ -170,7 +174,7 @@ def build_level1b_one_scale_segmentation_layout(output_dir, perturbation_id) -> 
 
 
 def discover_one_scale_segmentation_otb_apps() -> dict[str, str | None]:
-    apps = {name: shutil.which(cli_name) for name, cli_name in OTB_APP_CLI_NAMES.items()}
+    apps = {name: discover_otb_cli(cli_name) for name, cli_name in OTB_APP_CLI_NAMES.items()}
     apps["gdal_edit"] = shutil.which(GDAL_EDIT_CLI_NAME)
     apps["saga_cmd"] = discover_saga_cmd()
     return apps
@@ -509,7 +513,7 @@ def prepare_canonical_masked_segmentation_stack(
     failure_reasons = []
     for command in commands:
         result = subprocess.run(
-            command,
+            otb_subprocess_command(command),
             capture_output=True,
             text=True,
             **otb_subprocess_kwargs(command),
@@ -795,7 +799,7 @@ def run_one_scale_segmentation_smoke(config) -> dict[str, object]:
             report["otb_commands"] = mask_commands
             for command in mask_commands:
                 result = subprocess.run(
-                    command,
+                    otb_subprocess_command(command),
                     capture_output=True,
                     text=True,
                     **otb_subprocess_kwargs(command),

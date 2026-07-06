@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -87,16 +88,35 @@ def _select_run_dir(args: argparse.Namespace) -> str:
     raise RuntimeError("Provide --run-dir.")
 
 
+def _metashape_wrapper_command(root: Path, config: str | Path) -> list[str]:
+    if os.name != "nt":
+        return [str(root / "scripts" / "run_metashape_workflow.sh"), str(config)]
+
+    powershell = (
+        shutil.which("pwsh")
+        or shutil.which("powershell.exe")
+        or shutil.which("powershell")
+    )
+    if powershell is None:
+        raise RuntimeError("PowerShell is required for the Windows Metashape launcher.")
+    return [
+        powershell,
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(root / "scripts" / "run_metashape_workflow.ps1"),
+        str(config),
+    ]
+
+
 def _run_workflow(args: argparse.Namespace) -> int:
     _require_file(args.config, "CONFIG")
     if args.metashape_dir:
         _require_dir(args.metashape_dir, "METASHAPE_DIR")
 
     root = _repo_root()
-    cmd = [
-        str(root / "scripts" / "run_metashape_workflow.sh"),
-        args.config,
-    ]
+    cmd = _metashape_wrapper_command(root, args.config)
     env = {"METASHAPE_DIR": args.metashape_dir} if args.metashape_dir else None
     return _run(cmd, env)
 

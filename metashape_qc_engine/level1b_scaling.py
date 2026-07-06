@@ -8,7 +8,11 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 
-from metashape_qc_engine.level1b_otb_env import otb_subprocess_kwargs
+from metashape_qc_engine.level1b_otb_env import (
+    discover_otb_cli,
+    otb_subprocess_command,
+    otb_subprocess_kwargs,
+)
 
 import numpy as np
 from osgeo import gdal
@@ -102,8 +106,8 @@ def build_level1b_scaling_layout(output_dir, tmp_dir=None) -> dict[str, Path]:
 
 def discover_scaling_otb_apps() -> dict[str, str | None]:
     return {
-        "BandMathX": shutil.which("otbcli_BandMathX"),
-        "ComputeImagesStatistics": shutil.which("otbcli_ComputeImagesStatistics"),
+        "BandMathX": discover_otb_cli("otbcli_BandMathX"),
+        "ComputeImagesStatistics": discover_otb_cli("otbcli_ComputeImagesStatistics"),
     }
 
 
@@ -360,7 +364,7 @@ def run_scaling_step(config) -> dict[str, object]:
 
     for command in (masked_command, statistics_command):
         result = subprocess.run(
-            command,
+            otb_subprocess_command(command),
             capture_output=True,
             text=True,
             **otb_subprocess_kwargs(command),
@@ -410,7 +414,7 @@ def run_scaling_step(config) -> dict[str, object]:
     robust_command = build_quantile_scaling_command(config, apps, layout, stats)
     report["otb_commands"].append(robust_command)
     result = subprocess.run(
-        robust_command,
+        otb_subprocess_command(robust_command),
         capture_output=True,
         text=True,
         **otb_subprocess_kwargs(robust_command),

@@ -37,7 +37,7 @@ prepare -> run-analysis / resume-analysis -> evaluate -> review
 
 `metashape-qc resume-analysis` uses the same run contract. It skips latest manifest rows considered successful and reruns failed or missing variant/replicate combinations.
 
-The shell bridge locates `metashape.sh` through `METASHAPE_DIR` or `PATH` and launches `python/metashape_workflow.py` inside the Metashape runtime.
+The platform launcher selects `run_metashape_workflow.sh` on Linux/macOS/WSL or `run_metashape_workflow.ps1` on Windows. It resolves `metashape.sh` or `metashape.exe` respectively and launches `python/metashape_workflow.py` inside the Metashape runtime.
 
 ### Evaluate and review
 
@@ -139,10 +139,21 @@ jq . <run_root>/level1b_dumb_chain_report.json
 tail -n 80 <run_root>/level1b_chain.log
 ```
 
-For a rerun through the normal wrapper:
+For a rerun through the normal wrapper on Linux, macOS, or WSL:
 
 ```bash
 ORTHO=<input_ortho> RUN_ROOT=<run_root> OVERWRITE=1 bash metashape_qc_engine/run_level1b_dumb_with_user_header.sh
+```
+
+On native Windows PowerShell:
+
+```powershell
+$env:ORTHO = "C:\path\to\ortho.tif"
+$env:RUN_ROOT = "C:\path\to\run_root"
+$env:OTB_ROOT = "C:\path\to\OTB"
+$env:SAGA_ROOT = "C:\path\to\SAGA"
+$env:OVERWRITE = "1"
+powershell -ExecutionPolicy Bypass -File metashape_qc_engine\run_level1b_dumb_with_user_header.ps1
 ```
 
 If the runner cannot find that wrapper next to `level1b_dumb_runner.py`, it prints `UNRESOLVED` and the direct fallback command instead:

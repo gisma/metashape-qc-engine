@@ -16,11 +16,11 @@ From the repository root, use the setup for the active platform:
 
 The native Windows setup installs Miniforge through `winget` when needed and
 uses `.conda-env` so GDAL, rasterio, and `osgeo` come from compatible
-conda-forge packages. The normal Level-1B wrapper remains
-Bash-based. For the complete workflow on Windows, use WSL2 and run the Linux
-setup there. OTB, SAGA, GDAL, R, and their packages must be available inside
-WSL; Windows-side installations are not assumed to satisfy the Linux command
-contract.
+conda-forge packages. Native execution uses
+`metashape_qc_engine\run_level1b_dumb_with_user_header.ps1`. Set `OTB_ROOT` to
+the extracted Windows OTB package root containing `otbenv.bat`, and set
+`SAGA_ROOT` when `saga_cmd.exe` is not on `PATH`. WSL2 remains an alternative;
+its external dependencies must be installed inside WSL.
 
 The workflow requires the repository Python environment plus external OTB,
 SAGA, GDAL, and R/exactextractr components. The setup scripts check these
@@ -37,7 +37,18 @@ There is no command-line option for another Level-1B config.
 
 ## Normal invocation
 
-Use the wrapper because it prepares the OTB CLI environment, separates it from
+On native Windows PowerShell:
+
+```powershell
+$env:ORTHO = "C:\path\to\ortho.tif"
+$env:RUN_ROOT = "C:\path\to\run_root"
+$env:OTB_ROOT = "C:\path\to\OTB"
+$env:SAGA_ROOT = "C:\path\to\SAGA"
+$env:OVERWRITE = "1"
+powershell -ExecutionPolicy Bypass -File metashape_qc_engine\run_level1b_dumb_with_user_header.ps1
+```
+
+On Linux, macOS, or WSL, use the Bash wrapper because it prepares the OTB CLI environment, separates it from
 the Python GDAL environment, sets `PYTHONPATH`, and records the shell log.
 
 ```bash
@@ -52,8 +63,9 @@ Optional environment controls accepted by the wrapper are:
 - `ORTHO`: input RGB orthomosaic;
 - `RUN_ROOT`: output root;
 - `OVERWRITE=1`: permit execution when `RUN_ROOT/level1b` already exists;
-- `OTB_ROOT`: OTB installation root;
-- `REPO`: repository root.
+- `OTB_ROOT`: OTB installation root containing `otbenv.profile` or `otbenv.bat`;
+- `SAGA_ROOT`: native Windows SAGA installation directory when `saga_cmd.exe` is not on `PATH`;
+- `REPO`: repository root used by the Bash wrapper.
 
 Without `OVERWRITE=1`, the Python runner refuses an existing
 `RUN_ROOT/level1b`. Overwrite does not mean “resume from the last failed
