@@ -1,391 +1,399 @@
-# Level-1b Method Core Map
+# Level-1B Method Core Map
 
-## Purpose
+## Purpose and scope
 
-Level-1b processes an orthomosaic to select a segmentation scale and materialize a final segmentation product, accompanied by quality evidence. It does not assign a final quality class. It produces evidence such as stability scores, selected-scale evidence, segment statistics, and diagnostic figures for later interpretation.
+Level-1B starts from one finished RGB orthomosaic and produces a selected
+segmentation raster, a polygon product, and reviewable numerical evidence. It
+does not run Metashape, create an ecological classification, establish external
+accuracy, or assign a final quality class.
 
-This document separates the methodological core from the technical wrapper. The scientific method is the small set of decisions that shape the segmentation result; the wrapper is the file handling, OTB/R execution, manifests, reports, and traceability layer around it.
+The repository layout is historical. The Level-1B method is implemented mainly
+in `metashape_qc_engine/level1b_*.py`, the normal environment wrapper is
+`metashape_qc_engine/run_level1b_dumb_with_user_header.sh`, and Step-10
+segment statistics use
+`R/level1b_step10_exactextractr_segment_stats.R`.
 
-## Workflow in one line
+## Current chain
 
-Orthomosaic → Valid Mask → Proxy Stack → Scaling → Scale Candidates → Ranger Assignment → Perturbations → Step 9a Response Surface → Step 9b Handoff → Step 10 Materialized Product + Quality Evidence
+```text
+RGB orthomosaic
+  -> preflight
+  -> valid analysis mask
+  -> six-band RGB/DGLCM-PC1 proxy stack
+  -> robust per-band scaling
+  -> scene-adaptive candidate pre-screening
+  -> scale x ranger x seed-phase SAGA ensemble
+  -> Step 9a continuous ensemble support and ranking
+  -> Step 9b adjacency / midpoint handoff
+  -> finalist evidence
+  -> multiscale centroid-seed stabilization
+  -> Step 10 materialization, figures, and exactextractr evidence
+```
 
-## Critical methodological levers
+The active default parameter file is `config/level1b_default.yaml`. It defines
+an admissible radius domain and method policies. It does not define the concrete
+Step-9 scale ladder. Pre-screening materializes that ladder from the current
+scene.
 
-- Valid analysis mask (`valid_mask.tif`).
-- Proxy channels: vegetation, dryness, brightness, and two texture bands.
-- Texture radii: configurable radii in metres; the historical config names `tex_100m_radius_m` and `tex_200m_radius_m` do not mean literal 100 m / 200 m radii.
-- Feature scaling: robust percentile clipping in the current robust-scaling working branch.
-- Candidate scale generation: radius / `spatialr_px` / `minsize_px` derived from texture support and pixel size.
-- Ranger assignment: feature-space k-NN distance quantiles.
-- Perturbation design: local parameter variation around baseline segmentation settings.
-- Response-surface stability scoring: distributional and spatial response metrics.
-- Step 9b midpoint / handoff rule: gain-share decision between boundary and midpoint candidates.
-- Selected segment materialization: final label raster and vector product.
-- Segment-level quality evidence: per-segment band statistics from the selected product.
+## 1. Valid analysis domain
 
-## Step-by-step map
+The valid mask is a binary raster in which valid analysis pixels are one and
+invalid/background pixels are zero. It is consumed by channel construction,
+scaling, pre-screening, segmentation, Step 9, and Step 10.
 
-### Step 1 – Preflight
+The mask is a scientific domain contract: feature distributions and all later
+statistics refer only to this support. Incorrect border, nodata, or alpha
+handling propagates through the complete chain.
 
-**Inputs:** `candidate_id`, input orthomosaic path, `output_dir`, declared input type, optional mask-related settings, and the required OTB CLI applications.
+Principal artifact:
 
-**Scientific core:** None. This is a validation step. It checks whether the input file exists, whether it has a raster-like suffix, whether the declared input contract is plausible, and whether required command-line tools can be found.
+```text
+<run_root>/level1b/mask/valid_mask.tif
+```
 
-**Technical wrapper:** Creates the output layout and locates external tools with `shutil.which`.
+## 2. Six-band proxy stack
 
-**Outputs:** `preflight.json` and a step manifest.
+The active normal RGB stack has exactly this order:
 
-**Consumed by:** Not consumed downstream; it is recorded for traceability.
+1. `ExGR`
+2. `ExR`
+3. `BRI`
+4. `DGLCM_PC1_SMALL`
+5. `DGLCM_PC1_LARGE`
+6. `RATIO_DGLCM_PC1`
 
-**Quality relevance:** None directly. Failure prevents the pipeline from starting.
+The first three bands are deterministic RGB proxies. The structure bands are
+directional Haralick simple Inertia responses on RGB-PC1. RGB is masked before
+the repository PCA implementation is called. PC1 is clipped at configured valid
+pixel quantiles, rescaled to the configured Haralick range, and evaluated for
+the configured directions and small/large metric radii. Directional Inertia is
+aggregated by pixelwise maximum.
 
-**Artifact contract:** Manifest step `preflight` with artifact `preflight_report`.
+The ratio band is
 
-**UNRESOLVED:** None identified from inspected code.
+[
+RATIO = \frac{DGLCM_{small}}{DGLCM_{large}+\varepsilon}.
+]
 
----
+Bands 4 and 5 are structure-support bands. Band 6 is a feature-space ratio and
+is not a source for the candidate radius ladder.
 
-### Step 2 – Valid Mask
+The historical five-band ExGR local-variance stack is not the active normal
+path.
 
-**Inputs:** Orthomosaic, optional nodata values per band, optional alpha band settings, and black/white border exclusion settings.
+Principal artifact:
 
-**Scientific core:** Builds a binary validity mask where valid analysis pixels are `1` and invalid/background pixels are `0`. The mask can exclude nodata values, low-alpha pixels, and RGB border/background tuples such as black or white borders. This mask defines the analysis domain for the rest of the chain.
+```text
+<run_root>/level1b/channels/proxy_stack.tif
+```
 
-**Technical wrapper:** Constructs and runs an OTB `BandMathX` expression and writes a single-band uint8 raster.
+## 3. Robust scaling
 
-**Outputs:** `valid_mask.tif`, `valid_mask_report.json`, and a step manifest.
+For each valid proxy band, the active scaler computes the 2nd and 98th
+percentiles, maps their midpoint to zero, scales their half-distance to one,
+and clips valid values to `[-1, 1]`. Invalid pixels retain the configured
+background value.
 
-**Consumed by:** Channels, Scaling, Feature Range, and Step 9a.
+This gives all six channels a common bounded numerical range. It does not make
+the bands statistically independent or equally informative.
 
-**Quality relevance:** Very high. If the valid mask includes border/background pixels or excludes real image content, all downstream feature statistics, segmentation results, and stability metrics are biased.
+Principal artifacts:
 
-**Artifact contract:** Manifest step `valid_mask` with artifacts `valid_mask` and `report`.
+```text
+<run_root>/level1b/scaling/scaled_feature_stack.tif
+<run_root>/level1b/scaling/scaling_parameters.json
+```
 
-**UNRESOLVED:** Behaviour outside the expected RGB/orthomosaic contract is not documented here.
+## 4. Scene-adaptive candidate pre-screening
 
----
+The normal runner does not call the historical
+`scale_distribution -> feature_range -> perturbations` sequence. It calls
+`run_candidate_prescreening_step()` and passes its candidate population
+directly to Step 9a.
 
-### Step 3 – Channel Construction (Proxy Stack)
+### Spatial support
 
-**Inputs:** Orthomosaic, `valid_mask`, `pixel_size_m`, `rgb_band_indices`, and two configurable texture radii in metres (`tex_100m_radius_m`, `tex_200m_radius_m`). These names are historical and must not be read as literal 100 m / 200 m radii.
+The configured `radius_min_m` and `radius_max_m` define the admissible
+metric domain. A robust multiband empirical variogram is sampled from valid,
+scaled feature vectors over logarithmic lags and configured directions. Stable
+first crossings of configured sill fractions materialize scene-specific radius
+support points. Knees, plateaus, and anisotropy are diagnostics; they are not
+separate candidate classes and do not receive different Step-9 rules.
 
-**Scientific core:** For RGB input, builds a 5-band proxy stack:
+### Feature-space range
 
-1. `VIG`: vegetation proxy, based on ExGR.
-2. `DRY`: dryness / redness proxy, based on ExR.
-3. `BRI`: brightness proxy, based on RGB average.
-4. Texture band 1: local standard deviation of the vegetation proxy at radius 1.
-5. Texture band 2: local standard deviation of the vegetation proxy at radius 2.
+The same scaled valid feature vectors provide empirical k-nearest-neighbour
+distance distributions. For every configured candidate k, the Half-Sample Mode
+(HSM) is computed. The smallest k in the first configured stable HSM plateau is
+selected. The candidate population uses the HSM mode and the positive unique
+bounds of its main modal interval as bounded ranger positions. No tail-quantile
+ranger ladder is used.
 
-All channels are masked to the valid analysis area. For multichannel input, the step reorders and masks the supplied channels rather than deriving RGB proxies.
+### Seed realizations and minsize metadata
 
-**Technical wrapper:** Uses OTB `BandMathX` and `LocalStatisticExtraction` to compute and assemble the stack.
+Each scale/ranger combination is crossed with the configured translations of a
+metric hexagonal seed lattice. Nominal seed centres snap within a
+radius-relative neighbourhood to local multiband-variance minima while
+respecting radius-relative spacing and coverage rules.
 
-**Outputs:** `proxy_stack.tif`, `channel_report.json`, and a step manifest.
+`minsize_px` is common technical scale metadata derived from
+`radius_min_m`; the active SAGA backend does not perform a later OTB
+small-region merge. It is not an independent candidate axis.
 
-**Consumed by:** Scaling and Scale Distribution.
+Principal artifacts:
 
-**Quality relevance:** Very high. The proxy stack defines the feature space used for segmentation. Texture radii are especially critical: if the texture support is too coarse for the GSD and object scale, segmentation can be pulled toward large mixed texture regions.
+```text
+<run_root>/level1b/candidate_pre_screening/candidate_population.json
+<run_root>/level1b/candidate_pre_screening/variogram_diagnostics.json
+<run_root>/level1b/candidate_pre_screening/candidate_pre_screening_report.json
+```
 
-**Artifact contract:** Manifest step `channels` with artifacts `proxy_stack` and `report`.
+## 5. Ensemble segmentation
 
-**UNRESOLVED:** The best texture radii are landscape- and GSD-dependent. The current values must be checked in `config/level1b_default.yaml` for the active run.
+Every materialized scale x ranger x seed-phase row is one planned SAGA Seeded
+Region Growing realization. The segmentation consumes the same scaled proxy
+stack used for pre-screening. Candidate `ranger` is passed as feature
+variance and `spatialr_px` as position variance and seed-support scale.
 
----
+Step 9a may reuse a run only when its run contract and required artifacts match.
+The continuous-support implementation uses run-contract version 6. Historical
+summaries without scale-match evidence are not current reusable run summaries.
 
-### Step 4 – Scaling (Feature Normalization)
+Principal per-run evidence includes:
 
-**Inputs:** `proxy_stack`, `valid_mask`, `band_count`, and `background_value`.
+- merged labels;
+- run-level segment-size and q statistics;
+- exact parameters and seed realization;
+- segmentation report.
 
-**Scientific core:** In the robust-scaling working branch, each band is scaled by robust percentile clipping:
+## 6. Step 9a: continuous ensemble support
 
-1. Mask the proxy stack using the valid mask.
-2. For each band, compute the 2nd and 98th percentile over valid pixels only.
-3. Derive `center = (lower + upper) / 2` and `scale = (upper - lower) / 2`.
-4. Transform valid pixels with `(value - center) / scale`.
-5. Clip valid output values to `[-1, 1]`.
-6. Keep invalid/background pixels at `background_value`.
+Step 9a groups runs by candidate scale, computes per-run population evidence,
+compares boundary persistence across controlled variations, selects an actual
+boundary-medoid run, and ranks candidate families.
 
-This is intended to make the feature space more robust against extreme texture outliers than mean/std z-score scaling.
+### 6.1 Continuous scale match
 
-**Technical wrapper:** Uses OTB `BandMathX` for masking and final raster writing. The robust parameters are computed from the masked raster with Python/GDAL/numpy in the robust-scaling patch. If legacy z-score code or `ComputeImagesStatistics` calls still exist in the file, they are wrapper/legacy artefacts and not the active method unless the current checked-in code calls them for the final scaling expression.
+For segment (i) in candidate family (g),
 
-**Outputs:** `scaled_feature_stack.tif`, `scaling_parameters.xml` if still produced by the legacy wrapper, `scaling_parameters.json`, `scaling_report.json`, and a step manifest.
+[
+q_i = \frac{r_{segment,i}}{r_{candidate,g}},
+qquad
+m_i = \min(q_i, q_i^{-1}).
+]
 
-**Consumed by:** Feature Range and Step 9a.
+The run-level scale-match support is area weighted:
 
-**Quality relevance:** Very high. Scaling controls whether single bands or outlier-heavy texture values dominate the mean-shift feature space. Robust clipping should reduce outlier-driven overmerging.
+[
+M_{gj} =
+\frac{\sum_i A_i m_i}{\sum_i A_i}.
+]
 
-**Artifact contract:** Manifest step `scaling` with artifacts `scaled_feature_stack`, `scaling_parameters_xml`, `scaling_parameters_json`, and `report`.
+It is one when segment and candidate radii agree and decreases continuously and
+symmetrically for smaller or larger segments. It replaces the former binary
+edge-loaded penalty in current-run ranking.
 
-**UNRESOLVED:** The robust implementation reads full bands into memory. This may become a limitation on very large rasters.
+Across perturbation runs, repeated support is summarized conservatively as
 
----
+[
+R(x) =
+\operatorname{clip}
+\left(
+\operatorname{median}(x)
+-1.4826\,MAD(x),
+0,1
+\right).
+]
 
-### Step 5 – Scale Distribution (Candidate Scales)
+Thus
 
-**Inputs:** `pixel_size_m`, `scale_mode`, channel report, texture support metadata, `upper_radius_factor`, `max_candidate_radius_fraction`, `patch_radius_quantiles`, optional manual limits, and output filenames.
+[
+S_{scale,g}=R(\{M_{gj}\}).
+]
 
-**Scientific core:** Generates candidate segmentation scales. In structure-derived mode, the step reads or infers the maximum texture support radius, derives an upper envelope, and creates a small ladder of candidate radii. The lower bound is derived from texture support or from pixel size. The upper candidate radius is constrained by the upper envelope and `max_candidate_radius_fraction`.
+The factor 1.4826 is the normal-consistency scaling of MAD, not a fitted
+candidate weight.
 
-The number of `patch_radius_quantiles` controls how many candidate radii are generated. The candidate radii are placed evenly in log-space between lower and upper bounds; the quantile values are recorded with the candidates as metadata rather than directly placing radii at those quantile positions.
+### 6.2 Scale-relative boundary agreement
 
-For each radius, the code derives integer `spatialr_px` from `radius_m / pixel_size_m` by rounding to a pixel radius, and derives `minsize_px` from the area-equivalent circle size.
+The previous fixed one-pixel matching tolerance is not used by the current
+score. For a boundary pixel at distance (d) from the nearest comparison
+boundary and reference radius (r) in pixels,
 
-**Technical wrapper:** Pure Python. Reads channel metadata, computes candidate rows, and writes CSV/JSON.
+[
+b(d,r)=\max\left(0,1-\frac{d}{r}\right).
+]
 
-**Outputs:** `scale_candidates.csv`, `scale_candidates.json`, and a step manifest.
+Agreement is evaluated symmetrically in both directions. Within one candidate
+family, the reference radius is the geometric mean of the two run radii. For
+adjacent candidate families, the geometric mean of their representative radii
+is used. Boundary localization is therefore normalized by the tested spatial
+scale rather than by one raster pixel.
 
-**Consumed by:** Feature Range.
+Pairwise agreements are separated into:
 
-**Quality relevance:** Very high. This step defines which object-size range can be selected later. If the texture support or upper envelope is too coarse, the chain can prefer large mixed segments.
+- seed-realization agreement;
+- ranger agreement;
+- radius agreement.
 
-**Artifact contract:** Manifest step `scale_distribution` with artifact `scale_candidates_json`.
+Each set is aggregated with the same robust median-minus-MAD operator:
 
-**UNRESOLVED:** The lower/upper envelope heuristic is not validated across landscapes.
+[
+S_{seed,g},\quad S_{ranger,g},\quad S_{radius,g}.
+]
 
----
+### 6.3 Final raw support and ranking
 
-### Step 6 – Feature Range (Ranger Assignment)
+The current raw support score is
 
-**Inputs:** `scaled_feature_stack`, `valid_mask`, `scale_candidates_json`, `band_count`, `sample_n`, `knn_k`, `quantile_probs`, and `max_distance_sample_n`.
+[
+S_g =
+\left(
+S_{seed,g}
+S_{ranger,g}
+S_{radius,g}
+S_{scale,g}
+\right)^{1/4}.
+]
 
-**Scientific core:** Estimates feature-space density and derives mean-shift range (`ranger`) values. The step samples valid pixel vectors from the scaled stack, computes k-nearest-neighbour distances in feature space, derives quantiles of those distances, and assigns ranger candidates to the ordered scale candidates. If there are more scale candidates than ranger candidates, the last ranger is reused for the remaining scale candidates (tail padding).
+The four components are bounded, empirical support dimensions. No additive
+penalties or compensating bonuses are used. A required component that cannot be
+computed is recorded in `ensemble_support_missing_components`; the family is
+marked `ensemble_support_not_evaluable` rather than receiving an implicit
+support value of one.
 
-**Technical wrapper:** Python/numpy distance computation and raster reading.
+Current candidate groups are ranked by `stability_score_raw`, which equals
+`ensemble_support_raw_v2`, then by the bounded score and deterministic group
+ID tie-breaking.
 
-**Outputs:** `ranger_candidates.csv`, `ranger_candidates.json`, `scale_candidates_with_ranger.csv`, `scale_candidates_with_ranger.json`, and a step manifest.
+### 6.4 Legacy diagnostics
 
-**Consumed by:** Perturbations.
+Size classes, central/tail shares, response spread, flutter, scale-jump, and
+spatial-jump flags remain in the reports for interpretation. The historical
+fixed coefficients
 
-**Quality relevance:** High. Ranger values define feature-space merging tolerance. Too large a ranger can merge spectrally different areas; too small a ranger can fragment the segmentation.
+```text
+edge 0.35
+scale jump 0.35
+distribution flutter 0.20
+spatial jump 0.20
+central-mass bonus 0.50
+response-spread penalty 0.10
+```
 
-**Artifact contract:** Manifest step `feature_range` with artifact `scale_candidates_with_ranger_json`.
+do not influence ranking of newly generated run-contract-v6 response surfaces.
+The legacy calculation remains only to explain completed historical artifacts.
 
-**UNRESOLVED:** The manual k-NN computation has not been validated here against an external implementation.
+`candidate_outcome` now states whether the four-component ensemble support is
+evaluable. It is not a quality class and no score threshold such as 0.75
+accepts or rejects scientific quality.
 
----
+Principal artifacts:
 
-### Step 7 – Perturbations
+```text
+<run_root>/level1b/candidate_response_surface/run_population_summary.json
+<run_root>/level1b/candidate_response_surface/candidate_group_response_summary.json
+<run_root>/level1b/candidate_response_surface/ranked_candidate_scales.json
+<run_root>/level1b/candidate_response_surface/boundary_support/
+<run_root>/level1b/candidate_response_surface/candidate_response_surface_report.json
+```
 
-**Inputs:** `scale_candidates_with_ranger_json` and perturbation settings for spatial radius, ranger, minsize, number of perturbations, minsize floor, and seed.
+## 7. Step 9b: adjacency and midpoint support
 
-**Scientific core:** For each source scale candidate, creates a local perturbation family around the baseline segmentation parameters. The family contains the baseline and a bounded set of nearby parameter variants. Duplicate and baseline-identical perturbations are removed.
+Step 9b uses the Step-9a ranking and explicit numeric scale ladder.
 
-**Technical wrapper:** Pure Python, with seeded random selection if more perturbations are available than requested.
+If No. 1 and No. 2 are not adjacent, both are written as supported alternatives
+and the runner stops for analyst choice. Non-adjacency is not an error.
 
-**Outputs:** `perturbation_candidates.csv`, `perturbation_candidates.json`, and a step manifest.
+If they are adjacent, Step 9b constructs exactly one midpoint family inside
+that interval, evaluates it with the same Step-9a support method, and computes
 
-**Consumed by:** Step 9a.
+[
+gain\_share =
+\frac{S_M-S_2}{S_1-S_2}.
+]
 
-**Quality relevance:** High. This step defines the local sensitivity test. Too narrow a perturbation family can hide instability; too wide a family can test a different regime rather than local robustness.
+The midpoint is handed off only when `gain_share > 0.5`; at exactly 0.5 the
+No. 1 candidate is retained. This threshold defines the question “does the
+midpoint deliver more than half the reference gain?” It is not a fitted score
+weight and does not extend the scale domain.
 
-**Artifact contract:** Manifest step `perturbations` with artifact `perturbation_candidates_json`.
+Principal artifacts:
 
-**UNRESOLVED:** The perturbation design is heuristic.
+```text
+<run_root>/level1b/local_transition_refinement/step9b_supported_scale_alternatives.json
+<run_root>/level1b/local_transition_refinement/step9b_midpoint_probe_candidate.json
+<run_root>/level1b/local_transition_refinement/midpoint_response_surface_eval/
+<run_root>/level1b/local_transition_refinement/step9b_midpoint_gain_share_handoff.json
+```
 
----
+Only the artifacts for the branch taken are expected.
 
-### Step 8 – One-Scale Segmentation (executed many times)
+## 8. Multiscale centroid-seed stabilization
 
-**Inputs:** `scaled_feature_stack`, `valid_mask`, one perturbation record, `spatialr`, `ranger`, `minsize`, tile size, and RAM settings.
+After adjacent handoff and finalist-evidence collection, centroids from the
+initial Step-9a label population are accumulated per scale. Density peaks must
+satisfy configured support across runs, seed phases, and ranger positions.
+Mutual-nearest tracks across adjacent scales identify persistent centres.
+Tracks present at the handed-off scale provide one stabilized seed scaffold.
 
-**Scientific core:** Runs one segmentation realization with the OTB mean-shift / LSMS / small-region-merging chain:
+SAGA then runs once at the handed-off `spatialr_px` and `ranger` using those
+seeds. This is a single evidence-derived resegmentation, not recursive centroid
+feedback and not a consensus boundary merge.
 
-1. Mask the scaled stack and ensure nodata/background handling.
-2. Run MeanShiftSmoothing with `spatialr` and `ranger`.
-3. Run LSMSSegmentation on the smoothed image.
-4. Merge regions smaller than `minsize`.
-5. Post-mask labels so background remains background.
+Principal artifacts:
 
-**Technical wrapper:** Subprocess calls to OTB and GDAL tools, temporary files, completion detection, and optional cleanup.
+```text
+<run_root>/level1b/step10_materialization/centroid_seed_stabilization/stabilized_seeds.csv
+<run_root>/level1b/step10_materialization/centroid_seed_stabilization/stabilized_labels.tif
+<run_root>/level1b/step10_materialization/centroid_seed_stabilization/centroid_seed_stabilization_report.json
+```
 
-**Outputs:** Per-run `merged_labels.tif`, segmentation report, and intermediate rasters.
+## 9. Step 10 products and evidence
 
-**Consumed by:** Step 9a.
+Step 10:
 
-**Quality relevance:** High. Each run is one realization used to assess sensitivity and stability.
+1. collects finalist roles, selected candidate, and selected representative run;
+2. aggregates existing numeric evidence;
+3. writes diagnostic figures;
+4. copies the stabilized label raster and polygonizes it;
+5. calls the R exactextractr script for per-segment feature statistics;
+6. writes run-level quality information.
 
-**Artifact contract:** Not a top-level manifest step on its own in the runner. Step 9a manages the response-surface artefact contract and reuse detection for completed runs.
+Final product paths:
 
-**UNRESOLVED:** OTB algorithm internals and defaults beyond the explicitly passed parameters are not validated here.
+```text
+<run_root>/level1b/step10_materialization/final_segments/selected_labels.tif
+<run_root>/level1b/step10_materialization/final_segments/selected_segments.gpkg
+<run_root>/level1b/step10_materialization/final_segments/selected_segments_manifest.json
+```
 
----
+Quality-evidence paths:
 
-### Step 9a – Candidate-Scale Response Surface
+```text
+<run_root>/level1b/step10_materialization/segment_stats/selected_segment_exactextractr_stats.csv
+<run_root>/level1b/step10_materialization/segment_stats/selected_segment_exactextractr_summary.json
+<run_root>/level1b/step10_materialization/quality/ortho_segmentation_quality_info.json
+<run_root>/level1b/step10_materialization/figures/step10_figure_manifest.json
+```
 
-**Inputs:** `perturbation_candidates_json`, `scaled_feature_stack`, `valid_mask`, candidate metadata, and stability thresholds.
+`ortho_segmentation_quality_info.json` is evidence. It deliberately contains
+no thresholded traffic-light or final quality class.
 
-**Scientific core:** This is the main stability analysis. For each candidate scale group, Step 9a runs or reuses segmentation replicates, computes segment-size population statistics, summarizes relative size classes, builds spatial response summaries, measures distributional and spatial variation across perturbations, selects representative medoid runs, computes a stability score, classifies groups, ranks candidate groups, and checks scale adjacency among the top candidates.
+## Methodological controls that remain explicit
 
-**Technical wrapper:** Python orchestration, raster/window reading, many CSV/JSON summaries, and manifest writing. OTB is invoked indirectly through repeated one-scale segmentation runs.
+The method is scene-adaptive but not assumption-free. Important explicit
+controls remain in `config/level1b_default.yaml`:
 
-**Outputs:** `run_population_summary`, `candidate_group_response_summary`, spatial response summaries, ranked candidate scales, accepted/removed lists, `candidate_response_surface_report.json`, and a step manifest.
+- valid RGB band mapping;
+- DGLCM radii, directions, clipping, and quantization;
+- admissible radius domain;
+- variogram lag sampling and sill-fraction support points;
+- HSM k candidates and plateau tolerance;
+- ranger modal-interval policy;
+- seed-phase translations and candidate budget;
+- centroid-support minima.
 
-**Consumed by:** Step 9b and Step 10.
-
-**Quality relevance:** Very high. This is the core stability evidence used for final scale selection.
-
-**Artifact contract:** Manifest step `candidate_response_surface` with artifacts `run_population_json`, `group_json`, and `report`.
-
-**UNRESOLVED:** Stability thresholds and penalties are heuristic and may not generalize.
-
----
-
-### Step 9b – Scale Gating & Handoff
-
-#### 9b-Prepare
-
-**Inputs:** Step 9a outputs, `candidate_id`, and perturbation configuration.
-
-**Scientific core:** Re-ranks candidate groups, checks whether the two best candidates are adjacent on the scale ladder, and either requests manual/user choice for non-adjacent alternatives or constructs a midpoint probe candidate between adjacent boundary candidates.
-
-**Technical wrapper:** Pure Python. Writes a prepare manifest and either alternative-scale files or midpoint-probe files.
-
-**Outputs:** `step9b_prepare_manifest.json`, `ranked_candidate_scales_view.json`, and either supported alternatives or midpoint perturbation files.
-
-**Consumed by:** Step 9b-Midpoint Handoff, or by the user if non-adjacent alternatives require manual selection.
-
-**Quality relevance:** High. This controls whether local refinement proceeds automatically or requires a choice.
-
-**Artifact contract:** Manifest step `step9b_prepare` with branch-dependent artefacts.
-
-**UNRESOLVED:** None identified from inspected code.
-
-#### 9b-Midpoint Response Surface & Handoff
-
-**Inputs:** Midpoint perturbation candidates and the candidate response surface configuration.
-
-**Scientific core:** Runs a small response surface on the midpoint candidate, compares the midpoint stability score against the two boundary candidate scores, and applies the gain-share rule. If the midpoint gain exceeds half of the boundary gain interval, the midpoint is selected; otherwise the No. 1 boundary candidate is retained.
-
-**Technical wrapper:** Reuses Step 9a machinery and writes handoff files.
-
-**Outputs:** `step9b_midpoint_gain_share_handoff.json`, midpoint summaries, and a step manifest.
-
-**Consumed by:** Step 10.
-
-**Quality relevance:** Very high. This step selects the final scale used for materialization.
-
-**Artifact contract:** Manifest step `step9b_midpoint_handoff` with artifact `step9b_midpoint_gain_share_handoff_json`.
-
-**UNRESOLVED:** The 50% gain-share threshold is heuristic.
-
----
-
-### Step 10 – Materialization & Quality Evidence
-
-#### 10a – Collect Finalist Evidence
-
-**Scientific core:** Collects the handoff decision and earlier summaries into a structured finalist-evidence object.
-
-**Technical wrapper:** Reads JSON/CSV artefacts and writes evidence tables.
-
-**Outputs:** `finalist_evidence.json` and accompanying CSV/JSON files.
-
-**Artifact contract:** Manifest step `step10_collect` with artifact `finalist_evidence_json`.
-
-#### 10b – Aggregate Finalist Evidence
-
-**Scientific core:** Computes summary statistics over finalist evidence fields.
-
-**Technical wrapper:** Python aggregation and table writing.
-
-**Outputs:** Aggregated finalist evidence tables.
-
-**Artifact contract:** Manifest step `step10_aggregate`.
-
-#### 10c – Figures
-
-**Scientific core:** Produces diagnostic visualizations of the decision and evidence structure.
-
-**Technical wrapper:** Matplotlib figure generation and figure manifest writing.
-
-**Outputs:** Diagnostic figures and a figure manifest.
-
-**Artifact contract:** Manifest step `step10_figures` with artifact `figure_manifest_json`.
-
-#### 10d – Materialize Selected Segments
-
-**Scientific core:** Takes the selected representative segmentation and makes it the delivered product.
-
-**Technical wrapper:** Copies the selected `merged_labels.tif` to `selected_labels.tif`, polygonizes labels into `selected_segments.gpkg`, and drops the background segment.
-
-**Outputs:** `selected_labels.tif`, `selected_segments.gpkg`, `selected_segments_manifest.json`.
-
-**Artifact contract:** Manifest step `step10_materialize` with artifacts `selected_segments_manifest_json`, `selected_segments_gpkg`, and `selected_labels_tif`.
-
-#### 10e – Exactextractr Segment Stats & Quality Evidence
-
-**Inputs:** `selected_segments.gpkg`, selected/masked segmentation stack, and related run metadata.
-
-**Scientific core:** Computes per-segment band statistics from the selected segmentation product. The output is evidence, not a final quality class.
-
-**Technical wrapper:** Runs an R script using `exactextractr` and writes CSV/JSON summaries.
-
-**Outputs:** `selected_segment_exactextractr_stats.csv`, `selected_segment_exactextractr_summary.json`, and `ortho_segmentation_quality_info.json`.
-
-**Quality relevance:** Very high for post-hoc assessment. This step provides segment-level evidence but does not decide whether the final product is good or bad.
-
-**Artifact contract:** Manifest step `step10_quality` with artifacts `selected_segment_exactextractr_stats_csv`, `selected_segment_exactextractr_summary_json`, and `ortho_segmentation_quality_info_json`.
-
-**UNRESOLVED:** The R environment and `exactextractr` behaviour are assumed rather than fully validated by the Python runner.
-
-## Final product handoff
-
-The final product handoff is not just the top-level chain report. The useful deliverables are produced in Step 10 and are referenced through the Step 10 manifests:
-
-- `selected_labels.tif` — final selected label raster.
-- `selected_segments.gpkg` — polygonized final segments.
-- `selected_segments_manifest.json` — materialization metadata.
-- `selected_segment_exactextractr_stats.csv` — per-segment band statistics.
-- `selected_segment_exactextractr_summary.json` — summary of extracted segment statistics.
-- `ortho_segmentation_quality_info.json` — quality evidence summary; not a quality class.
-- Diagnostic figure manifest and figures — useful for inspection, not required for downstream processing.
-
-## Method vs wrapper summary
-
-| Step | Scientific core | Technical wrapper | Main artifact contract |
-|---|---|---|---|
-| Preflight | Input validation and OTB discovery | Directory creation, `shutil.which` | `preflight_report` |
-| Valid Mask | Valid analysis domain | `otbcli_BandMathX` expression | `valid_mask.tif` |
-| Channels | Vegetation, dryness, brightness, texture proxies | OTB BandMathX and LocalStatisticExtraction | `proxy_stack.tif` |
-| Scaling | Robust percentile clipping to `[-1, 1]` in the robust-scaling branch | Masking, parameter computation, BandMathX output | `scaled_feature_stack.tif` |
-| Scale Distribution | Candidate radii and minsize from texture support | Python metadata calculations | `scale_candidates.json` |
-| Feature Range | k-NN feature-space distance quantiles | Numpy/raster reading | `scale_candidates_with_ranger.json` |
-| Perturbations | Local parameter family around each candidate | Python random/grid construction | `perturbation_candidates.json` |
-| One-scale Segmentation | Mean-shift + LSMS + small-region merging | OTB/GDAL subprocess chain | per-run `merged_labels.tif` |
-| Step 9a Response Surface | Stability analysis and ranking | Python orchestration and summaries | `run_population_json`, `group_json`, `report` |
-| Step 9b Prepare | Scale adjacency gating and midpoint construction | Python branch handling | `step9b_prepare_manifest.json` |
-| Step 9b Handoff | Gain-share final scale selection | Re-runs response surface for midpoint | `step9b_midpoint_gain_share_handoff.json` |
-| Step 10 Collect/Aggregate/Figures | Finalist evidence and diagnostics | Python aggregation and matplotlib | `finalist_evidence_json`, `figure_manifest_json` |
-| Step 10 Materialize | Delivered selected segmentation | GDAL copy/polygonize | `selected_labels.tif`, `selected_segments.gpkg` |
-| Step 10 Quality | Segment-level evidence | Rscript / exactextractr | `selected_segment_exactextractr_stats.csv`, `ortho_segmentation_quality_info.json` |
-
-## Do-not-break artefact contracts
-
-The following names and manifest keys are operational contracts. Renaming them breaks the runner or downstream handoff unless the consuming code is changed at the same time:
-
-- `valid_mask.tif`
-- `proxy_stack.tif`
-- `scaled_feature_stack.tif`
-- `scale_candidates.json`
-- `scale_candidates_with_ranger.json`
-- `perturbation_candidates.json`
-- `candidate_response_surface_report.json`
-- `step9b_midpoint_gain_share_handoff.json`
-- `finalist_evidence.json`
-- `selected_labels.tif`
-- `selected_segments.gpkg`
-- `selected_segment_exactextractr_stats.csv`
-- `selected_segment_exactextractr_summary.json`
-- `ortho_segmentation_quality_info.json`
-- manifest artifact keys read by `level1b_dumb_runner.py`
-
-## Current methodological risk focus
-
-The most sensitive methodological coupling is:
-
-Texture radii → texture support metadata → candidate scale envelope → robust scaling / ranger → mean-shift segmentation behaviour.
-
-If texture radii are too coarse for the GSD, and feature scaling is outlier-sensitive, the segmentation can be pulled toward large mixed texture regions. Robust percentile clipping reduces the outlier part of this risk, but the texture radius / scale-envelope coupling remains a separate methodological control point.
+These settings define the experiment. They should be reported with results and
+tested for sensitivity when transferring the workflow to substantially
+different GSDs, landscapes, or image qualities.

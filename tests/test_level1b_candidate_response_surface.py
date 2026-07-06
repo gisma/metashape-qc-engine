@@ -120,6 +120,7 @@ def summary(run_id: str, dist: list[float], hist: list[float] | None = None, **e
         "lower_tail_area_share": dist[0] + dist[1],
         "central_area_share": dist[2],
         "upper_tail_area_share": dist[3] + dist[4],
+        "scale_match_support": 1.0,
     }
     base.update(extra)
     return base
@@ -175,6 +176,43 @@ def test_04_q_uses_source_candidate_radius() -> None:
     run = compute_run_population_summary("run-a", "scale-a", {"radius_m": 2.0}, labels, 1.0, cfg())
 
     assert np.isclose(run["area_weighted_q_median"], (2.0 / np.sqrt(np.pi)) / 2.0)
+
+
+def test_continuous_scale_match_is_reciprocal_and_area_weighted() -> None:
+    support = rs.area_weighted_scale_match_support(
+        np.asarray([1.0, 0.5, 2.0]),
+        np.asarray([2.0, 1.0, 1.0]),
+    )
+
+    assert support == pytest.approx(0.75)
+
+
+def test_robust_lower_support_penalizes_perturbation_uncertainty() -> None:
+    support = rs.robust_lower_support([0.7, 0.8, 0.9])
+
+    assert support["median"] == pytest.approx(0.8)
+    assert support["mad"] == pytest.approx(0.1)
+    assert support["support"] == pytest.approx(0.8 - 1.4826 * 0.1)
+
+
+def test_scale_relative_boundary_support_uses_candidate_radius() -> None:
+    valid = np.ones((7, 7), dtype=bool)
+    left = np.zeros((7, 7), dtype=bool)
+    right = np.zeros((7, 7), dtype=bool)
+    left[:, 2] = True
+    right[:, 3] = True
+
+    small = rs._scale_relative_boundary_sums(
+        left, right, valid, 0, 7, 2.0
+    )
+    large = rs._scale_relative_boundary_sums(
+        left, right, valid, 0, 7, 4.0
+    )
+    small_support = (small[2] + small[3]) / (small[0] + small[1])
+    large_support = (large[2] + large[3]) / (large[0] + large[1])
+
+    assert small_support == pytest.approx(0.5)
+    assert large_support == pytest.approx(0.75)
 
 
 def test_05_assigns_diagnostic_size_classes() -> None:
@@ -272,7 +310,7 @@ def test_15_spatial_dominance_summaries() -> None:
 
 def test_16_full_candidate_space_distribution_summary() -> None:
     space = analyze_full_candidate_space(
-        [{"candidate_scale_group_id": "scale-a", "candidate_outcome": "stable_representative_candidate", "stability_score": 0.9, "response_center_q": 1.0, "response_spread_q": 0.2, "central_area_share_mean": 0.8}],
+        [{"candidate_scale_group_id": "scale-a", "candidate_outcome": "ensemble_support_evaluable", "stability_score": 0.9, "response_center_q": 1.0, "response_spread_q": 0.2, "central_area_share_mean": 0.8}],
         [{"source_candidate_radius_m": 2.0}],
     )
 
@@ -487,7 +525,7 @@ def test_20_proxy_stack_is_default_and_mask_is_forwarded(tmp_path: Path, monkeyp
     assert captured[0].masked_segmentation_stack_scope == (
         "response_surface_canonical"
     )
-    assert captured[0].run_contract_version == 5
+    assert captured[0].run_contract_version == 6
     assert captured[0].debug_command_output is True
     assert report["segmentation_stack_path"] == str(proxy)
     assert report["segmentation_stack_source"] == "proxy_stack"
@@ -540,7 +578,7 @@ def test_22_invalid_support_is_zero_and_excluded_from_run_statistics(tmp_path: P
     assert summary_json["masked_segmentation_stack_scope"] == (
         "response_surface_canonical"
     )
-    assert summary_json["run_contract_version"] == 5
+    assert summary_json["run_contract_version"] == 6
     assert summary_json["merged_labels_path"].endswith("merged_labels.tif")
     assert {"scale_id", "candidate_id", "perturbation_id", "radius_m", "spatialr_px", "minsize_px", "ranger", "n_segments", "q_p10", "q_p25", "q_median", "q_p75", "q_p90"}.issubset(summary_json)
     assert {f"{size}_frac_{weight}" for size in rs.SIZE_CLASSES for weight in ("n", "area")}.issubset(summary_json)
@@ -1010,21 +1048,39 @@ def test_shadow_transients_are_not_read_by_step9b_or_step10() -> None:
     assert "masked_segmentation_stack_path" in consumer_source
 
 
-def test_32_stability_score_raw_is_exposed_and_stability_score_remains_clamped() -> None:
+def test_32_current_support_score_is_bounded_and_legacy_flags_do_not_rank() -> None:
     group = compute_candidate_group_response_summary(
         "scale-a",
-        [summary("run-a", [0.9, 0.1, 0.0, 0.0, 0.0], area_weighted_q_q10=0.0, area_weighted_q_q90=100.0)],
+        [
+            summary(
+                "run-a",
+                [0.9, 0.1, 0.0, 0.0, 0.0],
+                area_weighted_q_q10=0.0,
+                area_weighted_q_q90=100.0,
+                scale_match_support=0.4,
+            )
+        ],
         [],
         cfg(),
     )
 
-    assert group["stability_score_raw"] < 0.0
-    assert group["stability_score"] == 0.0
+    assert group["stability_score_raw"] == pytest.approx(0.4)
+    assert group["stability_score"] == pytest.approx(0.4)
+    assert group["legacy_response_stability_score_raw"] < 0.0
     assert rs.stability_score(
         {
             "stability_score_raw": 1.5,
         }
     ) == 1.0
+
+    current_support = {
+        "scale_match_support_raw": 0.7,
+        "edge_loaded_flag": True,
+        "scale_jump_flag": True,
+        "distribution_flutter_flag": True,
+        "spatial_scale_jump_flag": True,
+    }
+    assert rs.stability_score_raw(current_support) == pytest.approx(0.7)
 
 
 def test_33_zero_score_candidates_rank_by_raw_score_before_id(tmp_path: Path, monkeypatch) -> None:
@@ -1226,6 +1282,7 @@ def test_boundary_ensemble_support_separates_seed_and_ranger_agreement(
             "seed_realization_id": "phase_00",
             "run_ranger": 0.2,
             "run_spatial_radius_m": 1.0,
+            "spatialr_px": 2,
             "original_row_metadata": {"ranger_position": "mode"},
         },
         {
@@ -1234,6 +1291,7 @@ def test_boundary_ensemble_support_separates_seed_and_ranger_agreement(
             "seed_realization_id": "phase_01",
             "run_ranger": 0.2,
             "run_spatial_radius_m": 1.0,
+            "spatialr_px": 2,
             "original_row_metadata": {"ranger_position": "mode"},
         },
         {
@@ -1242,6 +1300,7 @@ def test_boundary_ensemble_support_separates_seed_and_ranger_agreement(
             "seed_realization_id": "phase_00",
             "run_ranger": 0.3,
             "run_spatial_radius_m": 1.0,
+            "spatialr_px": 2,
             "original_row_metadata": {"ranger_position": "main_interval_upper"},
         },
     ]
@@ -1268,6 +1327,71 @@ def test_boundary_ensemble_support_separates_seed_and_ranger_agreement(
         "ranger",
         "factorial_cross",
     }
+
+
+def test_final_support_is_geometric_mean_of_four_empirical_components(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summaries = []
+    runs = []
+    for index, group_id in enumerate(("scale-a", "scale-b"), start=1):
+        run_id = f"run-{index}"
+        summaries.append(
+            {
+                "candidate_scale_group_id": group_id,
+                "run_count": 1,
+                "seed_realization_count": 4,
+                "ranger_position_count": 3,
+                "boundary_support_raster": str(tmp_path / f"{group_id}.tif"),
+                "boundary_agreement_metric": "scale_relative_linear_distance_support",
+                "pairwise_boundary_agreements": [],
+                "ensemble_boundary_agreement": 0.85,
+                "boundary_medoid_mean_agreement": 0.85,
+                "boundary_medoid_run_id": run_id,
+                "medoid_run_id": run_id,
+                "boundary_support_summary_json": str(
+                    tmp_path / f"{group_id}.json"
+                ),
+                "seed_realization_boundary_agreement": 0.9,
+                "ranger_boundary_agreement": 0.8,
+                "local_radius_boundary_agreement": 1.0,
+                "seed_realization_boundary_support_robust": 0.9,
+                "ranger_boundary_support_robust": 0.8,
+                "local_radius_boundary_support_count": 0,
+                "local_radius_boundary_support_median": None,
+                "local_radius_boundary_support_mad": None,
+                "local_radius_boundary_support_robust": None,
+                "scale_match_support_raw": 0.7,
+            }
+        )
+        runs.append(
+            {
+                "run_id": run_id,
+                "candidate_scale_group_id": group_id,
+                "source_candidate_radius_m": float(index),
+                "spatialr_px": index * 2,
+                "merged_labels_path": str(tmp_path / f"{run_id}.tif"),
+            }
+        )
+
+    monkeypatch.setattr(
+        rs,
+        "_boundary_agreement_between_labels",
+        lambda *_args, **_kwargs: 0.8,
+    )
+    rs.finalize_boundary_ensemble_scores(
+        summaries,
+        runs,
+        tmp_path / "mask.tif",
+    )
+
+    expected = (0.9 * 0.8 * 0.8 * 0.7) ** 0.25
+    for candidate in summaries:
+        assert candidate["ensemble_support_evaluable"] is True
+        assert candidate["ensemble_support_raw_v2"] == pytest.approx(expected)
+        assert candidate["stability_score_raw"] == pytest.approx(expected)
+        assert candidate["candidate_outcome"] == "ensemble_support_evaluable"
 
 
 def test_40_step9b_non_adjacent_top_pair_requires_user_choice() -> None:

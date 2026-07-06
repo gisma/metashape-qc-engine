@@ -64,7 +64,7 @@ orthomosaic
   -> materialized scale x ranger x seed-phase ensemble
   -> four translated controlled hex/variance-minimum seed realizations
   -> SAGA seeded region growing per ensemble member
-  -> Step 9a boundary-persistence + centroid-support response surface
+  -> Step 9a robust seed · ranger · radius · scale-match support
   -> Step 9b adjacency/midpoint handoff
   -> Step 10 finalist evidence collection
   -> multiscale centroid-seed stabilization at handed-off parameters
@@ -83,9 +83,7 @@ logarithmic lags and configured directions. Stable first crossings of the
 configured sill fractions materialize the scene-specific spatial ladder inside
 `radius_min_m` and `radius_max_m`.
 
-For each selected radius, `spatialr_px` is the selected raster lag and
-`minsize_px` is deterministically coupled through the circular footprint
-area. The pre-screen reuses the k-to-HSM plateau diagnostic and materializes
+For each selected radius, `spatialr_px` is the selected raster lag. `minsize_px` is common technical metadata derived from `radius_min_m`; the active SAGA backend does not use it as an independent scale axis or later small-region merge. The pre-screen reuses the k-to-HSM plateau diagnostic and materializes
 the central ranger plus the positive unique bounds of its main modal interval.
 It writes one Step-9a-compatible factorial population over spatial scale,
 ranger, and four deterministic seed-lattice phases, and performs no
@@ -93,12 +91,7 @@ segmentation, ranking, or final selection.
 
 ### Step 9a and Step 9b
 
-Step 9a executes or reuses every materialized ensemble member, writes run/group
-response summaries and boundary-support rasters, compares boundaries across
-seed phase, ranger, and adjacent radius, selects an actual boundary-medoid run
-as each family's representative evidence row, computes raw/clamped support
-scores, ranks candidate families, and diagnoses numeric scale adjacency and
-boundaries. The same label population later supplies multiscale centroid
+Step 9a executes or reuses every materialized ensemble member and writes run/group response summaries plus boundary-support rasters. Boundary differences are normalized by candidate radius rather than a fixed pixel tolerance. Seed-, ranger-, and radius-boundary agreement and continuous area-weighted scale match are each aggregated as median minus 1.4826 MAD. Their four-way geometric mean is the current raw support score used to rank families. Historical edge/jump flags and fixed penalty coefficients remain diagnostic only for new run-contract-v6 outputs. Step 9a also selects an actual boundary-medoid run and diagnoses numeric scale adjacency and ladder boundaries. The same label population later supplies multiscale centroid
 support; the boundary medoid is not copied directly as the final label raster.
 
 Step 9b either:

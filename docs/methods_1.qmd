@@ -1,0 +1,400 @@
+---
+title: "Multi-Level Spatial Evidence Framework for Reproducible UAV-Derived Information Products"
+author: "Chris Reudenbach, Christian Mestre Runge, Lars Opgenoorth"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+bibliography: metashape-qt-engine.bib
+link-citations: true
+---
+
+## Motivation and Methodological Questions
+
+UAV photogrammetry converts overlapping image observations into spatial products such as sparse point clouds, dense reconstructions, digital surface models, and orthomosaics. These products are often used as if they were deterministic outputs of a fixed processing chain. However, structure-from-motion and multi-view-stereo processing are affected by acquisition conditions, alignment behaviour, reconstruction parameters, filtering decisions, georeferencing, and software-specific processing choices [@DeMarco2021SfMRepeatability; @Sledz2022SfMProcessingParameters; @Tinkham2024SfMParameters]. Checkpoint or ground-control based accuracy assessment is therefore not sufficient to describe whether an exported orthomosaic is internally reproducible under repeated processing [@Ludwig2020ReproducibleOrthomosaics].
+
+The framework separates two methodological questions. Level-1A asks which Metashape processing variant produces an orthomosaic whose image values and valid spatial support remain stable across repeated builds. Level-1B starts from a completed RGB orthomosaic and asks how object-like spatial support can be constructed so that the resulting units are not artifacts of a single segmentation parameter realization. The first level therefore evaluates the reproducibility of the image product, whereas the second level evaluates the stability of the spatial support used for subsequent object-based analysis.
+
+Parameter values that originated in development runs are not treated here as final methodological constants. The admissible parameter ranges, sampling densities, support-aggregation policies, and handoff criteria belong to the experiment design and are to be evaluated in the sensitivity study. The method description below therefore states the implemented operations and decision logic without presenting development values as validated final settings.
+
+## Level-1A: Reproducibility-Based Orthomosaic Product Analysis
+
+Level-1A is a reproducibility experiment for Metashape-derived orthomosaic products. It does not estimate absolute geometric accuracy and does not replace independent GCP or checkpoint validation. Instead, it evaluates internal repeatability under a defined processing design. The workflow separates processing variants, repeated product generation, alignment to a common comparison grid, radiometric stability evidence, support-persistence evidence, and product representation.
+
+### Experimental Design
+
+The experiment starts from an explicit processing preset. The preset defines the input image directory, product identifier, Metashape configuration template, parameter factors, and the replicate design. The preparation step materializes the concrete run configuration and variant table. The tested variant space is therefore a methodological design decision rather than an implicit property of the software.
+
+Let
+
+$$
+V=\{v_1, v_2, \ldots, v_n\}
+$$
+
+be the set of configured Metashape processing variants and
+
+$$
+R=\{r_1, r_2, \ldots, r_m\}
+$$
+
+the replicate set. The experiment is
+
+$$
+E = V \times R .
+$$
+
+For each variant-replicate combination, Metashape processing generates one attempted product realization,
+
+$$
+O_{ij}=A(I,v_i,r_j),
+$$
+
+where \(I\) denotes the input image observations, \(v_i\) the processing variant, \(r_j\) the replicate index, and \(A\) the configured Metashape workflow. Every attempt is recorded in the run manifest. Failed runs remain part of the execution evidence, but only successful rows with an existing orthomosaic and complete variant-replicate metadata enter the spatial stability analysis.
+
+### Canonical Grid and Valid Support
+
+Repeated Metashape runs can produce orthomosaics with slightly different extents or valid footprints. Direct raster comparison is meaningful only after all accepted products have been aligned to a common spatial grid. Level-1A first checks that accepted orthomosaics are compatible in coordinate reference system, resolution, and non-rotated raster geometry. The canonical grid is then defined from the accepted products, either as the union of their extents, their common intersection, or a specified reference grid.
+
+Let
+
+$$
+G_c = g(O_{11}, \ldots, O_{nm})
+$$
+
+be this canonical grid. Each successful orthomosaic is transformed to it:
+
+$$
+O'_{ij}=T(O_{ij},G_c).
+$$
+
+Operationally, \(T\) uses the georeferencing of the source raster and the georeferencing of the canonical grid. Nearest-neighbour resampling is used so that the comparison does not introduce additional radiometric mixtures. The canonical grid is therefore not a new photogrammetric model; it is the common raster support on which repeated products become comparable.
+
+A grid cell is treated as valid for a replicate only when the analysed bands contain finite values, no band-specific nodata value is present, the raster mask is valid, and the RGB tuple does not represent the configured invalid background. For each grid cell \(x\), support count is
+
+$$
+C_i(x)=
+\sum_{j=1}^{m_i}
+\mathrm{valid}(O'_{ij}(x)),
+$$
+
+where \(m_i\) is the number of successful accepted replicates of variant \(v_i\). This support count separates radiometric stability where a product exists from reproducibility of the product footprint itself.
+
+Support persistence is summarized within the actually reached footprint:
+
+$$
+S_{p,i} =
+\frac{A_{\mathrm{full},i}}
+     {A_{\mathrm{any},i}},
+\qquad
+D_{p,i} =
+\frac{A_{\mathrm{variable},i}}
+     {A_{\mathrm{any},i}}.
+$$
+
+Here, \(A_{\mathrm{full},i}\) is the area with valid support in all accepted replicates, \(A_{\mathrm{any},i}\) is the area with valid support in at least one replicate, and \(A_{\mathrm{variable},i}\) is the area with partial replicate support. This footprint-relative formulation prevents the rectangular extent of the comparison grid from being confused with true product-support loss.
+
+### Radiometric Stability and Product Representation
+
+For each processing variant, Level-1A derives a pixel-wise median orthomosaic on the canonical grid:
+
+$$
+M_i(x)=
+\mathrm{median}_j
+\left(
+O'_{ij}(x)
+\right).
+$$
+
+The median orthomosaic represents the central image-value state of the repeated-build population. It is a statistical composite and does not have to correspond to an individual Metashape export.
+
+Internal radiometric stability is measured relative to this median. The median absolute deviation is computed per cell and band and then summarized over the analysed bands:
+
+$$
+MAD_i(x)=
+\frac{1}{B}
+\sum_{b=1}^{B}
+\mathrm{median}_j
+\left|
+O'_{ijb}(x)-M_{ib}(x)
+\right|.
+$$
+
+The RMSE raster is likewise computed per cell for each variant by comparing all valid replicate-band combinations with the band-wise median:
+
+$$
+RMSE_i(x) =
+\sqrt{
+\mathrm{mean}_{j,b}
+\left(
+O'_{ijb}(x)-M_{ib}(x)
+\right)^2
+}.
+$$
+
+The continuous-stability ranking is lexicographic and prioritizes low upper-tail deviation before mean deviation:
+
+$$
+Q_{c,i} =
+\left(
+RMSE_{q,i},
+RMSE_{\mathrm{mean},i},
+MAD_{q,i},
+MAD_{\mathrm{mean},i}
+\right),
+\qquad
+v^* = \arg\min_i Q_{c,i}.
+$$
+
+The quantile \(q\) is part of the experiment design. This ranking does not depend on a pass/fail threshold. A separate threshold view evaluates the fraction of cells that have complete replicate support and remain below the configured RMSE threshold:
+
+$$
+S_{t,i} =
+\frac{
+A(C_i(x)=m_i \land RMSE_i(x) \leq T)
+}{
+A(C_i(x)>0)
+}.
+$$
+
+This threshold evidence is reported as warning or rejection context; it does not automatically replace the continuous-stability winner. Spatial support is ranked separately by dropout, variable-support share, and persistence:
+
+$$
+Q_{s,i} =
+\left(
+D_{p,i},
+A_{\mathrm{variable},i}/A_{\mathrm{grid},i},
+-S_{p,i}
+\right).
+$$
+
+The selected product is recorded with two distinct representations. The median product is the statistical centre of the selected variant,
+
+$$
+O_{\mathrm{median}} = M_{v^*},
+$$
+
+whereas the medoid replicate is the actually generated Metashape orthomosaic closest to that median,
+
+$$
+O_{\mathrm{medoid}} =
+\arg\min_j
+RMSE(O'_{v^*j},M_{v^*}).
+$$
+
+Reporting both avoids conflating a statistical composite with an observed photogrammetric run. The central Level-1A evidence consists of the run manifest, aligned stability rasters, support-count raster, continuous-stability ranking, threshold context, support-persistence context, and median/medoid product representation.
+
+## Level-1B: Scene-Adaptive Support Construction for GEOBIA
+
+High-resolution UAV orthomosaics require aggregation of pixel-level observations into spatial information units before object-level statistics, classification, or quality assessment can be interpreted. In GEOBIA, such units are commonly produced by image segmentation, but their methodological status depends on the stability of the spatial support from which information is extracted [@Kucharczyk2020GEOBIAPrimer; @EzZahouani2023SegmentationReview]. Level-1B therefore does not introduce segmentation as a final object detector. It treats segmentation as a support-construction problem under uncertainty.
+
+The central methodological assumption is that a spatial unit should only be used as an information-bearing unit when its boundary and internal support are not artifacts of a single parameter realization. Level-1B combines the GEOBIA scale problem, geostatistical support derivation, feature-space tolerance estimation, and perturbation-based stability evidence. The final segmentation is not the best single run from a parameter search; it is a materialized support structure derived from stable spatial support, stable feature tolerance, and stable initialization evidence.
+
+### Observation Domain and Feature Space
+
+Level-1B starts from one completed RGB orthomosaic. This product may originate from Level-1A, but Level-1B does not require a specific Level-1A product representation. A binary valid-domain mask excludes nodata, invalid raster-mask cells, optional alpha-mask exclusions, and configured background RGB tuples. This mask defines the population for all subsequent feature statistics, variogram estimation, segmentation runs, and stability evidence.
+
+Within this domain, each valid pixel is represented by a multivariate feature vector,
+
+$$
+\mathbf{F}(x)= [f_1(x), \ldots, f_B(x)] .
+$$
+
+The implemented feature space is an explicit experiment design element. Its six bands are ExGR, ExR, brightness (BRI), directional Haralick-Inertia structure on RGB-PC1 at a small radius, the corresponding structure at a large radius, and their fine-to-coarse ratio. The two structure bands aggregate the four configured directions by a pixelwise maximum. These descriptors are not used as semantic classifiers. They define a continuous feature space in which spatial dependency and local feature-space density can be estimated.
+
+Before distance-based operations, each feature band is robustly scaled using valid pixels only. The scaling uses distributional cut points from the configured experiment design, centres the band on the midpoint of the retained interval, divides by the corresponding half-range, and clips to a common bounded range:
+
+$$
+Z_b(x)=
+\mathrm{clip}
+\left(
+\frac{F_b(x)-c_b}{a_b}
+\right).
+$$
+
+The scaled vector \(\mathbf{Z}(x)\) is the basis for spatial-support derivation, feature-tolerance estimation, and seeded region growing. This step is necessary because otherwise feature distances could be dominated by radiometric extremes or high-variance texture components.
+
+### Scene-Adaptive Support and Feature Tolerance
+
+Candidate spatial supports are derived from the spatial dependency structure of the scaled feature space. The admissible lag domain, lag sampling density, direction set, valid-pair requirements, sill fractions, and persistence criteria are part of the experiment design and are later subject to sensitivity analysis. Within that design space, Level-1B estimates a robust multivariate empirical semivariogram. For direction \(d\), lag \(h\), valid pair \((x,x+h_d)\), and scaled feature vector \(\mathbf{Z}(x)\), the implemented estimator has the form
+
+$$
+\gamma_d(h)=
+\mathrm{median}_{x}
+\left[
+\frac{1}{2}
+\sum_{b=1}^{B}
+\left(
+Z_b(x)-Z_b(x+h_d)
+\right)^2
+\right].
+$$
+
+The directional estimates are aggregated over the configured direction set, and the sill is estimated from the upper-lag portion of the empirical curve. Stable first crossings of configured sill fractions define the scene-specific spatial support families:
+
+$$
+R_s =
+\{h : \gamma(h) \geq \alpha \gamma_{\mathrm{sill}}\},
+\qquad
+\alpha \in A_{\mathrm{sill}}.
+$$
+
+These supports are not fixed object-size assumptions. They sample the transition between local feature similarity and broader scene-level feature variability. This follows the geostatistical interpretation that spatial scale and support should be related to the observed spatial autocorrelation structure of the data [@Curran1988SemivariogramRS; @AtkinsonTate2000ScaleProblems; @Ming2015SpatialStatisticsGEOBIA]. The actual radii are therefore scene-derived within an explicit design space.
+
+Feature-space tolerance is estimated independently from spatial support. For sampled valid feature vectors, k-nearest-neighbour distances describe local feature-space density:
+
+$$
+d_k(x_i)=
+\left\|
+\mathbf{Z}(x_i)-
+\mathbf{Z}(NN_k(x_i))
+\right\| .
+$$
+
+Across the configured neighbourhood-order sequence, each distance distribution is summarized with the Half-Sample Mode estimator,
+
+$$
+r_c = HSM(D_k).
+$$
+
+The first stable window on the curve \(k \mapsto HSM(D_k)\) defines the local neighbourhood order. If no stable window exists, pre-screening fails rather than substituting a fixed fallback tolerance. For the selected order, the HSM mode and its modal interval define the tested ranger values,
+
+$$
+R_f = \{r_{\mathrm{low}}, r_{\mathrm{mode}}, r_{\mathrm{high}}\}.
+$$
+
+Thus, `ranger` is a tolerance in the robustly scaled feature space. It is derived from observed local feature density and should not be interpreted as semantic homogeneity.
+
+### Segmentation Response Surface and Stability Evidence
+
+The segmentation response population is constructed as a factorial ensemble:
+
+$$
+E = R_s \times R_f \times P ,
+$$
+
+where \(P\) denotes controlled translations of a metric hexagonal seed scaffold. Seed placement is included because initialization geometry is itself a source of segmentation variability. The scaffold may be adjusted within the rules of the experiment design to improve local placement and valid-domain coverage, but it is not treated as fixed truth.
+
+For each ensemble member, seeded region growing is executed on the scaled feature space:
+
+$$
+S_{\ell}=A(\mathbf{Z}, r_s, r_f, p).
+$$
+
+Here, \(r_s\) controls spatial support, \(r_f\) controls feature-space tolerance, and \(p\) defines the seed phase. The implementation uses SAGA seeded region growing with the configured neighbourhood and similarity settings; invalid support remains label 0. The resulting segmentations are observations of the response surface, not competing final products. Only complete planned ensembles are ranked.
+
+Because label identifiers do not correspond between runs, numeric label values are never compared directly. Step 9a derives support evidence from binary boundary rasters and scale-relative segment-size evidence. For two boundary sets \(A\) and \(B\), the exact Jaccard index is retained as diagnostic evidence:
+
+$$
+J(A,B)=
+\frac{|A\cap B|}{|A\cup B|}.
+$$
+
+Current ranking does not use a fixed one-pixel dilation or a fixed tolerance width. For a pair of runs, the reference radius in pixels is the geometric mean of their spatial radii,
+
+$$
+\rho_{AB}=\sqrt{r_A r_B}.
+$$
+
+For each boundary pixel \(a\in A\), its support by \(B\) decreases linearly with the distance to the nearest boundary pixel in \(B\):
+
+$$
+s(a,B)=
+\max\left(0,1-\frac{d(a,B)}{\rho_{AB}}\right).
+$$
+
+The symmetric pair support is
+
+$$
+B(A,B)=
+\frac{
+\sum_{a\in A}s(a,B)+\sum_{b\in B}s(b,A)
+}{|A|+|B|}.
+$$
+
+Pairs are classified by the controlled variation that they represent: seed realization, ranger position, or radius. The repeated pair scores in each class are summarized conservatively. For observations \(x\), the implemented lower support is
+
+$$
+R(x)=
+\mathrm{clip}\left[
+\mathrm{median}(x)
+-1.4826\,\mathrm{median}\left|x-\mathrm{median}(x)\right|,
+0,1
+\right].
+$$
+
+This produces \(B_{\mathrm{seed},v}\), \(B_{\mathrm{ranger},v}\), and \(B_{\mathrm{radius},v}\). The factor 1.4826 is the normal-consistency scaling of the median absolute deviation; it is not an empirical score weight.
+
+Step 9a also evaluates how continuously the observed segment sizes agree with the candidate radius. For segment \(i\) with area \(A_i\), equivalent radius \(r_i=\sqrt{A_i/\pi}\), and candidate radius \(r_v\),
+
+$$
+q_i=\frac{r_i}{r_v},
+\qquad
+m_i=\min(q_i,q_i^{-1}).
+$$
+
+The run-level scale match is area weighted,
+
+$$
+M_{vj}=\frac{\sum_i A_i m_i}{\sum_i A_i},
+$$
+
+and the repeated run values are summarized with the same robust lower-support operator,
+
+$$
+M_v=R(\{M_{vj}\}).
+$$
+
+The current raw family support is the unweighted geometric mean of the four required components:
+
+$$
+S_v=
+\left(
+B_{\mathrm{seed},v}
+B_{\mathrm{ranger},v}
+B_{\mathrm{radius},v}
+M_v
+\right)^{1/4}.
+$$
+
+If any required component is unavailable, the family is explicitly marked as not evaluable; a neutral value is not substituted. Families are ranked by decreasing \(S_v\), with deterministic tie-breaking. Historical edge, scale-jump, distribution-flutter, and spatial-jump fields remain diagnostic and preserve readability of older artifacts, but their fixed coefficients do not enter current run-contract-version-6 ranking. The boundary medoid is the computed family member with the highest mean radius-normalized boundary agreement to the other family runs. It is representative evidence, not the final segmentation product. This ranking is evidence for supported segmentation families; it is not a universal segmentation-quality index.
+
+If the two highest-supported families are not adjacent in the explicit scale space, both are reported as supported alternatives and no automatic final handoff is made. If they are adjacent, exactly one midpoint family is evaluated inside their interval using the same local perturbation protocol. With the raw scores \(S_1\), \(S_2\), and \(S_M\), the gain share is
+
+$$
+G_M =
+\frac{S_M-S_2}{S_1-S_2}.
+$$
+
+The midpoint is passed forward only if this gain share exceeds the configured handoff criterion. Otherwise, the first-ranked family remains selected with warning context. This is a local transition check, not a global optimization of scale.
+
+### Centroid-Stabilized Materialization
+
+The boundary medoid selected within a support family is representative evidence, not the final segmentation product. Final materialization uses centroid stability. After the handoff decision, the complete initial response population is reused to identify spatially persistent segment-centre evidence across ranger positions, seed phases, and neighbouring supports.
+
+Centroid impulses are smoothed with a scale-dependent kernel,
+
+$$
+\sigma=\sigma(r_s),
+$$
+
+and local maxima are accepted only when they meet the configured support criteria across runs, seed phases, and ranger positions. Accepted maxima are linked across neighbouring supports when their spatial relation satisfies the experiment design. Tracks with sufficient scale persistence define the stabilized seed scaffold:
+
+$$
+C^* = \mathrm{stable}(C_1,\ldots,C_N).
+$$
+
+The final segmentation is then executed exactly once:
+
+$$
+S_{\mathrm{final}} =
+A(\mathbf{Z}, r_s^*, r_f^*, C^*).
+$$
+
+The result is not fed back recursively as a new seed source. Existing ensemble boundaries are not consensus-merged, and polygons are not fused into semantic objects. The final label raster is materialized without resampling or label recomputation; label 0 remains invalid support. Polygonization stores the raster label as `segment_id`, and segment-level raster statistics are extracted as descriptive evidence. No semantic class and no categorical quality class are assigned automatically.
+
+## Scope and Limitations
+
+Level-1A quantifies internal repeatability of the configured reconstruction process. Low MAD and RMSE values indicate that repeated builds produce similar radiometric orthomosaic values; high support persistence indicates that the product footprint is reproducible across replicates. These quantities do not establish absolute planimetric or height accuracy, and systematic but reproducible errors require independent GCP or checkpoint evidence.
+
+Level-1B constructs unclassified spatial support units for object-based analysis. A final segment is a connected set of valid raster cells grown from a stabilized seed scaffold under the selected support and feature-tolerance setting. Without external reference data, it is not evidence that a segment corresponds to a tree, vegetation type, habitat, or other real-world class. The variogram-derived support families, ranger interval, seed-phase design, radius-normalized boundary-support policy, robust support aggregation, and handoff criterion are part of an explicit design space. Their sensitivity and robustness must be evaluated before development-run values can be treated as final study settings.

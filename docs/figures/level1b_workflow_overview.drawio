@@ -38,7 +38,7 @@
         <mxCell id="variogram" value="&lt;b&gt;Robust multiband variogram&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;logarithmic lags × directions&lt;br&gt;median half-squared feature distance&lt;br&gt;tail-median sill&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="410" y="530" width="290" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="crossings" value="&lt;b&gt;Spatial support points&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;stable 0.25 · 0.50 · 0.75 · 0.95 sill crossings&lt;br&gt;minsize coupled to radius&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="crossings" value="&lt;b&gt;Spatial support points&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;stable 0.25 · 0.50 · 0.75 · 0.95 sill crossings&lt;br&gt;technical minsize from radius_min · not candidate axis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="750" y="530" width="300" height="130" as="geometry" />
         </mxCell>
         <mxCell id="ranger" value="&lt;b&gt;Feature-space ranger&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;k → HSM curve → first stable plateau&lt;br&gt;main-interval lower · mode · upper&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
@@ -50,16 +50,16 @@
         <mxCell id="diagnostics" value="&lt;b&gt;Diagnostic metadata only&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;variogram knee · tail plateau · saturation · directional anisotropy&lt;br&gt;never changes downstream evaluation rules&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="180" y="740" width="430" height="95" as="geometry" />
         </mxCell>
-        <mxCell id="formula" value="&lt;b&gt;Spatial coupling&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;area = π · radius²&lt;br&gt;minsize_px = round(area / pixel_area)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+        <mxCell id="formula" value="&lt;b&gt;Spatial coupling&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;r_min_px = round(radius_min / GSD)&lt;br&gt;minsize_px = (2 · r_min_px)² · technical metadata&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="1190" y="740" width="360" height="95" as="geometry" />
         </mxCell>
-        <mxCell id="step9a" value="&lt;b&gt;Step 9a — Candidate response surface&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;execute/reuse every scale × ranger × phase member&lt;br&gt;boundary persistence + centroid bootstrap evidence&lt;br&gt;boundary medoid + true family ranking&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="step9a" value="&lt;b&gt;Step 9a — Continuous ensemble support&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size: 11px&#39;&gt;radius-normalized boundary support: seed · ranger · radius&lt;br&gt;continuous area-weighted scale match&lt;br&gt;robust median−MAD components + geometric-mean ranking&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="590" y="870" width="560" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="step9evidence" value="&lt;b&gt;Step-9a evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;run_population_summary&lt;br&gt;candidate_group_response_summary&lt;br&gt;boundary_support rasters + index&lt;br&gt;ranking + scale-continuity metadata&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="step9evidence" value="&lt;b&gt;Step-9a evidence&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size: 11px&#39;&gt;run + group summaries&lt;br&gt;four robust support components&lt;br&gt;boundary-support rasters + boundary medoid&lt;br&gt;ranking + scale-continuity metadata&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f0d8;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="1220" y="870" width="390" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="sizeformula" value="&lt;b&gt;Scale-relative size evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;area = n_px · GSD²&lt;br&gt;r_eq = √(area / π)&lt;br&gt;q = r_eq / source radius&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+        <mxCell id="sizeformula" value="&lt;b&gt;Scale-relative size evidence&lt;/b&gt;&lt;br&gt;&lt;font style='font-size: 11px'&gt;area = n_px · GSD²&lt;br&gt;q = √(area / π) / candidate radius&lt;br&gt;scale match = min(q, 1/q)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="120" y="870" width="360" height="130" as="geometry" />
         </mxCell>
         <mxCell id="adjacency" value="&lt;b&gt;Step 9b&lt;/b&gt;&lt;br&gt;Are No1 and No2 adjacent&lt;br&gt;in explicit scale space?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">

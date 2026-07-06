@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 import rasterio
 from rasterio.windows import Window
+from scipy import ndimage
 
 from metashape_qc_engine.level1b_one_scale_segmentation import (
     Level1BOneScaleSegmentationConfig,
@@ -59,8 +60,12 @@ OUTPUT_FILENAMES = {
     "boundary_support_index": "boundary_support_index.json",
 }
 
-RUN_CONTRACT_VERSION = 5
+RUN_CONTRACT_VERSION = 6
 CANONICAL_MASKED_STACK_SCOPE = "response_surface_canonical"
+MAD_NORMAL_CONSISTENCY_SCALE = 1.4826
+ENSEMBLE_SUPPORT_METHOD = (
+    "robust_geometric_mean_seed_ranger_radius_scale_match"
+)
 
 SCALE_COORDINATE_FIELDS = (
     "source_candidate_radius_m",
@@ -326,6 +331,56 @@ def equivalent_radii(area_m2: np.ndarray) -> np.ndarray:
     return np.sqrt(np.asarray(area_m2, dtype=float) / math.pi)
 
 
+def area_weighted_scale_match_support(
+    q_values: np.ndarray,
+    area_m2: np.ndarray,
+) -> float:
+    """Return continuous, reciprocal scale agreement in [0, 1].
+
+    q is the segment equivalent radius divided by the candidate radius.
+    min(q, 1/q) is one at exact agreement and decreases continuously and
+    symmetrically for segments smaller or larger than the candidate scale.
+    Segment area is used as weight so the result describes covered area rather
+    than the number of potentially tiny segments.
+    """
+
+    q = np.asarray(q_values, dtype=float)
+    weights = np.asarray(area_m2, dtype=float)
+    keep = np.isfinite(q) & (q > 0) & np.isfinite(weights) & (weights > 0)
+    if not np.any(keep):
+        return 0.0
+    q = q[keep]
+    weights = weights[keep]
+    match = np.minimum(q, 1.0 / q)
+    return float(np.average(match, weights=weights))
+
+
+def robust_lower_support(values: list[float]) -> dict[str, float | int | None]:
+    """Summarize repeated support by a conservative median-minus-MAD value."""
+
+    array = np.asarray(values, dtype=float)
+    array = array[np.isfinite(array)]
+    if not array.size:
+        return {
+            "count": 0,
+            "median": None,
+            "mad": None,
+            "uncertainty": None,
+            "support": None,
+        }
+    median = float(np.median(array))
+    mad = float(np.median(np.abs(array - median)))
+    uncertainty = MAD_NORMAL_CONSISTENCY_SCALE * mad
+    support = max(0.0, min(1.0, median - uncertainty))
+    return {
+        "count": int(array.size),
+        "median": median,
+        "mad": mad,
+        "uncertainty": uncertainty,
+        "support": support,
+    }
+
+
 def assign_scale_relative_size_classes(q_values: np.ndarray, cfg: Level1BCandidateResponseSurfaceConfig) -> np.ndarray:
     q = np.asarray(q_values, dtype=float)
     classes = np.full(q.shape, "oversize", dtype=object)
@@ -388,6 +443,7 @@ def compute_run_population_summary_from_counts(
     r_run = run_radius_m(row, pixel_size_m)
     if r_run:
         q_run = radii_m / r_run
+    scale_match_support = area_weighted_scale_match_support(q, area_m2)
     classes = assign_scale_relative_size_classes(q, cfg)
     class_summary = compute_class_summaries(classes, area_m2, radii_m)
     total_area = float(np.sum(area_m2))
@@ -400,6 +456,7 @@ def compute_run_population_summary_from_counts(
         "source_candidate_id": str(row.get("source_candidate_id", "")),
         "source_scale_id": str(row.get("source_scale_id", row.get("scale_id", ""))),
         "source_candidate_radius_m": r_source,
+        "spatialr_px": row.get("spatialr_px"),
         "source_spatial_radius": row.get("source_spatial_radius_m", row.get("spatialr_m", row.get("spatialr_px"))),
         "source_minsize": row.get("source_minsize_px", row.get("minsize_px")),
         "source_ranger": row.get("source_ranger", row.get("ranger")),
@@ -440,6 +497,7 @@ def compute_run_population_summary_from_counts(
         "size_class_area_distribution": size_distribution,
         "q_histogram_bins": _json_bins(Q_HISTOGRAM_BINS),
         "q_histogram_area_distribution": hist,
+        "scale_match_support": scale_match_support,
         "max_label": counts["max_label"],
         "unique_label_count": counts["unique_label_count"],
         "label_count_strategy": counts["label_count_strategy"],
@@ -827,31 +885,6 @@ def compute_spatial_response_stability(matrix_summaries: list[dict[str, Any]], c
 
 
 
-def _dilate_boundary_one_pixel(boundary: np.ndarray) -> np.ndarray:
-    dilated = boundary.copy()
-    height, width = boundary.shape
-    for row_delta in (-1, 0, 1):
-        for col_delta in (-1, 0, 1):
-            if row_delta == 0 and col_delta == 0:
-                continue
-            source_row_start = max(0, -row_delta)
-            source_row_stop = min(height, height - row_delta)
-            source_col_start = max(0, -col_delta)
-            source_col_stop = min(width, width - col_delta)
-            target_row_start = source_row_start + row_delta
-            target_row_stop = source_row_stop + row_delta
-            target_col_start = source_col_start + col_delta
-            target_col_stop = source_col_stop + col_delta
-            dilated[
-                target_row_start:target_row_stop,
-                target_col_start:target_col_stop,
-            ] |= boundary[
-                source_row_start:source_row_stop,
-                source_col_start:source_col_stop,
-            ]
-    return dilated
-
-
 def _boundary_from_labels(labels: np.ndarray, valid: np.ndarray) -> np.ndarray:
     boundary = np.zeros(labels.shape, dtype=bool)
     horizontal = (
@@ -867,6 +900,68 @@ def _boundary_from_labels(labels: np.ndarray, valid: np.ndarray) -> np.ndarray:
     boundary[:, :-1] |= horizontal
     boundary[:-1, :] |= vertical
     return boundary
+
+
+def _run_spatial_radius_px(row: dict[str, Any]) -> float:
+    for value in (
+        row.get("spatialr_px"),
+        row.get("source_spatial_radius"),
+        _step9b_metadata_dict(row.get("original_row_metadata")).get("spatialr_px"),
+    ):
+        if _finite_positive(value):
+            return float(value)
+    raise ValueError(
+        f"run {row.get('run_id')!r} lacks a positive spatialr_px for "
+        "scale-relative boundary support"
+    )
+
+
+def _scale_relative_boundary_sums(
+    left_halo: np.ndarray,
+    right_halo: np.ndarray,
+    valid_halo: np.ndarray,
+    central_start: int,
+    central_stop: int,
+    reference_radius_px: float,
+) -> tuple[int, int, float, float]:
+    if not _finite_positive(reference_radius_px):
+        raise ValueError("boundary reference radius must be positive")
+    valid = valid_halo[central_start:central_stop]
+    left_central = left_halo[central_start:central_stop] & valid
+    right_central = right_halo[central_start:central_stop] & valid
+
+    left_target = left_halo & valid_halo
+    right_target = right_halo & valid_halo
+    if np.any(right_target):
+        distance_to_right = ndimage.distance_transform_edt(~right_target)
+        left_support = np.clip(
+            1.0
+            - distance_to_right[central_start:central_stop]
+            / float(reference_radius_px),
+            0.0,
+            1.0,
+        )
+        left_support_sum = float(np.sum(left_support[left_central]))
+    else:
+        left_support_sum = 0.0
+    if np.any(left_target):
+        distance_to_left = ndimage.distance_transform_edt(~left_target)
+        right_support = np.clip(
+            1.0
+            - distance_to_left[central_start:central_stop]
+            / float(reference_radius_px),
+            0.0,
+            1.0,
+        )
+        right_support_sum = float(np.sum(right_support[right_central]))
+    else:
+        right_support_sum = 0.0
+    return (
+        int(left_central.sum()),
+        int(right_central.sum()),
+        left_support_sum,
+        right_support_sum,
+    )
 
 
 def _pair_class(left: dict[str, Any], right: dict[str, Any]) -> str:
@@ -911,22 +1006,34 @@ def compute_boundary_ensemble_support(
         raise ValueError("boundary ensemble requires at least one run")
     ordered_runs = sorted(run_summaries, key=lambda row: str(row["run_id"]))
     label_paths = [Path(str(row["merged_labels_path"])) for row in ordered_runs]
+    run_radii_px = [_run_spatial_radius_px(row) for row in ordered_runs]
+    pair_reference_radii = {
+        (left, right): math.sqrt(run_radii_px[left] * run_radii_px[right])
+        for left in range(len(ordered_runs))
+        for right in range(left + 1, len(ordered_runs))
+    }
+    maximum_reference_radius = max(
+        pair_reference_radii.values(),
+        default=max(run_radii_px),
+    )
+    halo_rows = int(math.ceil(maximum_reference_radius)) + 1
+
     support_dir = out_dir / "boundary_support"
     support_dir.mkdir(parents=True, exist_ok=True)
     support_path = support_dir / f"{_safe_name(group_id)}_boundary_support.tif"
     summary_path = support_dir / f"{_safe_name(group_id)}_boundary_support_summary.json"
 
-    pair_accumulators: dict[tuple[int, int], dict[str, int]] = {
-        (left, right): {
+    pair_accumulators: dict[tuple[int, int], dict[str, float | int]] = {
+        pair: {
+            "reference_radius_px": reference_radius,
             "left_count": 0,
             "right_count": 0,
-            "left_matched": 0,
-            "right_matched": 0,
+            "left_support_sum": 0.0,
+            "right_support_sum": 0.0,
             "intersection": 0,
             "union": 0,
         }
-        for left in range(len(ordered_runs))
-        for right in range(left + 1, len(ordered_runs))
+        for pair, reference_radius in pair_reference_radii.items()
     }
 
     with ExitStack() as stack:
@@ -938,7 +1045,10 @@ def compute_boundary_ensemble_support(
         width, height = reference.width, reference.height
         if (mask_dataset.width, mask_dataset.height) != (width, height):
             raise ValueError("boundary support mask and labels have different grids")
-        if any((dataset.width, dataset.height) != (width, height) for dataset in label_datasets):
+        if any(
+            (dataset.width, dataset.height) != (width, height)
+            for dataset in label_datasets
+        ):
             raise ValueError("boundary support label rasters have different grids")
         profile = reference.profile.copy()
         profile.update(
@@ -955,8 +1065,11 @@ def compute_boundary_ensemble_support(
         with rasterio.open(support_path, "w", **profile) as support_dataset:
             for row_off in range(0, height, block_rows):
                 row_count = min(block_rows, height - row_off)
-                read_start = max(0, row_off - 1)
-                read_stop = min(height, row_off + row_count + 2)
+                read_start = max(0, row_off - halo_rows)
+                read_stop = min(
+                    height,
+                    row_off + row_count + halo_rows + 1,
+                )
                 read_window = Window(0, read_start, width, read_stop - read_start)
                 valid_halo = mask_dataset.read(1, window=read_window) > 0
                 boundary_halos = [
@@ -965,19 +1078,11 @@ def compute_boundary_ensemble_support(
                     )
                     for dataset in label_datasets
                 ]
-                dilated_halos = [
-                    _dilate_boundary_one_pixel(boundary)
-                    for boundary in boundary_halos
-                ]
                 central_start = row_off - read_start
                 central_stop = central_start + row_count
                 boundaries = [
                     boundary[central_start:central_stop]
                     for boundary in boundary_halos
-                ]
-                dilated = [
-                    boundary[central_start:central_stop]
-                    for boundary in dilated_halos
                 ]
                 valid = valid_halo[central_start:central_stop]
                 support_count = np.sum(
@@ -990,17 +1095,14 @@ def compute_boundary_ensemble_support(
                     1,
                     window=Window(0, row_off, width, row_count),
                 )
+                central_boundaries = [
+                    boundary & valid for boundary in boundaries
+                ]
                 for (left, right), accumulator in pair_accumulators.items():
-                    left_boundary = boundaries[left] & valid
-                    right_boundary = boundaries[right] & valid
+                    left_boundary = central_boundaries[left]
+                    right_boundary = central_boundaries[right]
                     accumulator["left_count"] += int(left_boundary.sum())
                     accumulator["right_count"] += int(right_boundary.sum())
-                    accumulator["left_matched"] += int(
-                        (left_boundary & dilated[right] & valid).sum()
-                    )
-                    accumulator["right_matched"] += int(
-                        (right_boundary & dilated[left] & valid).sum()
-                    )
                     accumulator["intersection"] += int(
                         (left_boundary & right_boundary).sum()
                     )
@@ -1008,21 +1110,67 @@ def compute_boundary_ensemble_support(
                         (left_boundary | right_boundary).sum()
                     )
 
+                # One distance transform per target run and block is sufficient
+                # for every pair involving that run. This keeps the new metric
+                # linear in run count rather than recomputing two transforms
+                # for every pair.
+                for target_index, target_boundary in enumerate(boundary_halos):
+                    target = target_boundary & valid_halo
+                    distance_to_target = (
+                        ndimage.distance_transform_edt(~target)
+                        if np.any(target)
+                        else None
+                    )
+                    for source_index, source_boundary in enumerate(
+                        central_boundaries
+                    ):
+                        if source_index == target_index:
+                            continue
+                        left, right = sorted((source_index, target_index))
+                        accumulator = pair_accumulators[(left, right)]
+                        if distance_to_target is None:
+                            support_sum = 0.0
+                        else:
+                            radius = float(
+                                accumulator["reference_radius_px"]
+                            )
+                            scores = np.clip(
+                                1.0
+                                - distance_to_target[
+                                    central_start:central_stop
+                                ]
+                                / radius,
+                                0.0,
+                                1.0,
+                            )
+                            support_sum = float(
+                                np.sum(scores[source_boundary])
+                            )
+                        if source_index == left:
+                            accumulator["left_support_sum"] += support_sum
+                        else:
+                            accumulator["right_support_sum"] += support_sum
+
     pair_rows: list[dict[str, Any]] = []
     agreement_by_run: dict[str, list[float]] = {
         str(row["run_id"]): [] for row in ordered_runs
     }
     for (left, right), accumulator in pair_accumulators.items():
-        denominator = accumulator["left_count"] + accumulator["right_count"]
-        tolerant = (
-            (accumulator["left_matched"] + accumulator["right_matched"])
+        denominator = int(accumulator["left_count"]) + int(
+            accumulator["right_count"]
+        )
+        scale_relative = (
+            (
+                float(accumulator["left_support_sum"])
+                + float(accumulator["right_support_sum"])
+            )
             / denominator
             if denominator
             else 1.0
         )
         exact = (
-            accumulator["intersection"] / accumulator["union"]
-            if accumulator["union"]
+            int(accumulator["intersection"]) / int(accumulator["union"])
+            if int(accumulator["union"])
             else 1.0
         )
         left_run = ordered_runs[left]
@@ -1033,12 +1181,16 @@ def compute_boundary_ensemble_support(
                 "left_run_id": left_run["run_id"],
                 "right_run_id": right_run["run_id"],
                 "pair_class": pair_class,
-                "tolerant_boundary_f1": tolerant,
+                "boundary_reference_radius_px": float(
+                    accumulator["reference_radius_px"]
+                ),
+                "scale_relative_boundary_support": scale_relative,
+                "tolerant_boundary_f1": scale_relative,
                 "exact_boundary_jaccard": exact,
             }
         )
-        agreement_by_run[str(left_run["run_id"])].append(tolerant)
-        agreement_by_run[str(right_run["run_id"])].append(tolerant)
+        agreement_by_run[str(left_run["run_id"])].append(scale_relative)
+        agreement_by_run[str(right_run["run_id"])].append(scale_relative)
 
     medoid_run_id = min(
         agreement_by_run,
@@ -1048,21 +1200,26 @@ def compute_boundary_ensemble_support(
         ),
     )
     seed_scores = [
-        float(row["tolerant_boundary_f1"])
+        float(row["scale_relative_boundary_support"])
         for row in pair_rows
         if row["pair_class"] == "seed_realization"
     ]
     ranger_scores = [
-        float(row["tolerant_boundary_f1"])
+        float(row["scale_relative_boundary_support"])
         for row in pair_rows
         if row["pair_class"] == "ranger"
     ]
     radius_scores = [
-        float(row["tolerant_boundary_f1"])
+        float(row["scale_relative_boundary_support"])
         for row in pair_rows
         if row["pair_class"] == "radius"
     ]
-    all_scores = [float(row["tolerant_boundary_f1"]) for row in pair_rows]
+    all_scores = [
+        float(row["scale_relative_boundary_support"]) for row in pair_rows
+    ]
+    seed_robust = robust_lower_support(seed_scores)
+    ranger_robust = robust_lower_support(ranger_scores)
+    radius_robust = robust_lower_support(radius_scores)
     summary = {
         "candidate_scale_group_id": group_id,
         "run_count": len(ordered_runs),
@@ -1080,17 +1237,36 @@ def compute_boundary_ensemble_support(
             }
         ),
         "boundary_support_raster": str(support_path),
+        "boundary_agreement_metric": "scale_relative_linear_distance_support",
         "pairwise_boundary_agreements": pair_rows,
         "ensemble_boundary_agreement": _mean(all_scores) if all_scores else 1.0,
         "seed_realization_boundary_agreement": (
             _mean(seed_scores) if seed_scores else 1.0
         ),
-        "ranger_boundary_agreement": _mean(ranger_scores) if ranger_scores else 1.0,
+        "ranger_boundary_agreement": (
+            _mean(ranger_scores) if ranger_scores else 1.0
+        ),
         "local_radius_boundary_agreement": (
             _mean(radius_scores) if radius_scores else 1.0
         ),
+        "seed_realization_boundary_support_count": seed_robust["count"],
+        "seed_realization_boundary_support_median": seed_robust["median"],
+        "seed_realization_boundary_support_mad": seed_robust["mad"],
+        "seed_realization_boundary_support_robust": seed_robust["support"],
+        "ranger_boundary_support_count": ranger_robust["count"],
+        "ranger_boundary_support_median": ranger_robust["median"],
+        "ranger_boundary_support_mad": ranger_robust["mad"],
+        "ranger_boundary_support_robust": ranger_robust["support"],
+        "local_radius_boundary_support_count": radius_robust["count"],
+        "local_radius_boundary_support_median": radius_robust["median"],
+        "local_radius_boundary_support_mad": radius_robust["mad"],
+        "local_radius_boundary_support_robust": radius_robust["support"],
         "boundary_medoid_run_id": medoid_run_id,
-        "boundary_medoid_mean_agreement": _mean(agreement_by_run[medoid_run_id]),
+        "boundary_medoid_mean_agreement": (
+            _mean(agreement_by_run[medoid_run_id])
+            if agreement_by_run[medoid_run_id]
+            else 1.0
+        ),
         "boundary_support_summary_json": str(summary_path),
     }
     _write_json(summary_path, summary)
@@ -1102,10 +1278,15 @@ def _boundary_agreement_between_labels(
     right_path: Path,
     valid_mask_path: Path,
     *,
+    reference_radius_px: float,
     block_rows: int = 256,
 ) -> float:
-    left_count = right_count = left_matched = right_matched = 0
-    with rasterio.open(left_path) as left, rasterio.open(right_path) as right, rasterio.open(valid_mask_path) as mask:
+    left_count = right_count = 0
+    left_support_sum = right_support_sum = 0.0
+    halo_rows = int(math.ceil(float(reference_radius_px))) + 1
+    with rasterio.open(left_path) as left, rasterio.open(
+        right_path
+    ) as right, rasterio.open(valid_mask_path) as mask:
         if (left.width, left.height) != (right.width, right.height) or (
             mask.width,
             mask.height,
@@ -1113,29 +1294,44 @@ def _boundary_agreement_between_labels(
             raise ValueError("adjacent-scale boundary rasters have different grids")
         for row_off in range(0, left.height, block_rows):
             row_count = min(block_rows, left.height - row_off)
-            read_start = max(0, row_off - 1)
-            read_stop = min(left.height, row_off + row_count + 2)
+            read_start = max(0, row_off - halo_rows)
+            read_stop = min(
+                left.height,
+                row_off + row_count + halo_rows + 1,
+            )
             window = Window(0, read_start, left.width, read_stop - read_start)
             valid_halo = mask.read(1, window=window) > 0
-            left_halo = _boundary_from_labels(left.read(1, window=window), valid_halo)
-            right_halo = _boundary_from_labels(right.read(1, window=window), valid_halo)
-            left_dilated = _dilate_boundary_one_pixel(left_halo)
-            right_dilated = _dilate_boundary_one_pixel(right_halo)
+            left_halo = _boundary_from_labels(
+                left.read(1, window=window), valid_halo
+            )
+            right_halo = _boundary_from_labels(
+                right.read(1, window=window), valid_halo
+            )
             central_start = row_off - read_start
             central_stop = central_start + row_count
-            valid = valid_halo[central_start:central_stop]
-            left_boundary = left_halo[central_start:central_stop] & valid
-            right_boundary = right_halo[central_start:central_stop] & valid
-            left_count += int(left_boundary.sum())
-            right_count += int(right_boundary.sum())
-            left_matched += int(
-                (left_boundary & right_dilated[central_start:central_stop] & valid).sum()
+            (
+                block_left_count,
+                block_right_count,
+                block_left_support,
+                block_right_support,
+            ) = _scale_relative_boundary_sums(
+                left_halo,
+                right_halo,
+                valid_halo,
+                central_start,
+                central_stop,
+                reference_radius_px,
             )
-            right_matched += int(
-                (right_boundary & left_dilated[central_start:central_stop] & valid).sum()
-            )
+            left_count += block_left_count
+            right_count += block_right_count
+            left_support_sum += block_left_support
+            right_support_sum += block_right_support
     denominator = left_count + right_count
-    return (left_matched + right_matched) / denominator if denominator else 1.0
+    return (
+        (left_support_sum + right_support_sum) / denominator
+        if denominator
+        else 1.0
+    )
 
 
 def finalize_boundary_ensemble_scores(
@@ -1161,34 +1357,103 @@ def finalize_boundary_ensemble_scores(
     for left, right in zip(ordered, ordered[1:]):
         left_run = runs_by_id[str(left["boundary_medoid_run_id"])]
         right_run = runs_by_id[str(right["boundary_medoid_run_id"])]
+        reference_radius_px = math.sqrt(
+            _run_spatial_radius_px(left_run)
+            * _run_spatial_radius_px(right_run)
+        )
         agreement = _boundary_agreement_between_labels(
             Path(str(left_run["merged_labels_path"])),
             Path(str(right_run["merged_labels_path"])),
             valid_mask_path,
+            reference_radius_px=reference_radius_px,
         )
         neighbour_scores[str(left["candidate_scale_group_id"])].append(agreement)
         neighbour_scores[str(right["candidate_scale_group_id"])].append(agreement)
+
     for summary in group_summaries:
         group_id = str(summary["candidate_scale_group_id"])
-        summary["radius_boundary_agreement"] = (
-            _mean(neighbour_scores[group_id])
-            if neighbour_scores[group_id]
-            else float(summary.get("local_radius_boundary_agreement", 1.0))
-        )
+        radius_scores = neighbour_scores[group_id]
+        if radius_scores:
+            radius_robust = robust_lower_support(radius_scores)
+            radius_agreement = _mean(radius_scores)
+        else:
+            radius_robust = {
+                "count": summary.get("local_radius_boundary_support_count", 0),
+                "median": summary.get("local_radius_boundary_support_median"),
+                "mad": summary.get("local_radius_boundary_support_mad"),
+                "uncertainty": None,
+                "support": summary.get(
+                    "local_radius_boundary_support_robust"
+                ),
+            }
+            radius_agreement = float(
+                summary.get("local_radius_boundary_agreement", 1.0)
+            )
+        summary["radius_boundary_agreement"] = radius_agreement
+        summary["radius_boundary_support_count"] = radius_robust["count"]
+        summary["radius_boundary_support_median"] = radius_robust["median"]
+        summary["radius_boundary_support_mad"] = radius_robust["mad"]
+        summary["radius_boundary_support_robust"] = radius_robust["support"]
+
         summary["distribution_medoid_run_id"] = summary.get("medoid_run_id")
         summary["medoid_run_id"] = summary["boundary_medoid_run_id"]
-        summary["legacy_response_stability_score_raw"] = _legacy_stability_score_raw(
-            summary
+        summary["legacy_response_stability_score_raw"] = (
+            _legacy_stability_score_raw(summary)
         )
-        summary["boundary_support_score_raw"] = (
+        summary["legacy_candidate_outcome"] = _legacy_candidate_outcome(summary)
+        summary["legacy_boundary_support_score_raw"] = (
             max(0.0, float(summary["seed_realization_boundary_agreement"]))
             * max(0.0, float(summary["ranger_boundary_agreement"]))
             * max(0.0, float(summary["radius_boundary_agreement"]))
         ) ** (1.0 / 3.0)
-        summary["stability_score_raw"] = stability_score_raw(summary)
+
+        component_fields = (
+            "seed_realization_boundary_support_robust",
+            "ranger_boundary_support_robust",
+            "radius_boundary_support_robust",
+            "scale_match_support_raw",
+        )
+        missing = [
+            field for field in component_fields if summary.get(field) is None
+        ]
+        summary["ensemble_support_components"] = {
+            field: summary.get(field) for field in component_fields
+        }
+        summary["ensemble_support_missing_components"] = missing
+        summary["ensemble_support_evaluable"] = not missing
+        summary["stability_score_method"] = ENSEMBLE_SUPPORT_METHOD
+
+        boundary_components = [
+            summary.get("seed_realization_boundary_support_robust"),
+            summary.get("ranger_boundary_support_robust"),
+            summary.get("radius_boundary_support_robust"),
+        ]
+        if all(value is not None for value in boundary_components):
+            summary["boundary_support_score_raw"] = float(
+                np.prod(np.asarray(boundary_components, dtype=float))
+                ** (1.0 / len(boundary_components))
+            )
+        else:
+            summary["boundary_support_score_raw"] = None
+
+        if missing:
+            summary["ensemble_support_raw_v2"] = None
+            summary["stability_score_raw"] = 0.0
+        else:
+            components = np.asarray(
+                [summary[field] for field in component_fields],
+                dtype=float,
+            )
+            summary["ensemble_support_raw_v2"] = float(
+                np.prod(components) ** (1.0 / len(components))
+            )
+            summary["stability_score_raw"] = summary[
+                "ensemble_support_raw_v2"
+            ]
         summary["stability_score"] = stability_score(summary)
         summary["candidate_outcome"] = classify_candidate_outcome(summary)
         summary["decision_reasons"] = decision_reasons(summary)
+
         for run in run_summaries:
             if str(run["candidate_scale_group_id"]) == group_id:
                 run["ensemble_representative"] = (
@@ -1204,19 +1469,30 @@ def finalize_boundary_ensemble_scores(
                     "seed_realization_count",
                     "ranger_position_count",
                     "boundary_support_raster",
+                    "boundary_agreement_metric",
                     "pairwise_boundary_agreements",
                     "ensemble_boundary_agreement",
                     "seed_realization_boundary_agreement",
+                    "seed_realization_boundary_support_robust",
                     "ranger_boundary_agreement",
+                    "ranger_boundary_support_robust",
                     "local_radius_boundary_agreement",
                     "radius_boundary_agreement",
+                    "radius_boundary_support_robust",
+                    "scale_match_support_raw",
                     "boundary_medoid_run_id",
                     "boundary_medoid_mean_agreement",
                     "boundary_support_score_raw",
+                    "ensemble_support_components",
+                    "ensemble_support_missing_components",
+                    "ensemble_support_evaluable",
+                    "ensemble_support_raw_v2",
+                    "stability_score_method",
                     "stability_score_raw",
                 )
             },
         )
+
 
 def compute_candidate_group_response_summary(
     group_id: str,
@@ -1235,6 +1511,9 @@ def compute_candidate_group_response_summary(
             "histogram": cfg.medoid_histogram_weight,
             "spatial": cfg.medoid_spatial_weight,
         },
+    )
+    scale_match = robust_lower_support(
+        [float(item["scale_match_support"]) for item in run_summaries]
     )
     dominant_switches = max(0, len(set(dominant_size_class(item) for item in run_summaries)) - 1)
     regime_switches = max(0, len(set(dominant_tail_regime(item) for item in run_summaries)) - 1)
@@ -1257,6 +1536,11 @@ def compute_candidate_group_response_summary(
     summary = {
         "candidate_scale_group_id": group_id,
         "run_count": len(run_summaries),
+        "scale_match_support_count": scale_match["count"],
+        "scale_match_support_median": scale_match["median"],
+        "scale_match_support_mad": scale_match["mad"],
+        "scale_match_support_uncertainty": scale_match["uncertainty"],
+        "scale_match_support_raw": scale_match["support"],
         **diagnostics,
         **{key: value for key, value in distances.items() if key != "pairwise_distances"},
         "regime_switch_count": regime_switches,
@@ -1272,6 +1556,11 @@ def compute_candidate_group_response_summary(
         "compatible_combination_count": len(compatible),
         "incompatible_combination_count": max(0, len(run_summaries) - len(compatible)),
     }
+    summary["stability_score_method"] = "scale_match_provisional"
+    summary["legacy_response_stability_score_raw"] = (
+        _legacy_stability_score_raw(summary)
+    )
+    summary["legacy_candidate_outcome"] = _legacy_candidate_outcome(summary)
     summary["stability_score_raw"] = stability_score_raw(summary)
     summary["stability_score"] = stability_score(summary)
     summary["candidate_outcome"] = classify_candidate_outcome(summary)
@@ -1280,7 +1569,11 @@ def compute_candidate_group_response_summary(
 
 
 def analyze_full_candidate_space(group_summaries: list[dict[str, Any]], run_summaries: list[dict[str, Any]]) -> dict[str, Any]:
-    stable = [g for g in group_summaries if g.get("candidate_outcome") in ("stable_representative_candidate", "stable_candidate_mode", "stable_with_warnings")]
+    stable = [
+        group
+        for group in group_summaries
+        if group.get("candidate_outcome") == "ensemble_support_evaluable"
+    ]
     radii = [float(r["source_candidate_radius_m"]) for r in run_summaries if _finite_positive(r.get("source_candidate_radius_m"))]
     scores = [float(g.get("stability_score", 0.0)) for g in group_summaries]
     centers = [float(g.get("response_center_q", 0.0)) for g in group_summaries]
@@ -2800,8 +3093,16 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
             item["scale_coordinate_name"] = None
             item["scale_coordinate_value"] = None
             item["scale_ladder_rank"] = None
-    accepted = [item for item in ranked if item.get("candidate_outcome") in ("stable_representative_candidate", "stable_candidate_mode", "stable_with_warnings")]
-    removed = [item for item in ranked if item.get("candidate_outcome") not in ("stable_representative_candidate", "stable_candidate_mode", "stable_with_warnings")]
+    accepted = [
+        item
+        for item in ranked
+        if item.get("candidate_outcome") == "ensemble_support_evaluable"
+    ]
+    removed = [
+        item
+        for item in ranked
+        if item.get("candidate_outcome") != "ensemble_support_evaluable"
+    ]
 
     _write_outputs(out_dir, run_summaries, group_summaries, matrix_cell_records, matrix_summaries, space_summary, ranked, accepted, removed, failed_runs)
     report = _top_report(
@@ -2859,50 +3160,84 @@ def _legacy_stability_score_raw(summary: dict[str, Any]) -> float:
 
 
 def stability_score_raw(summary: dict[str, Any]) -> float:
+    if "ensemble_support_raw_v2" in summary:
+        value = summary.get("ensemble_support_raw_v2")
+        return float(value) if value is not None else 0.0
+    if summary.get("scale_match_support_raw") is not None:
+        return max(
+            0.0,
+            min(1.0, float(summary["scale_match_support_raw"])),
+        )
+
+    # Compatibility for completed historical Step-9a artifacts only. New
+    # response surfaces always contain scale_match_support_raw and never use
+    # these fixed legacy coefficients for ranking.
     legacy = _legacy_stability_score_raw(summary)
-    if "boundary_support_score_raw" not in summary:
+    boundary = summary.get("boundary_support_score_raw")
+    if boundary is None:
         return legacy
-    # Boundary persistence is the scientific support term. The established
-    # response score remains a bounded plausibility multiplier, so a stable
-    # tessellation with implausible scale-response statistics cannot rank high.
-    plausibility = max(0.0, min(1.0, legacy))
-    return plausibility * max(
-        0.0, min(1.0, float(summary["boundary_support_score_raw"]))
+    return max(0.0, min(1.0, legacy)) * max(
+        0.0, min(1.0, float(boundary))
     )
 
 
 def stability_score(summary: dict[str, Any]) -> float:
-    raw_score = float(summary["stability_score_raw"]) if "stability_score_raw" in summary else stability_score_raw(summary)
+    raw_score = (
+        float(summary["stability_score_raw"])
+        if "stability_score_raw" in summary
+        else stability_score_raw(summary)
+    )
     return max(0.0, min(1.0, raw_score))
 
 
-def classify_candidate_outcome(summary: dict[str, Any]) -> str:
+def _legacy_candidate_outcome(summary: dict[str, Any]) -> str:
     if summary.get("scale_jump_flag"):
         return "scale_jump_detected"
     if summary.get("spatial_scale_jump_flag"):
         return "unstable_spatial_response"
-    if summary.get("distribution_flutter_flag") or summary.get("edge_loaded_flag"):
+    if summary.get("distribution_flutter_flag") or summary.get(
+        "edge_loaded_flag"
+    ):
         return "unstable_distribution_response"
-    if summary.get("centered") and float(summary.get("stability_score", 0.0)) >= 0.75:
+    if summary.get("centered") and float(
+        summary.get("stability_score", 0.0)
+    ) >= 0.75:
         return "stable_representative_candidate"
     if summary.get("centered"):
         return "stable_with_warnings"
     return "unstable_distribution_response"
 
 
+def classify_candidate_outcome(summary: dict[str, Any]) -> str:
+    if "ensemble_support_evaluable" in summary:
+        return (
+            "ensemble_support_evaluable"
+            if summary["ensemble_support_evaluable"]
+            else "ensemble_support_not_evaluable"
+        )
+    return _legacy_candidate_outcome(summary)
+
+
 def decision_reasons(summary: dict[str, Any]) -> list[str]:
-    reasons = [
-        f"central_area_share_mean={summary.get('central_area_share_mean', 0.0):.6f}",
-        f"response_spread_q={summary.get('response_spread_q', 0.0):.6f}",
-        f"distribution_flutter_score={summary.get('distribution_flutter_score', 0.0):.6f}",
-        f"matrix_distribution_distance={summary.get('matrix_distribution_distance', 0.0):.6f}",
-        f"seed_realization_boundary_agreement={summary.get('seed_realization_boundary_agreement', 0.0):.6f}",
-        f"ranger_boundary_agreement={summary.get('ranger_boundary_agreement', 0.0):.6f}",
-        f"radius_boundary_agreement={summary.get('radius_boundary_agreement', 0.0):.6f}",
-        f"boundary_support_score_raw={summary.get('boundary_support_score_raw', 0.0):.6f}",
-        f"scale_jump_flag={summary.get('scale_jump_flag')}",
+    return [
+        f"stability_score_method={summary.get('stability_score_method')}",
+        f"scale_match_support_raw={summary.get('scale_match_support_raw')}",
+        "seed_realization_boundary_support_robust="
+        f"{summary.get('seed_realization_boundary_support_robust')}",
+        "ranger_boundary_support_robust="
+        f"{summary.get('ranger_boundary_support_robust')}",
+        "radius_boundary_support_robust="
+        f"{summary.get('radius_boundary_support_robust')}",
+        f"ensemble_support_raw_v2={summary.get('ensemble_support_raw_v2')}",
+        "ensemble_support_missing_components="
+        f"{summary.get('ensemble_support_missing_components')}",
+        f"legacy_edge_loaded_flag={summary.get('edge_loaded_flag')}",
+        f"legacy_scale_jump_flag={summary.get('scale_jump_flag')}",
+        "legacy_distribution_flutter_flag="
+        f"{summary.get('distribution_flutter_flag')}",
+        "legacy_spatial_scale_jump_flag="
+        f"{summary.get('spatial_scale_jump_flag')}",
     ]
-    return reasons
 
 
 def stable_candidate_modes(stable_summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
