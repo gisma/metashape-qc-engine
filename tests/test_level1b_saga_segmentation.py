@@ -5,7 +5,7 @@ import pytest
 import rasterio
 from rasterio.transform import from_origin
 
-from metashape_qc_engine import level1b_saga_segmentation as saga
+from metashape_qc_engine.level1b import saga_segmentation as saga
 
 
 def write_inputs(tmp_path: Path) -> tuple[Path, Path, np.ndarray, np.ndarray]:

@@ -5,7 +5,7 @@
 - **Level-1A** prepares, runs, resumes, evaluates, and reviews Agisoft Metashape orthomosaic product candidates.
 - **Level-1B** starts from one finished RGB orthomosaic and produces a selected segmentation product plus segmentation-stability and segment-statistics evidence.
 
-The repository layout is historical and does not cleanly mirror those logical names. Level-1A code is split across `python/`, `scripts/`, and `metashape_qc_engine/cli.py`. Level-1B code is mostly in `metashape_qc_engine/level1b_*.py`, plus its shell wrapper and exactextractr R script.
+The Python implementation is separated into `metashape_qc_engine/level1a/` and `metashape_qc_engine/level1b/`. Shared CLI wiring remains in `metashape_qc_engine/cli.py`; platform launchers remain in `scripts/` or next to the Level-1B package, and exactextractr remains in `R/`.
 
 ## Setup
 

@@ -16,17 +16,17 @@ import rasterio
 from rasterio.windows import Window
 from scipy import ndimage
 
-from metashape_qc_engine.level1b_one_scale_segmentation import (
+from metashape_qc_engine.level1b.one_scale_segmentation import (
     Level1BOneScaleSegmentationConfig,
     OUTPUT_ARTIFACT_FILENAMES,
     prepare_canonical_masked_segmentation_stack,
     run_one_scale_segmentation_smoke,
 )
-from metashape_qc_engine.level1b_perturbations import (
+from metashape_qc_engine.level1b.perturbations import (
     Level1BPerturbationConfig,
     build_perturbation_candidates,
 )
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 SIZE_CLASSES = ("micro", "small", "in_scale", "large", "oversize")

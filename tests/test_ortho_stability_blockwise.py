@@ -10,8 +10,8 @@ from osgeo import gdal, osr
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-ANALYZER = REPO_ROOT / "python" / "ortho_stability_analyzer.py"
-EVALUATOR = REPO_ROOT / "python" / "evaluate_ortho_stability.py"
+ANALYZER = REPO_ROOT / "metashape_qc_engine" / "level1a" / "ortho_stability_analyzer.py"
+EVALUATOR = REPO_ROOT / "metashape_qc_engine" / "level1a" / "evaluate_ortho_stability.py"
 MANIFEST_COLUMNS = [
     "experiment_id",
     "variant_id",

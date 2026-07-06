@@ -7,7 +7,7 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from metashape_qc_engine.level1b_hoover_compare import (
+from metashape_qc_engine.level1b.hoover_compare import (
     HOOVER_APP_NAME,
     Level1BHooverCompareConfig,
     build_hoover_compare_command,
@@ -54,7 +54,7 @@ def test_02_discovery_checks_otb_bin_dir_when_provided(tmp_path: Path) -> None:
 
 
 def test_03_discovery_falls_back_to_shutil_which(monkeypatch) -> None:
-    monkeypatch.setattr("metashape_qc_engine.level1b_hoover_compare.shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr("metashape_qc_engine.level1b.hoover_compare.shutil.which", lambda name: f"/usr/bin/{name}")
 
     assert discover_hoover_compare_app() == f"/usr/bin/{HOOVER_APP_NAME}"
 
@@ -125,8 +125,8 @@ def test_11_dry_run_does_not_call_subprocess(tmp_path: Path, monkeypatch) -> Non
     def fail_run(*_args, **_kwargs):
         raise AssertionError("subprocess should not be called")
 
-    monkeypatch.setattr("metashape_qc_engine.level1b_hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
-    monkeypatch.setattr("metashape_qc_engine.level1b_hoover_compare.subprocess.run", fail_run)
+    monkeypatch.setattr("metashape_qc_engine.level1b.hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
+    monkeypatch.setattr("metashape_qc_engine.level1b.hoover_compare.subprocess.run", fail_run)
 
     report = run_hoover_compare(make_config(tmp_path, dry_run=True))
 
@@ -140,8 +140,8 @@ def test_12_non_dry_run_calls_subprocess_run(tmp_path: Path, monkeypatch) -> Non
         calls.append((command, capture_output, text))
         return subprocess.CompletedProcess(command, 0, "Correct detection score: 0.5\n", "")
 
-    monkeypatch.setattr("metashape_qc_engine.level1b_hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
-    monkeypatch.setattr("metashape_qc_engine.level1b_hoover_compare.subprocess.run", fake_run)
+    monkeypatch.setattr("metashape_qc_engine.level1b.hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
+    monkeypatch.setattr("metashape_qc_engine.level1b.hoover_compare.subprocess.run", fake_run)
 
     report = run_hoover_compare(make_config(tmp_path, dry_run=False))
 
@@ -151,9 +151,9 @@ def test_12_non_dry_run_calls_subprocess_run(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_13_stdout_is_written_to_raw_output_file(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("metashape_qc_engine.level1b_hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
+    monkeypatch.setattr("metashape_qc_engine.level1b.hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
     monkeypatch.setattr(
-        "metashape_qc_engine.level1b_hoover_compare.subprocess.run",
+        "metashape_qc_engine.level1b.hoover_compare.subprocess.run",
         lambda command, capture_output, text: subprocess.CompletedProcess(command, 0, "RC: 0.7\n", ""),
     )
 
@@ -163,9 +163,9 @@ def test_13_stdout_is_written_to_raw_output_file(tmp_path: Path, monkeypatch) ->
 
 
 def test_14_report_json_is_written(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("metashape_qc_engine.level1b_hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
+    monkeypatch.setattr("metashape_qc_engine.level1b.hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
     monkeypatch.setattr(
-        "metashape_qc_engine.level1b_hoover_compare.subprocess.run",
+        "metashape_qc_engine.level1b.hoover_compare.subprocess.run",
         lambda command, capture_output, text: subprocess.CompletedProcess(command, 0, "RF = 0.2\n", ""),
     )
 
@@ -192,9 +192,9 @@ def test_16_parser_returns_raw_only_status_when_no_safe_numeric_schema_exists() 
 
 
 def test_17_report_contains_raster_only_no_vector_no_final_output_flags(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("metashape_qc_engine.level1b_hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
+    monkeypatch.setattr("metashape_qc_engine.level1b.hoover_compare.discover_hoover_compare_app", lambda _bin=None: "/app")
     monkeypatch.setattr(
-        "metashape_qc_engine.level1b_hoover_compare.subprocess.run",
+        "metashape_qc_engine.level1b.hoover_compare.subprocess.run",
         lambda command, capture_output, text: subprocess.CompletedProcess(command, 0, "", ""),
     )
 
@@ -209,7 +209,7 @@ def test_17_report_contains_raster_only_no_vector_no_final_output_flags(tmp_path
 
 
 def test_18_no_forbidden_concepts_are_introduced() -> None:
-    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_hoover_compare.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "hoover_compare.py").read_text(encoding="utf-8")
     tests = (REPO_ROOT / "tests" / "test_level1b_hoover_compare.py").read_text(encoding="utf-8")
     combined = source + "\n" + tests
     blocked = [
@@ -228,7 +228,7 @@ def test_18_no_forbidden_concepts_are_introduced() -> None:
 
 
 def test_20_no_multi_run_orchestration_is_implemented() -> None:
-    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_hoover_compare.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "hoover_compare.py").read_text(encoding="utf-8")
 
     assert "candidate_stability" not in source
     assert "multi_run" not in source

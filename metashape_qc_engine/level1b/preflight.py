@@ -15,9 +15,9 @@ from pathlib import Path
 import shutil
 from typing import Any, Iterable
 
-from metashape_qc_engine.level1b_otb_env import discover_otb_cli
-from metashape_qc_engine.level1b_saga_segmentation import discover_saga_cmd
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.otb_env import discover_otb_cli
+from metashape_qc_engine.level1b.saga_segmentation import discover_saga_cmd
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 DEFAULT_REQUIRED_OTB_APPS = (

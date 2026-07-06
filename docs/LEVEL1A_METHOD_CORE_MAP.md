@@ -1,6 +1,6 @@
 # Level-1A Method Core Map
 
-Level-1A is the Metashape product-analysis and reproducibility workflow. The repository layout is historical: the method is implemented across `python/`, `scripts/`, and `metashape_qc_engine/cli.py`, rather than in files named `level1a_*`.
+Level-1A is the Metashape product-analysis and reproducibility workflow. The method code is contained in `metashape_qc_engine/level1a/`; platform launchers remain in `scripts/`, and shared CLI wiring remains in `metashape_qc_engine/cli.py`.
 
 ![Infographic Level1a workflow](figures/level1a.png)
 
@@ -10,11 +10,11 @@ This map separates methodological decisions from execution infrastructure. Opera
 
 | Layer | Current code | Responsibility |
 |---|---|---|
-| Preparation | `python/prepare_product_experiment.py` | Materialize one run config and parameter-variant table from an explicit preset |
-| Repeated builds | `python/reproducibility_runner.py` | Execute variant/replicate combinations and record attempts in `manifest.csv` |
-| Metashape processing | `python/metashape_workflow.py` | Execute configured Metashape build and export operations |
-| Stability analyzer | `python/ortho_stability_analyzer.py` | Align successful orthomosaics to a canonical grid and compute spatial stability evidence |
-| Evaluation | `python/evaluate_ortho_stability.py` | Rank distinct evidence dimensions and write the selected-product trace |
+| Preparation | `metashape_qc_engine/level1a/prepare_product_experiment.py` | Materialize one run config and parameter-variant table from an explicit preset |
+| Repeated builds | `metashape_qc_engine/level1a/reproducibility_runner.py` | Execute variant/replicate combinations and record attempts in `manifest.csv` |
+| Metashape processing | `metashape_qc_engine/level1a/metashape_workflow.py` | Execute configured Metashape build and export operations |
+| Stability analyzer | `metashape_qc_engine/level1a/ortho_stability_analyzer.py` | Align successful orthomosaics to a canonical grid and compute spatial stability evidence |
+| Evaluation | `metashape_qc_engine/level1a/evaluate_ortho_stability.py` | Rank distinct evidence dimensions and write the selected-product trace |
 | User wrapper | `metashape_qc_engine/cli.py`, `scripts/run_metashape_workflow.sh` | Parse commands, resolve Metashape, pass paths, and launch method code |
 
 The wrapper does not define the continuous-stability ranking. The evaluation module does.

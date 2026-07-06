@@ -4,7 +4,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 METASHAPE_DIR="${METASHAPE_DIR:-/home/creu/apps/metashape-pro}"
-VENDOR_DIR="$REPO_ROOT/python/vendor"
+VENDOR_DIR="$REPO_ROOT/metashape_qc_engine/level1a/vendor"
 
 mkdir -p "$VENDOR_DIR"
 

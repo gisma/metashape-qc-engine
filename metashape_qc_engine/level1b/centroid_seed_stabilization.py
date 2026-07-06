@@ -15,8 +15,8 @@ import rasterio
 from scipy import ndimage
 from scipy.spatial import cKDTree
 
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
-from metashape_qc_engine.level1b_saga_segmentation import (
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.saga_segmentation import (
     SAGA_NODATA,
     _write_saga_grid_header,
     build_saga_region_growing_command,

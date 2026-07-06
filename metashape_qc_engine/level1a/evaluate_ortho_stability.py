@@ -3,13 +3,13 @@
 """
 Evaluate a completed orthomosaic reproducibility experiment.
 
-Wrapper around python/ortho_stability_analyzer.py.
+Wrapper around metashape_qc_engine/level1a/ortho_stability_analyzer.py.
 
 Use:
-  python3 python/evaluate_ortho_stability.py <experiment_dir>
+  python3 -m metashape_qc_engine.level1a.evaluate_ortho_stability <experiment_dir>
 
 Reuse existing analyzer outputs:
-  python3 python/evaluate_ortho_stability.py <experiment_dir> --skip-analyzer
+  python3 -m metashape_qc_engine.level1a.evaluate_ortho_stability <experiment_dir> --skip-analyzer
 """
 
 from __future__ import annotations
@@ -406,8 +406,8 @@ def run_analyzer(
     block_size: int,
     overwrite: bool,
 ) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    analyzer = repo_root / "python" / "ortho_stability_analyzer.py"
+    repo_root = Path(__file__).resolve().parents[2]
+    analyzer = repo_root / "metashape_qc_engine" / "level1a" / "ortho_stability_analyzer.py"
     manifest = experiment_dir / "manifest.csv"
 
     if not manifest.is_file():

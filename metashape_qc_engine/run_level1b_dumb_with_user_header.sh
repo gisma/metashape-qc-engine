@@ -95,7 +95,7 @@ unset _LD_LIBRARY_PATH_ENTRIES _SANITIZED_LD_LIBRARY_PATH_ENTRIES _LD_LIBRARY_PA
 
 # The venv GDAL/PROJ runtime must discover its own data directories. The OTB
 # copies remain available through LEVEL1B_OTB_*_ORIG and are restored only for
-# otbcli_* subprocesses by level1b_otb_env.py.
+# otbcli_* subprocesses by level1b/otb_env.py.
 unset GDAL_DATA PROJ_LIB
 
 echo "PYTHONPATH sanitized for Python runner"
@@ -116,9 +116,9 @@ echo "Level-1b runner"
 echo "ORTHO=$ORTHO"
 echo "RUN_ROOT=$RUN_ROOT"
 echo "SHELL_LOG=$SHELL_LOG"
-printf 'COMMAND=python3 -m metashape_qc_engine.level1b_dumb_runner'
+printf 'COMMAND=python3 -m metashape_qc_engine.level1b.dumb_runner'
 printf ' %q' "${RUNNER_ARGS[@]}"
 printf '\n'
 python3 -c 'import osgeo; print(f"OSGEO_IMPORT_PATH={osgeo.__file__}")'
 
-python3 -m metashape_qc_engine.level1b_dumb_runner "${RUNNER_ARGS[@]}"
+python3 -m metashape_qc_engine.level1b.dumb_runner "${RUNNER_ARGS[@]}"

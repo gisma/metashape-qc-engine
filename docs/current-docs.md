@@ -25,7 +25,7 @@ These files are not explanatory documentation, but they are authoritative for th
 | `scripts/setup_level1b.sh` | Setup/check script for the Level-1B environment | active |
 | `config/level1b_default.yaml` | Current Level-1B default parameters | active |
 | `metashape_qc_engine/cli.py` | CLI entry point for Level-1A operations | active |
-| `metashape_qc_engine/level1b_dumb_runner.py` | Level-1B Python runner | active |
+| `metashape_qc_engine/level1b/dumb_runner.py` | Level-1B Python runner | active |
 | `metashape_qc_engine/run_level1b_dumb_with_user_header.sh` | Normal Level-1B wrapper with OTB/GDAL/PYTHONPATH environment setup | active |
 | `R/level1b_step10_exactextractr_segment_stats.R` | Level-1B Step-10 segment statistics with `exactextractr` | active |
 
@@ -33,8 +33,8 @@ These files are not explanatory documentation, but they are authoritative for th
 
 | Name | Meaning | Important files |
 |---|---|---|
-| Level-1A | Metashape/Product-Analysis/Reproducibility: create, replicate, evaluate, and review orthomosaic candidates | `docs/RUN_LEVEL1A.md`, `docs/LEVEL1A_METHOD_CORE_MAP.md`, `python/`, `scripts/`, `metashape_qc_engine/cli.py` |
-| Level-1B | Candidate-Scale-Stability / Segmentation Evidence: turn one finished orthomosaic into a segmentation decision, selected segments, and quality evidence | `docs/RUN_LEVEL1B.md`, `docs/LEVEL1B_METHOD_CORE_MAP.md`, `metashape_qc_engine/level1b_*.py`, `R/level1b_step10_exactextractr_segment_stats.R` |
+| Level-1A | Metashape/Product-Analysis/Reproducibility: create, replicate, evaluate, and review orthomosaic candidates | `docs/RUN_LEVEL1A.md`, `docs/LEVEL1A_METHOD_CORE_MAP.md`, `metashape_qc_engine/level1a/`, `scripts/`, `metashape_qc_engine/cli.py` |
+| Level-1B | Candidate-Scale-Stability / Segmentation Evidence: turn one finished orthomosaic into a segmentation decision, selected segments, and quality evidence | `docs/RUN_LEVEL1B.md`, `docs/LEVEL1B_METHOD_CORE_MAP.md`, `metashape_qc_engine/level1b/`, `R/level1b_step10_exactextractr_segment_stats.R` |
 
-The repository layout is historical. The logical names Level-1A and Level-1B do not mean that the code is already physically separated into `level1a/` and `level1b/`.
+The Python method code is physically separated into the `metashape_qc_engine.level1a` and `metashape_qc_engine.level1b` subpackages.
 

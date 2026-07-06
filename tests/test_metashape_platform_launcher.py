@@ -7,7 +7,7 @@ import metashape_qc_engine.cli as cli
 
 
 def _load_reproducibility_runner():
-    path = Path(__file__).resolve().parents[1] / "python" / "reproducibility_runner.py"
+    path = Path(__file__).resolve().parents[1] / "metashape_qc_engine" / "level1a" / "reproducibility_runner.py"
     spec = importlib.util.spec_from_file_location("reproducibility_runner_tested", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -12,7 +12,7 @@ library(stringr)
 # If running manually, specify path to base and derived YAML templates
 manual_yaml_path = "/storage/forestuav/configs/set26"
 # also the path to metashape repo (this is used only in building the batch job script -- for the call to metashape)
-manual_metashape_path = "~/Documents/projects/metashape/python/metashape_workflow.py"
+manual_metashape_path = "~/Documents/projects/metashape/metashape_qc_engine/level1a/metashape_workflow.py"
 
 ## read paths from command line argument (otherwise use the hard-coded defaults above)
 command_args = commandArgs(trailingOnly=TRUE)

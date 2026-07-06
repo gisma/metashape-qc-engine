@@ -5,7 +5,7 @@ import re
 import shutil
 import subprocess
 
-from metashape_qc_engine.level1b_otb_env import (
+from metashape_qc_engine.level1b.otb_env import (
     discover_otb_cli,
     otb_subprocess_command,
     otb_subprocess_kwargs,

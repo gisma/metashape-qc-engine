@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 import random
 
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 PERTURBATION_RULE = "saga_spatial_feature_local_grid"

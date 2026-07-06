@@ -7,8 +7,8 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-import metashape_qc_engine.level1b_pca as pca
-from metashape_qc_engine.level1b_pca import (
+import metashape_qc_engine.level1b.pca as pca
+from metashape_qc_engine.level1b.pca import (
     REPORT_KEYS,
     Level1BPCAConfig,
     build_level1b_pca_layout,
@@ -145,7 +145,7 @@ def test_dry_run_does_not_call_subprocess(tmp_path: Path, monkeypatch) -> None:
         raise AssertionError("process must not run")
 
     monkeypatch.setattr("shutil.which", fake_otb_path)
-    monkeypatch.setattr("metashape_qc_engine.level1b_pca.subprocess.run", fake_run)
+    monkeypatch.setattr("metashape_qc_engine.level1b.pca.subprocess.run", fake_run)
     report = run_pca_step(make_config(tmp_path, dry_run=True))
 
     assert called["value"] is False
@@ -230,7 +230,7 @@ def test_mocked_successful_execution_returns_ok(tmp_path: Path, monkeypatch) -> 
         assert text is True
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr("metashape_qc_engine.level1b_pca.subprocess.run", fake_run)
+    monkeypatch.setattr("metashape_qc_engine.level1b.pca.subprocess.run", fake_run)
     report = run_pca_step(make_config(tmp_path))
 
     assert report["status"] == "ok"
@@ -242,7 +242,7 @@ def test_mocked_successful_execution_returns_ok(tmp_path: Path, monkeypatch) -> 
 def test_mocked_failed_dimensionality_reduction_returns_failed(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("shutil.which", fake_otb_path)
     monkeypatch.setattr(
-        "metashape_qc_engine.level1b_pca.subprocess.run",
+        "metashape_qc_engine.level1b.pca.subprocess.run",
         lambda command, capture_output, text, **kwargs: subprocess.CompletedProcess(command, 2, "", "failed"),
     )
     report = run_pca_step(make_config(tmp_path))
@@ -262,7 +262,7 @@ def test_mocked_failed_remask_returns_failed(tmp_path: Path, monkeypatch) -> Non
         returncode = 0 if calls["count"] == 1 else 2
         return subprocess.CompletedProcess(command, returncode, "", "failed" if returncode else "")
 
-    monkeypatch.setattr("metashape_qc_engine.level1b_pca.subprocess.run", fake_run)
+    monkeypatch.setattr("metashape_qc_engine.level1b.pca.subprocess.run", fake_run)
     report = run_pca_step(make_config(tmp_path))
 
     assert report["status"] == "failed"

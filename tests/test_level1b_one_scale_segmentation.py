@@ -8,7 +8,7 @@ import pytest
 import rasterio
 from rasterio.transform import from_origin
 
-from metashape_qc_engine import level1b_one_scale_segmentation as one
+from metashape_qc_engine.level1b import one_scale_segmentation as one
 
 
 def write_stack(path: Path, band_count: int = 5) -> Path:

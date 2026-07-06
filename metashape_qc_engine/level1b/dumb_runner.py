@@ -11,45 +11,45 @@ import sys
 from typing import Any
 import yaml
 
-from metashape_qc_engine.level1b_candidate_response_surface import (
+from metashape_qc_engine.level1b.candidate_response_surface import (
     Level1BCandidateResponseSurfaceConfig,
     _pixel_size_m,
     run_candidate_response_surface_step,
     run_step9b_midpoint_response_surface_and_handoff_from_prepare,
     run_step9b_prepare_from_existing_step9a,
 )
-from metashape_qc_engine.level1b_channels import (
+from metashape_qc_engine.level1b.channels import (
     Level1BChannelConfig,
     run_channel_construction_step,
 )
-from metashape_qc_engine.level1b_candidate_prescreening import (
+from metashape_qc_engine.level1b.candidate_prescreening import (
     Level1BCandidatePrescreeningConfig,
     run_candidate_prescreening_step,
 )
-from metashape_qc_engine.level1b_centroid_seed_stabilization import (
+from metashape_qc_engine.level1b.centroid_seed_stabilization import (
     run_multiscale_centroid_seed_stabilization,
 )
-from metashape_qc_engine.level1b_materialization import (
+from metashape_qc_engine.level1b.materialization import (
     run_level1b_step10_aggregate_finalist_evidence,
     run_level1b_step10_collect_finalist_evidence,
     run_level1b_step10_compute_exactextractr_segment_stats_and_quality_info,
     run_level1b_step10_make_finalist_figures,
     run_level1b_step10_materialize_selected_segments,
 )
-from metashape_qc_engine.level1b_perturbations import Level1BPerturbationConfig
-from metashape_qc_engine.level1b_preflight import (
+from metashape_qc_engine.level1b.perturbations import Level1BPerturbationConfig
+from metashape_qc_engine.level1b.preflight import (
     Level1BPreflightConfig,
     run_preflight,
 )
-from metashape_qc_engine.level1b_scaling import (
+from metashape_qc_engine.level1b.scaling import (
     Level1BScalingConfig,
     run_scaling_step,
 )
-from metashape_qc_engine.level1b_valid_mask import (
+from metashape_qc_engine.level1b.valid_mask import (
     Level1BValidMaskConfig,
     run_valid_mask_step,
 )
-from metashape_qc_engine.level1b_step_manifest import (
+from metashape_qc_engine.level1b.step_manifest import (
     manifest_artifact,
     read_step_manifest,
     step_manifest_path,
@@ -137,7 +137,7 @@ def run_level1b_dumb_chain(
 
     level1b_dir.mkdir(parents=True, exist_ok=True)
 
-    config_path = Path(__file__).resolve().parent.parent / "config" / "level1b_default.yaml"
+    config_path = Path(__file__).resolve().parents[2] / "config" / "level1b_default.yaml"
     with config_path.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)["level1b"]
 
@@ -622,7 +622,7 @@ def print_next_commands(
         if _is_windows()
         else "run_level1b_dumb_with_user_header.sh"
     )
-    wrapper_path = Path(__file__).resolve().parent / wrapper_name
+    wrapper_path = Path(__file__).resolve().parent.parent / wrapper_name
     if wrapper_path.exists():
         if _is_windows():
             ps_quote = lambda value: "'" + str(value).replace("'", "''") + "'"
@@ -648,14 +648,14 @@ def print_next_commands(
     else:
         print(
             "  # UNRESOLVED: wrapper script not found next to "
-            "level1b_dumb_runner.py",
+            "dumb_runner.py",
             file=stream,
         )
         direct_rerun_command = shell_join(
             [
                 "python3",
                 "-m",
-                "metashape_qc_engine.level1b_dumb_runner",
+                "metashape_qc_engine.level1b.dumb_runner",
                 "--rgb-ortho",
                 str(input_ortho),
                 "--out-dir",

@@ -29,7 +29,7 @@ def test_shell_wrapper_is_environment_only_and_syntax_valid() -> None:
     assert source.count("tee -a") == 1
     assert 'SHELL_LOG="$RUN_ROOT/level1b_chain.log"' in source
     assert source.count(
-        "python3 -m metashape_qc_engine.level1b_dumb_runner"
+        "python3 -m metashape_qc_engine.level1b.dumb_runner"
     ) == 2
     assert 'export LEVEL1B_OTB_GDAL_DATA_ORIG="${GDAL_DATA:-}"' in source
     assert 'export LEVEL1B_OTB_PROJ_LIB_ORIG="${PROJ_LIB:-}"' in source

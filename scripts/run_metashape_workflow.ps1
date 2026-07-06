@@ -9,8 +9,8 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $ConfigPath = (Resolve-Path $ConfigFile).Path
-$WorkflowScript = Join-Path $RepoRoot "python\metashape_workflow.py"
-$VendorPath = Join-Path $RepoRoot "python\vendor"
+$WorkflowScript = Join-Path $RepoRoot "metashape_qc_engine\level1a\metashape_workflow.py"
+$VendorPath = Join-Path $RepoRoot "metashape_qc_engine\level1a\vendor"
 
 function Resolve-MetashapeExecutable {
     $Candidates = @()

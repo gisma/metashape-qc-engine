@@ -7,8 +7,8 @@ segmentation raster, a polygon product, and reviewable numerical evidence. It
 does not run Metashape, create an ecological classification, establish external
 accuracy, or assign a final quality class.
 
-The repository layout is historical. The Level-1B method is implemented mainly
-in `metashape_qc_engine/level1b_*.py`, the normal environment wrapper is
+The Level-1B method is implemented in the `metashape_qc_engine/level1b/`
+subpackage. The normal environment wrapper is
 `metashape_qc_engine/run_level1b_dumb_with_user_header.sh`, and Step-10
 segment statistics use
 `R/level1b_step10_exactextractr_segment_stats.R`.

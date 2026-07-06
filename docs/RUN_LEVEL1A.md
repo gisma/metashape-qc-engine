@@ -2,7 +2,7 @@
 
 Level-1A is the Metashape product-analysis and reproducibility workflow. It builds repeated Metashape products, compares their orthomosaics, and records stability evidence for product review.
 
-The repository layout is historical: Level-1A is split across `python/`, `scripts/`, and `metashape_qc_engine/cli.py`. The user-facing interface is the `metashape-qc` CLI; the Metashape runtime is launched through `scripts/run_metashape_workflow.sh`.
+Level-1A method code is contained in `metashape_qc_engine/level1a/`; platform launchers remain in `scripts/`, and shared CLI wiring remains in `metashape_qc_engine/cli.py`. The user-facing interface is the `metashape-qc` CLI; the Metashape runtime is launched through `scripts/run_metashape_workflow.sh`.
 
 ## Prerequisites
 
@@ -24,8 +24,7 @@ build. It detects Metashape through `METASHAPE_DIR`, `PATH`, the normal
 `Program Files\Agisoft\Metashape Pro` location, and Windows uninstall-registry
 metadata. Level-1A selects `scripts/run_metashape_workflow.ps1` on Windows
 and calls the detected `metashape.exe -r`; Linux, macOS, and WSL continue to use
-`scripts/run_metashape_workflow.sh` and `metashape.sh`. The complete Level-1A
-plus Level-1B chain still requires WSL for Level-1B's Bash runtime wrapper.
+`scripts/run_metashape_workflow.sh` and `metashape.sh`. Level-1B can continue either through its native PowerShell wrapper or through WSL.
 
 ## Normal prepare, run, and evaluate example
 

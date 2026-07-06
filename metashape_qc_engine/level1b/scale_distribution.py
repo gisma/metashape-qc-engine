@@ -4,7 +4,7 @@ import json
 import math
 from pathlib import Path
 
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 SCALE_MODE = "explicit_baseline_candidates"

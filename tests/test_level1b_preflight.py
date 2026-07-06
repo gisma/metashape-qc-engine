@@ -7,7 +7,7 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from metashape_qc_engine.level1b_preflight import (
+from metashape_qc_engine.level1b.preflight import (
     DEFAULT_REQUIRED_OTB_APPS,
     LEGACY_SMALL_REGIONS_MERGING_APP,
     Level1BPreflightConfig,
@@ -795,7 +795,7 @@ def test_memory_field_absent_from_report_and_source(tmp_path: Path, monkeypatch)
             input_type="rgb",
         )
     )
-    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_preflight.py").read_text(
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "preflight.py").read_text(
         encoding="utf-8"
     )
 
@@ -804,7 +804,7 @@ def test_memory_field_absent_from_report_and_source(tmp_path: Path, monkeypatch)
 
 
 def test_source_contains_no_forbidden_runner_or_import_symbols() -> None:
-    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_preflight.py").read_text(
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "preflight.py").read_text(
         encoding="utf-8"
     )
     forbidden = [
@@ -946,7 +946,7 @@ def test_missing_gdal_edit_fails_preflight(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_module_source_omits_forbidden_controller_symbols() -> None:
-    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_preflight.py").read_text(
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "preflight.py").read_text(
         encoding="utf-8"
     )
     assert {

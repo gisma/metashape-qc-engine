@@ -83,7 +83,7 @@ This is secondary and assumes that the required external command environments
 are already correct:
 
 ```bash
-python3 -m metashape_qc_engine.level1b_dumb_runner \
+python3 -m metashape_qc_engine.level1b.dumb_runner \
   --rgb-ortho /path/to/ortho.tif \
   --out-dir /path/to/run_root \
   --overwrite

@@ -15,19 +15,19 @@ from pathlib import Path
 import subprocess
 from types import SimpleNamespace
 
-from metashape_qc_engine.level1b_otb_env import (
+from metashape_qc_engine.level1b.otb_env import (
     discover_otb_cli,
     otb_subprocess_command,
     otb_subprocess_kwargs,
 )
-from metashape_qc_engine.level1b_pca import (
+from metashape_qc_engine.level1b.pca import (
     Level1BPCAConfig,
     build_level1b_pca_layout,
     build_pca_command,
     build_pca_remask_command,
     run_pca_step,
 )
-from metashape_qc_engine.level1b_scaling import compute_quantile_scaling_parameters
+from metashape_qc_engine.level1b.scaling import compute_quantile_scaling_parameters
 
 
 NORMAL_STACK_NAME = "exgr_exr_bri_directional_glcm_pc1"

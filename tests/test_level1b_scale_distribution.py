@@ -8,7 +8,7 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from metashape_qc_engine.level1b_scale_distribution import (
+from metashape_qc_engine.level1b.scale_distribution import (
     JSON_FIELDS,
     SCALE_MODE,
     SCALE_SOURCE,
@@ -243,7 +243,7 @@ def test_17_output_json_has_exactly_required_keys(tmp_path: Path) -> None:
 
 def test_18_source_contains_no_scale_inference_or_label_parsing() -> None:
     source = (
-        REPO_ROOT / "metashape_qc_engine" / "level1b_scale_distribution.py"
+        REPO_ROOT / "metashape_qc_engine" / "level1b" / "scale_distribution.py"
     ).read_text(encoding="utf-8")
     forbidden = (
         "structure_derived_scale_distribution",

@@ -6,8 +6,8 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from metashape_qc_engine import level1b_candidate_stability as stability
-from metashape_qc_engine.level1b_candidate_stability import (
+from metashape_qc_engine.level1b import candidate_stability as stability
+from metashape_qc_engine.level1b.candidate_stability import (
     Level1BCandidateStabilityConfig,
     group_perturbation_candidates,
     read_perturbation_candidates,
@@ -324,7 +324,7 @@ def test_13_step9_does_not_build_otb_commands_or_emit_blocked_outputs(tmp_path: 
     monkeypatch.setattr(stability, "run_hoover_compare", fake_hoover_factory([]))
 
     report = run_candidate_stability(make_config(tmp_path))
-    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_candidate_stability.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "candidate_stability.py").read_text(encoding="utf-8")
     test_source = (REPO_ROOT / "tests" / "test_level1b_candidate_stability.py").read_text(encoding="utf-8")
     combined = source + "\n" + test_source
     blocked = [
