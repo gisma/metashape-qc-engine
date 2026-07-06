@@ -35,13 +35,38 @@ powershell -ExecutionPolicy Bypass -File scripts/setup_level1a_windows.ps1
 powershell -ExecutionPolicy Bypass -File scripts/setup_level1b_windows.ps1
 ```
 
-The macOS and Windows scripts apply the same Python/dependency checks as the
-Linux setup. They do not install licensed or system software. The current
-normal workflow launchers are Bash-based; the Windows scripts therefore report
-native launcher integration as unresolved rather than implying that dependency
-checks alone make the complete chain natively executable.
+The Linux and macOS scripts create or reuse `.venv`. The native Windows
+scripts create or reuse `.conda-env` and install the mutually compatible Python,
+GDAL, rasterio, and `osgeo` packages from conda-forge. They require an existing
+Miniforge/Conda installation.
 
-The setup scripts create or reuse `.venv`, install the local Python package, verify required Python imports, and check external tools. They do **not** install licensed or system software such as Agisoft Metashape, SAGA GIS, OTB, GDAL CLI tools, or R itself.
+### Windows via WSL2
+
+WSL2 is the direct Windows route for the current Bash-based production
+launchers. Install/open an Ubuntu WSL distribution, enter the repository from
+WSL, and run the normal Linux setup scripts:
+
+```powershell
+wsl --install -d Ubuntu
+wsl
+```
+
+Then, inside the WSL shell:
+
+```bash
+cd /path/inside/wsl/to/metashape-qc-engine
+bash scripts/setup_level1a.sh
+bash scripts/setup_level1b.sh
+```
+
+OTB, SAGA, GDAL, R, and a Linux `metashape.sh` required by Level-1A must be
+installed or exposed inside WSL. Native Windows installations are not silently
+reused by the Linux runners. The PowerShell setup scripts are therefore useful
+for native dependency inspection, but they do not replace WSL for the current
+complete workflow chain.
+
+No setup script installs Agisoft Metashape, SAGA GIS, OTB, R itself, or other
+licensed/system software automatically.
 
 ## Active documentation
 

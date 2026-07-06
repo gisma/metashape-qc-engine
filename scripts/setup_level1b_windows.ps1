@@ -5,8 +5,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$VenvDir = Join-Path $RepoRoot ".venv"
-$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+$EnvDir = Join-Path $RepoRoot ".conda-env"
+$EnvPython = Join-Path $EnvDir "python.exe"
 $PythonStatus = "OK"
 $ImportStatus = "OK"
 $GdalStatus = "MISSING"
@@ -27,47 +27,36 @@ function Find-Tool([string[]]$Names) {
 }
 
 Set-Location $RepoRoot
-$Py = Get-Command py -ErrorAction SilentlyContinue
-$Python = Get-Command python -ErrorAction SilentlyContinue
-if (-not $Py -and -not $Python) {
-    throw "Python 3 not found; make py.exe or python.exe available on PATH."
+$Conda = Get-Command conda.exe -ErrorAction SilentlyContinue
+if (-not $Conda) { $Conda = Get-Command conda -ErrorAction SilentlyContinue }
+if (-not $Conda) {
+    throw "Conda was not found. Install Miniforge/Conda and reopen PowerShell. Native Windows GDAL Python bindings are installed from conda-forge."
 }
+$CondaCommand = $Conda.Source
 
-if (-not (Test-Path $VenvPython -PathType Leaf)) {
-    if ($Py) { & $Py.Source -3 -m venv $VenvDir }
-    else { & $Python.Source -m venv $VenvDir }
-    if ($LASTEXITCODE -ne 0) { throw "Could not create venv at $VenvDir" }
-    Ok "created Python venv at $VenvDir"
+$Packages = @("python=3.12", "pip", "numpy", "pyyaml", "rasterio", "gdal", "matplotlib")
+if (Test-Path $EnvPython -PathType Leaf) {
+    & $CondaCommand install --yes --prefix $EnvDir --channel conda-forge @Packages
+    if ($LASTEXITCODE -ne 0) { throw "Could not update conda environment at $EnvDir" }
+    Ok "updated conda environment at $EnvDir"
 } else {
-    Ok "using existing Python venv at $VenvDir"
+    & $CondaCommand create --yes --prefix $EnvDir --channel conda-forge @Packages
+    if ($LASTEXITCODE -ne 0) { throw "Could not create conda environment at $EnvDir" }
+    Ok "created conda environment at $EnvDir"
 }
 
-& $VenvPython -m pip install --upgrade pip
-if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
-& $VenvPython -m pip install -e . matplotlib
-if ($LASTEXITCODE -ne 0) { throw "editable project/matplotlib installation failed" }
+$env:PATH = "$EnvDir;$EnvDir\Scripts;$EnvDir\Library\bin;$env:PATH"
 
-& $VenvPython -c "import matplotlib, numpy, rasterio, yaml"
+& $EnvPython -m pip install -e .
+if ($LASTEXITCODE -ne 0) { throw "editable project installation failed" }
+
+& $EnvPython -c "import matplotlib, numpy, rasterio, yaml"
 if ($LASTEXITCODE -eq 0) { Ok "Python imports: numpy, yaml, rasterio, matplotlib" }
 else { $ImportStatus = "MISSING"; Missing "Python imports: numpy, yaml, rasterio, matplotlib" }
 
-& $VenvPython -c "from osgeo import gdal, ogr, osr"
-if ($LASTEXITCODE -eq 0) {
-    $GdalStatus = "OK"
-    Ok "GDAL Python bindings: osgeo.gdal, osgeo.ogr, osgeo.osr"
-} else {
-    $GdalConfig = Find-Tool @("gdal-config", "gdal-config.exe")
-    if ($GdalConfig) {
-        $Version = (& $GdalConfig --version).Trim()
-        Write-Host "Trying GDAL==$Version from gdal-config."
-        & $VenvPython -m pip install "GDAL==$Version"
-        if ($LASTEXITCODE -eq 0) {
-            & $VenvPython -c "from osgeo import gdal, ogr, osr"
-            if ($LASTEXITCODE -eq 0) { $GdalStatus = "OK" }
-        }
-    }
-    if ($GdalStatus -ne "OK") { Missing "GDAL Python bindings; no unversioned fallback attempted" }
-}
+& $EnvPython -c "from osgeo import gdal, ogr, osr; print(gdal.VersionInfo())"
+if ($LASTEXITCODE -eq 0) { $GdalStatus = "OK"; Ok "GDAL Python bindings: osgeo.gdal, osgeo.ogr, osgeo.osr" }
+else { Missing "conda-forge GDAL Python bindings" }
 
 $MissingOtb = @()
 foreach ($Name in @("BandMathX", "DimensionalityReduction", "HaralickTextureExtraction", "ComputeImagesStatistics")) {
@@ -107,7 +96,8 @@ if ($RPackagesStatus -ne "OK") {
 }
 
 Write-Host "`nLevel-1B Windows setup summary"
-Write-Host "  Python venv/package: $PythonStatus"
+Write-Host "  Conda environment: $EnvDir"
+Write-Host "  Python package: $PythonStatus"
 Write-Host "  Python imports: $ImportStatus"
 Write-Host "  GDAL Python bindings: $GdalStatus"
 Write-Host "  OTB CLI tools: $OtbStatus $($MissingOtb -join ' ')"
@@ -116,6 +106,7 @@ Write-Host "  GDAL CLI tools: $GdalCliStatus $($MissingGdal -join ' ')"
 Write-Host "  Rscript: $RscriptStatus"
 Write-Host "  R packages: $RPackagesStatus $($MissingR -join ' ')"
 Write-Host "  Native workflow wrapper: UNRESOLVED (current normal wrapper is Bash-based)"
-Write-Host "  This script does not install SAGA, OTB, GDAL CLI tools, or R."
+Write-Host "  Activate later with: conda activate `"$EnvDir`""
+Write-Host "  This script does not install SAGA, OTB, R, or Agisoft Metashape."
 
-if ($PythonStatus -ne "OK" -or $ImportStatus -ne "OK") { exit 1 }
+if ($PythonStatus -ne "OK" -or $ImportStatus -ne "OK" -or $GdalStatus -ne "OK") { exit 1 }

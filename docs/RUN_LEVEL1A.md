@@ -12,6 +12,18 @@ The repository layout is historical: Level-1A is split across `python/`, `script
 - a product-analysis preset JSON accepted by `metashape-qc prepare`
 - enough storage for per-variant, per-replicate Metashape projects and orthomosaics
 
+### Platform setup
+
+- Linux or WSL2: `bash scripts/setup_level1a.sh`
+- macOS: `bash scripts/setup_level1a_macos.sh`
+- native Windows dependency environment: `powershell -ExecutionPolicy Bypass -File scripts/setup_level1a_windows.ps1`
+
+The native Windows setup uses `.conda-env` so GDAL and `osgeo` come from one
+compatible conda-forge build. The production Level-1A launcher itself remains
+Bash-based. For the complete chain on Windows, run the Linux setup and launcher
+inside WSL2. WSL must see a Linux `metashape.sh`; finding `metashape.exe` on the
+Windows side does not satisfy the current launcher contract.
+
 ## Normal prepare, run, and evaluate example
 
 Prepare creates a run directory and prints the exact paths and follow-up commands. Start with:

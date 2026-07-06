@@ -8,15 +8,22 @@ It does not run Metashape, classify ecology, or assign a final quality class.
 
 ## Prerequisites
 
-From the repository root, prepare/check the environment with:
+From the repository root, use the setup for the active platform:
 
-```bash
-bash scripts/setup_level1b.sh
-```
+- Linux or WSL2: `bash scripts/setup_level1b.sh`
+- macOS: `bash scripts/setup_level1b_macos.sh`
+- native Windows dependency environment: `powershell -ExecutionPolicy Bypass -File scripts/setup_level1b_windows.ps1`
+
+The native Windows setup uses `.conda-env` so GDAL, rasterio, and `osgeo` come
+from compatible conda-forge packages. The normal Level-1B wrapper remains
+Bash-based. For the complete workflow on Windows, use WSL2 and run the Linux
+setup there. OTB, SAGA, GDAL, R, and their packages must be available inside
+WSL; Windows-side installations are not assumed to satisfy the Linux command
+contract.
 
 The workflow requires the repository Python environment plus external OTB,
-SAGA, GDAL, and R/exactextractr components. The setup script checks these
-dependencies; it does not install the system software.
+SAGA, GDAL, and R/exactextractr components. The setup scripts check these
+dependencies; they do not install the external system software.
 
 The input orthomosaic must be a readable georeferenced RGB raster. The normal
 runner automatically loads:
