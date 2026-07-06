@@ -19,6 +19,7 @@ and writes a manifest for later orthomosaic stability analysis.
 from __future__ import annotations
 
 import argparse
+import atexit
 import copy
 import csv
 import json
@@ -108,6 +109,67 @@ def sanitize_id(value: str) -> str:
     if not value:
         raise RuntimeError("Empty variant_id after sanitizing.")
     return value
+
+
+def metashape_experiment_path(experiment_dir: Path) -> Path:
+    """Return a short, stable path for Metashape on Windows.
+
+    Metashape still encounters the legacy Windows path-length limit for files
+    inside a ``.files`` project directory.  A temporary ``subst`` drive keeps
+    the canonical experiment layout unchanged while avoiding that limit in
+    paths passed to Metashape.  Other platforms use the canonical path directly.
+    """
+    if os.name != "nt":
+        return experiment_dir
+
+    canonical = experiment_dir.resolve()
+    listed = subprocess.run(
+        ["subst"], capture_output=True, text=True, check=False
+    )
+    mappings: dict[str, Path] = {}
+    for line in listed.stdout.splitlines():
+        match = re.match(r"^([A-Za-z]):\\: => (.+)$", line.strip())
+        if match:
+            mappings[match.group(1).upper()] = Path(match.group(2)).resolve()
+
+    for letter, target in mappings.items():
+        if target == canonical:
+            return Path(f"{letter}:\\")
+
+    letter = next(
+        (
+            candidate
+            for candidate in reversed("PQRSTUVWXYZ")
+            if candidate not in mappings and not Path(f"{candidate}:\\").exists()
+        ),
+        None,
+    )
+    if letter is None:
+        raise RuntimeError("No free drive letter is available for the Windows Metashape path alias.")
+
+    proc = subprocess.run(
+        ["subst", f"{letter}:", str(canonical)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    alias = Path(f"{letter}:\\")
+    if proc.returncode != 0 or not alias.exists():
+        detail = (proc.stderr or proc.stdout).strip()
+        raise RuntimeError(
+            f"Could not create Windows Metashape path alias {alias}: {detail}"
+        )
+
+    def remove_alias() -> None:
+        subprocess.run(
+            ["subst", f"{letter}:", "/d"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+
+    atexit.register(remove_alias)
+    return alias
 
 
 def read_variants(path: Path | None) -> list[dict[str, Any]]:
@@ -633,6 +695,7 @@ def make_replicate_config(
     experiment_dir: Path,
     replicate_index: int,
     run_label: str | None = None,
+    metashape_experiment_dir: Path | None = None,
 ) -> tuple[dict[str, Any], Path, Path, Path]:
     rep = f"rep_{replicate_index:03d}"
     run_label = run_label or rep
@@ -643,6 +706,11 @@ def make_replicate_config(
     output_dir = run_dir / "output"
     config_dir = variant_dir / "configs"
 
+    metashape_root = metashape_experiment_dir or experiment_dir
+    metashape_run_dir = (
+        metashape_root / "variants" / variant_id / "runs" / run_label
+    )
+
     cfg = copy.deepcopy(base_cfg)
 
     # Reproducibility runs must be independent builds.
@@ -650,8 +718,8 @@ def make_replicate_config(
     cfg["load_project"] = ""
 
     cfg["run_name"] = f"{base_run_name}_{variant_id}_{run_label}"
-    cfg["project_path"] = str(project_dir) + "/"
-    cfg["output_path"] = str(output_dir) + "/"
+    cfg["project_path"] = str(metashape_run_dir / "psx") + "/"
+    cfg["output_path"] = str(metashape_run_dir / "output") + "/"
 
     rep_config = config_dir / f"{run_label}.yml"
 
@@ -797,6 +865,9 @@ def main() -> int:
         raise RuntimeError(format_existing_manifest_error(manifest_file))
 
     ensure_experiment_dir(experiment_dir, overwrite=args.overwrite or args.resume)
+    metashape_dir_alias = metashape_experiment_path(experiment_dir)
+    if metashape_dir_alias != experiment_dir:
+        print(f"Windows Metashape path alias: {metashape_dir_alias} -> {experiment_dir}")
 
     base_cfg = read_yaml(base_config)
 
@@ -860,6 +931,7 @@ def main() -> int:
                 experiment_dir=experiment_dir,
                 replicate_index=i,
                 run_label=run_label,
+                metashape_experiment_dir=metashape_dir_alias,
             )
             if args.generic_ortho_resolution:
                 cfg.setdefault("buildOrthomosaic", {})["orthoRes"] = 0

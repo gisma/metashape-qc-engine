@@ -30,12 +30,24 @@ Set-Location $RepoRoot
 function Resolve-OtbEnvironmentScript {
     $Candidates = @()
     if ($env:OTB_ROOT) {
+        $Candidates += (Join-Path $env:OTB_ROOT "otbenv.ps1")
         $Candidates += (Join-Path $env:OTB_ROOT "otbenv.bat")
+        $Candidates += (Join-Path $env:OTB_ROOT "bin\otbenv.ps1")
         $Candidates += (Join-Path $env:OTB_ROOT "bin\otbenv.bat")
     }
-    $OnPath = Get-Command otbenv.bat -ErrorAction SilentlyContinue
-    if ($OnPath) { $Candidates += $OnPath.Source }
+    foreach ($Name in @("otbenv.ps1", "otbenv.bat")) {
+        $OnPath = Get-Command $Name -ErrorAction SilentlyContinue
+        if ($OnPath) { $Candidates += $OnPath.Source }
+    }
     return $Candidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
+}
+
+function Import-OtbEnvironment([string]$EnvironmentScript) {
+    if ([IO.Path]::GetExtension($EnvironmentScript) -ieq ".ps1") {
+        . $EnvironmentScript
+    } else {
+        Import-BatchEnvironment $EnvironmentScript
+    }
 }
 
 function Import-BatchEnvironment([string]$BatchFile) {
@@ -152,11 +164,11 @@ else { Missing "conda-forge GDAL Python bindings" }
 
 $OtbEnv = Resolve-OtbEnvironmentScript
 if ($OtbEnv) {
-    Import-BatchEnvironment $OtbEnv
+    Import-OtbEnvironment $OtbEnv
     Ok "OTB environment: $OtbEnv"
 } else {
     $OtbStatus = "MISSING"
-    Missing "otbenv.bat; set OTB_ROOT to the extracted Windows OTB package root"
+    Missing "otbenv.ps1 or otbenv.bat; set OTB_ROOT to the extracted Windows OTB package root"
 }
 
 $MissingOtb = @()

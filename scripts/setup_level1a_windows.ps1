@@ -115,6 +115,15 @@ $env:PATH = "$EnvDir;$EnvDir\Scripts;$EnvDir\Library\bin;$env:PATH"
 & $EnvPython -m pip install -e .
 if ($LASTEXITCODE -ne 0) { throw "editable project installation failed" }
 
+# Metashape runs its own Python interpreter and cannot import packages from
+# .conda-env. Install its small pure-Python dependency set into the directory
+# injected by scripts/run_metashape_workflow.ps1.
+$MetashapeRequirements = Join-Path $RepoRoot "requirements-metashape.txt"
+$MetashapeVendorDir = Join-Path $RepoRoot "python\vendor"
+& $EnvPython -m pip install --upgrade --target $MetashapeVendorDir -r $MetashapeRequirements
+if ($LASTEXITCODE -ne 0) { throw "Metashape runtime dependency installation failed" }
+Ok "Metashape runtime dependencies: $MetashapeVendorDir"
+
 $Cli = Join-Path $EnvDir "Scripts\metashape-qc.exe"
 if (Test-Path $Cli -PathType Leaf) { Ok "metashape-qc: $Cli" }
 else { $PythonStatus = "MISSING"; Missing "metashape-qc.exe in $EnvDir\Scripts" }
