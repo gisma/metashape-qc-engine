@@ -3,7 +3,7 @@
 This module preserves the former candidate-stability implementation for audit
 and reproducibility. It is not the active Level-1b Step 9 path; the active
 candidate-scale response surface analysis lives in
-metashape_qc_engine.level1b_candidate_response_surface.
+metashape_qc_engine.level1b.candidate_response_surface.
 """
 
 from dataclasses import dataclass, fields
@@ -13,8 +13,8 @@ import math
 from pathlib import Path
 import statistics
 
-from metashape_qc_engine.level1b_hoover_compare import Level1BHooverCompareConfig, run_hoover_compare
-from metashape_qc_engine.level1b_one_scale_segmentation import (
+from metashape_qc_engine.level1b.hoover_compare import Level1BHooverCompareConfig, run_hoover_compare
+from metashape_qc_engine.level1b.one_scale_segmentation import (
     Level1BOneScaleSegmentationConfig,
     run_one_scale_segmentation_smoke,
 )

@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 
-from metashape_qc_engine.level1b_otb_env import (
+from metashape_qc_engine.level1b.otb_env import (
     discover_otb_cli,
     otb_subprocess_command,
     otb_subprocess_kwargs,
@@ -17,7 +17,7 @@ from metashape_qc_engine.level1b_otb_env import (
 import numpy as np
 from osgeo import gdal
 
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}

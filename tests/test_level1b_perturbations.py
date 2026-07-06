@@ -8,7 +8,7 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from metashape_qc_engine.level1b_perturbations import (
+from metashape_qc_engine.level1b.perturbations import (
     PERTURBATION_RULE,
     Level1BPerturbationConfig,
     build_level1b_perturbation_layout,
@@ -389,7 +389,7 @@ def test_24_run_report_contains_required_counts_and_controls(tmp_path: Path) -> 
 
 
 def test_25_source_has_no_forbidden_raster_otb_segmentation_stability_or_global_grid_symbols() -> None:
-    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_perturbations.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "perturbations.py").read_text(encoding="utf-8")
     blocked = [
         "rast" + "erio",
         "os" + "geo",
@@ -428,24 +428,24 @@ def test_25_source_has_no_forbidden_raster_otb_segmentation_stability_or_global_
 
 def test_26_protected_existing_files_are_present_and_step8_tests_do_not_import_them() -> None:
     protected_files = [
-        "level1b_preflight.py",
-        "level1b_valid_mask.py",
-        "level1b_channels.py",
-        "level1b_scaling.py",
-        "level1b_pca.py",
-        "level1b_scale_distribution.py",
-        "level1b_feature_range.py",
-        "cli.py",
+        "preflight.py",
+        "valid_mask.py",
+        "channels.py",
+        "scaling.py",
+        "pca.py",
+        "scale_distribution.py",
+        "feature_range.py",
     ]
     test_source = (REPO_ROOT / "tests" / "test_level1b_perturbations.py").read_text(encoding="utf-8")
 
-    forbidden_import = "from metashape_qc_engine." + "level1b_feature_range"
-    assert all((REPO_ROOT / "metashape_qc_engine" / filename).is_file() for filename in protected_files)
+    forbidden_import = "from metashape_qc_engine.level1b." + "feature_range"
+    assert all((REPO_ROOT / "metashape_qc_engine" / "level1b" / filename).is_file() for filename in protected_files)
+    assert (REPO_ROOT / "metashape_qc_engine" / "cli.py").is_file()
     assert forbidden_import not in test_source
 
 
 def test_27_removed_single_axis_enforcement_is_absent_from_step8_files() -> None:
-    module_source = (REPO_ROOT / "metashape_qc_engine" / "level1b_perturbations.py").read_text(encoding="utf-8")
+    module_source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "perturbations.py").read_text(encoding="utf-8")
     test_source = (REPO_ROOT / "tests" / "test_level1b_perturbations.py").read_text(encoding="utf-8")
     blocked = [
         "one" + "_at" + "_a" + "_time",

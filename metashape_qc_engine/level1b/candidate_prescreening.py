@@ -9,12 +9,12 @@ from typing import Any
 
 import numpy as np
 
-from metashape_qc_engine.level1b_feature_range import (
+from metashape_qc_engine.level1b.feature_range import (
     KNN_K_POLICY,
     derive_ranger_candidates,
     read_feature_stack_and_mask,
 )
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 PRESCREENING_METHOD = "multiband_variogram_sill_fraction_support"

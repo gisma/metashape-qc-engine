@@ -60,7 +60,7 @@ create_derived_configs = function(base_cfg_path, save_dir, replacements, automat
       configs = file.path(save_dir, paste0(replacements$name, ".yml"))
       
       # Path to metashape workflow script
-      path_to_script = file.path(automate_metashape_path, "python/metashape_workflow.py")
+      path_to_script = file.path(automate_metashape_path, "metashape_qc_engine/level1a/metashape_workflow.py")
       
       # Line to write to shell script
       lines_to_write = paste0("python ", path_to_script, " ", configs)

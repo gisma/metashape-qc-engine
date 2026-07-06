@@ -11,8 +11,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-import metashape_qc_engine.level1b_feature_range as feature_range
-from metashape_qc_engine.level1b_feature_range import (
+import metashape_qc_engine.level1b.feature_range as feature_range
+from metashape_qc_engine.level1b.feature_range import (
     ASSIGNMENT_RULE,
     KNN_K_POLICY,
     RANGER_SELECTION_METHOD,
@@ -134,7 +134,7 @@ def test_01_config_has_no_removed_range_fields(tmp_path: Path) -> None:
 
 
 def test_02_active_feature_range_source_has_no_quantile_ladder_or_tail_padding() -> None:
-    module_source = (REPO_ROOT / "metashape_qc_engine" / "level1b_feature_range.py").read_text(encoding="utf-8")
+    module_source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "feature_range.py").read_text(encoding="utf-8")
 
     assert [term for term in blocked_terms() if term in module_source] == []
     assert "quantile_probs" not in module_source

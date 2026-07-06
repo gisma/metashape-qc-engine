@@ -5,8 +5,8 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from metashape_qc_engine import level1b_materialization as materialization
-from metashape_qc_engine.level1b_materialization import (
+from metashape_qc_engine.level1b import materialization as materialization
+from metashape_qc_engine.level1b.materialization import (
     _selected_label_raster_path,
     run_level1b_step10_aggregate_finalist_evidence,
     run_level1b_step10_collect_finalist_evidence,

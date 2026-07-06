@@ -131,7 +131,7 @@ foreach ($Name in $SavedOtbVariables.Keys) {
 }
 
 # Restore the clean conda Python runtime. The saved LEVEL1B_OTB_* values are
-# injected only into otbcli subprocesses by level1b_otb_env.py.
+# injected only into otbcli subprocesses by level1b/otb_env.py.
 $env:PATH = $BasePath
 if ($BasePythonPath) { $env:PYTHONPATH = $BasePythonPath } else { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue }
 foreach ($Name in @("OTB_APPLICATION_PATH", "GDAL_DATA", "PROJ_LIB")) {
@@ -179,6 +179,6 @@ Write-Host "SAGA_CMD=$SagaExe"
 if ($Osgeo4wEnv) { Write-Host "SAGA_ENV=$Osgeo4wEnv" }
 Write-Host "PYTHON=$EnvPython"
 
-& $EnvPython -m metashape_qc_engine.level1b_dumb_runner @RunnerArgs 2>&1 |
+& $EnvPython -m metashape_qc_engine.level1b.dumb_runner @RunnerArgs 2>&1 |
     Tee-Object -FilePath $ShellLog -Append
 exit $LASTEXITCODE

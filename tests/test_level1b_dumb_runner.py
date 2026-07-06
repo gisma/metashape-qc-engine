@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from metashape_qc_engine import level1b_dumb_runner as runner
-from metashape_qc_engine.level1b_candidate_response_surface import (
+from metashape_qc_engine.level1b import dumb_runner as runner
+from metashape_qc_engine.level1b.candidate_response_surface import (
     Level1BCandidateResponseSurfaceConfig,
 )
-from metashape_qc_engine.level1b_candidate_prescreening import (
+from metashape_qc_engine.level1b.candidate_prescreening import (
     Level1BCandidatePrescreeningConfig,
 )
-from metashape_qc_engine.level1b_perturbations import Level1BPerturbationConfig
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.perturbations import Level1BPerturbationConfig
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 def _write(path: Path, value: object | None = None) -> None:

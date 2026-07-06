@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}

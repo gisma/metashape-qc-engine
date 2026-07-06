@@ -4,8 +4,8 @@ import subprocess
 
 import pytest
 
-import metashape_qc_engine.level1b_proxy_stack_rgb_dglcm as proxy_recipe
-from metashape_qc_engine.level1b_channels import (
+import metashape_qc_engine.level1b.proxy_stack_rgb_dglcm as proxy_recipe
+from metashape_qc_engine.level1b.channels import (
     GLCM_DIRECTIONS,
     REPORT_KEYS,
     RGB_CHANNEL_NAMES,
@@ -13,7 +13,7 @@ from metashape_qc_engine.level1b_channels import (
     build_level1b_channel_layout,
     run_channel_construction_step,
 )
-from metashape_qc_engine.level1b_pca import Level1BPCAConfig
+from metashape_qc_engine.level1b.pca import Level1BPCAConfig
 
 
 def fake_otb_path(executable_name: str) -> str:

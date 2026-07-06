@@ -6,16 +6,16 @@ from pathlib import Path
 
 import numpy as np
 
-import metashape_qc_engine.level1b_feature_range as feature_range
-import metashape_qc_engine.level1b_candidate_prescreening as prescreen
-from metashape_qc_engine.level1b_candidate_prescreening import (
+import metashape_qc_engine.level1b.feature_range as feature_range
+import metashape_qc_engine.level1b.candidate_prescreening as prescreen
+from metashape_qc_engine.level1b.candidate_prescreening import (
     Level1BCandidatePrescreeningConfig,
     build_logarithmic_lag_pixels,
     find_stable_sill_fraction_crossings,
     run_candidate_prescreening_step,
     technical_minsize_from_radius_domain,
 )
-from metashape_qc_engine.level1b_candidate_response_surface import (
+from metashape_qc_engine.level1b.candidate_response_surface import (
     group_rows_by_candidate_scale,
     source_candidate_radius_m,
 )

@@ -9,8 +9,8 @@ import sys
 # Make repo-local vendored dependencies available inside the Metashape runtime.
 from pathlib import Path as _Path
 
-_REPO_ROOT = _Path(__file__).resolve().parents[1]
-_VENDOR_DIR = _REPO_ROOT / "python" / "vendor"
+_REPO_ROOT = _Path(__file__).resolve().parents[2]
+_VENDOR_DIR = _Path(__file__).resolve().parent / "vendor"
 
 if _VENDOR_DIR.is_dir():
     sys.path.insert(0, str(_VENDOR_DIR))
@@ -28,8 +28,8 @@ manual_config_file = "~/dev/metashape-qc-engine/config/base.yml"
 
 ## Load custom modules and config file: slightly different depending whether running interactively or via command line
 try:  # running interactively (in linux) or command line (windows)
-    from python import metashape_workflow_functions as meta
-    from python import read_yaml
+    from metashape_qc_engine.level1a import metashape_workflow_functions as meta
+    from metashape_qc_engine.level1a import read_yaml
 except:  # running from command line (in linux) or interactively (windows)
     import metashape_workflow_functions as meta
     import read_yaml

@@ -24,9 +24,9 @@ def _repo_root() -> Path:
     for candidate in candidates:
         if (
             (candidate / "scripts" / "run_metashape_workflow.sh").is_file()
-            and (candidate / "python" / "reproducibility_runner.py").is_file()
-            and (candidate / "python" / "ortho_stability_analyzer.py").is_file()
-            and (candidate / "python" / "evaluate_ortho_stability.py").is_file()
+            and (candidate / "metashape_qc_engine" / "level1a" / "reproducibility_runner.py").is_file()
+            and (candidate / "metashape_qc_engine" / "level1a" / "ortho_stability_analyzer.py").is_file()
+            and (candidate / "metashape_qc_engine" / "level1a" / "evaluate_ortho_stability.py").is_file()
         ):
             return candidate
 
@@ -125,7 +125,7 @@ def _run_prepare(args: argparse.Namespace) -> int:
     root = _repo_root()
     cmd = [
         sys.executable,
-        str(root / "python" / "prepare_product_experiment.py"),
+        str(root / "metashape_qc_engine" / "level1a" / "prepare_product_experiment.py"),
         "--image-dir",
         args.image_dir,
         "--product-id",
@@ -172,7 +172,7 @@ def _run_experiment(args: argparse.Namespace) -> int:
     root = _repo_root()
     cmd = [
         sys.executable,
-        str(root / "python" / "reproducibility_runner.py"),
+        str(root / "metashape_qc_engine" / "level1a" / "reproducibility_runner.py"),
         args.base_config,
         "--reps",
         str(args.reps),
@@ -202,7 +202,7 @@ def _run_analyze(args: argparse.Namespace) -> int:
     root = _repo_root()
     cmd = [
         sys.executable,
-        str(root / "python" / "ortho_stability_analyzer.py"),
+        str(root / "metashape_qc_engine" / "level1a" / "ortho_stability_analyzer.py"),
         args.manifest,
         "--output-dir",
         args.output_dir,
@@ -228,7 +228,7 @@ def _run_evaluate(args: argparse.Namespace) -> int:
     root = _repo_root()
     cmd = [
         sys.executable,
-        str(root / "python" / "evaluate_ortho_stability.py"),
+        str(root / "metashape_qc_engine" / "level1a" / "evaluate_ortho_stability.py"),
         args.experiment_dir,
     ]
 

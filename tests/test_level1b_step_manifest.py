@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from metashape_qc_engine.level1b_step_manifest import (
+from metashape_qc_engine.level1b.step_manifest import (
     manifest_artifact,
     read_step_manifest,
     step_manifest_path,

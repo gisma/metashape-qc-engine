@@ -21,7 +21,7 @@ if [[ ! -x "$METASHAPE_BIN" ]]; then
   exit 1
 fi
 
-PYTHONPATH="$REPO_ROOT/python/vendor${PYTHONPATH:+:$PYTHONPATH}" \
+PYTHONPATH="$REPO_ROOT/metashape_qc_engine/level1a/vendor${PYTHONPATH:+:$PYTHONPATH}" \
 "$METASHAPE_BIN" -r \
-"$REPO_ROOT/python/metashape_workflow.py" \
+"$REPO_ROOT/metashape_qc_engine/level1a/metashape_workflow.py" \
 "$CONFIG_FILE"

@@ -7,7 +7,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from metashape_qc_engine.level1b_global_region_merge import (
+from metashape_qc_engine.level1b.global_region_merge import (
     GlobalRegionMergeConfig,
     build_initial_regions,
     merge_regions_global_rms,

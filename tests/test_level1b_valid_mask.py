@@ -6,8 +6,8 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-import metashape_qc_engine.level1b_valid_mask as lvm
-from metashape_qc_engine.level1b_valid_mask import (
+import metashape_qc_engine.level1b.valid_mask as lvm
+from metashape_qc_engine.level1b.valid_mask import (
     CHECK_KEYS,
     REPORT_KEYS,
     Level1BValidMaskConfig,
@@ -190,7 +190,7 @@ def test_dry_run_does_not_call_process_and_writes_report(tmp_path: Path, monkeyp
         raise AssertionError("process must not run")
 
     monkeypatch.setattr("shutil.which", fake_otb_path)
-    monkeypatch.setattr("metashape_qc_engine.level1b_valid_mask.subprocess.run", fake_run)
+    monkeypatch.setattr("metashape_qc_engine.level1b.valid_mask.subprocess.run", fake_run)
 
     report = run_valid_mask_step(
         Level1BValidMaskConfig(
@@ -364,7 +364,7 @@ def test_successful_mocked_process_returns_status_ok(tmp_path: Path, monkeypatch
         returncode = 0
 
     monkeypatch.setattr("shutil.which", fake_otb_path)
-    monkeypatch.setattr("metashape_qc_engine.level1b_valid_mask.subprocess.run", lambda *_args, **_kwargs: Result())
+    monkeypatch.setattr("metashape_qc_engine.level1b.valid_mask.subprocess.run", lambda *_args, **_kwargs: Result())
 
     report = run_valid_mask_step(
         Level1BValidMaskConfig(candidate_id="candidate-1", input_path=make_input(tmp_path), output_dir=tmp_path / "out")
@@ -383,7 +383,7 @@ def test_failed_mocked_process_returns_failed_and_reason(tmp_path: Path, monkeyp
         returncode = 2
 
     monkeypatch.setattr("shutil.which", fake_otb_path)
-    monkeypatch.setattr("metashape_qc_engine.level1b_valid_mask.subprocess.run", lambda *_args, **_kwargs: Result())
+    monkeypatch.setattr("metashape_qc_engine.level1b.valid_mask.subprocess.run", lambda *_args, **_kwargs: Result())
 
     report = run_valid_mask_step(
         Level1BValidMaskConfig(candidate_id="candidate-1", input_path=make_input(tmp_path), output_dir=tmp_path / "out")
@@ -409,7 +409,7 @@ def test_checks_contains_exactly_required_check_keys(tmp_path: Path, monkeypatch
 
 
 def test_boundary_source_scan_no_forbidden_raster_imports() -> None:
-    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_valid_mask.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "valid_mask.py").read_text(encoding="utf-8")
     terms = [
         "ras" + "terio",
         "os" + "geo",
@@ -432,7 +432,7 @@ def test_boundary_source_scan_no_forbidden_raster_imports() -> None:
 
 
 def test_boundary_source_scan_no_forbidden_workflow_terms_in_production_module() -> None:
-    source = (REPO_ROOT / "metashape_qc_engine" / "level1b_valid_mask.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "metashape_qc_engine" / "level1b" / "valid_mask.py").read_text(encoding="utf-8")
     terms = [
         "run_" + "otb_app",
         "OTBCommand" + "Result",
@@ -460,11 +460,8 @@ def test_boundary_source_scan_no_forbidden_workflow_terms_in_production_module()
     assert not any(term in source for term in terms)
 
 
-def test_cli_py_diff_is_empty() -> None:
-    result = lvm.subprocess.run(
-        ["git", "diff", "--", "metashape_qc_engine/cli.py"],
-        capture_output=True,
-        text=True,
-    )
+def test_cli_targets_level1a_package_modules() -> None:
+    source = (REPO_ROOT / "metashape_qc_engine" / "cli.py").read_text(encoding="utf-8")
 
-    assert result.stdout == ""
+    assert 'root / "metashape_qc_engine" / "level1a"' in source
+    assert 'root / "python"' not in source

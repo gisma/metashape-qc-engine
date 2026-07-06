@@ -8,7 +8,7 @@ import shutil
 import statistics
 import subprocess
 
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 STEP10_FINALIST_EVIDENCE_FILENAME = "finalist_evidence.json"
@@ -1066,7 +1066,7 @@ def run_level1b_step10_compute_exactextractr_segment_stats_and_quality_info(
     )
     quality_info_json = quality_dir / "ortho_segmentation_quality_info.json"
     r_script = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "R"
         / "level1b_step10_exactextractr_segment_stats.R"
     )

@@ -6,12 +6,12 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-from metashape_qc_engine.level1b_otb_env import (
+from metashape_qc_engine.level1b.otb_env import (
     discover_otb_cli,
     otb_subprocess_command,
     otb_subprocess_kwargs,
 )
-from metashape_qc_engine.level1b_proxy_stack_rgb_dglcm import (
+from metashape_qc_engine.level1b.proxy_stack_rgb_dglcm import (
     DEFAULT_GLCM_DIRECTIONS,
     DEFAULT_PC1_CLIP_QUANTILES,
     DEFAULT_PC1_NBBIN,
@@ -23,7 +23,7 @@ from metashape_qc_engine.level1b_proxy_stack_rgb_dglcm import (
     rgb_dglcm_pc1_band_names,
     run_rgb_dglcm_pc1_proxy_stack,
 )
-from metashape_qc_engine.level1b_step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.step_manifest import write_step_manifest
 
 
 RASTER_SUFFIXES = {".tif", ".tiff", ".vrt", ".img", ".jp2"}

@@ -98,17 +98,11 @@ dev/
 ## Mac system file
 .DS_Store
 # Local Python dependencies for Agisoft Metashape runtime
-python/vendor/
+metashape_qc_engine/level1a/vendor/
 .venv/
 .conda-env/
 settings.json
 .Rproj.user/
 metashape_qc_engine.egg-info/
 *.py[cod]
-<<<<<<< HEAD
-.aider.chat.history.md
-.aider.input.history
-.aider.tags.cache.v4
-=======
 .aider*
->>>>>>> d6913c8489a621a53f6dac18ff94b56a1108b84a

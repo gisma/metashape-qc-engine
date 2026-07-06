@@ -1,9 +1,6 @@
 # Workflow Chain
 
-This repository contains two logical workflows. The physical source layout is historical and is not divided into `level1a/` and `level1b/` trees.
-
-- Level-1A code is split across `python/`, `scripts/`, and `metashape_qc_engine/cli.py`.
-- Level-1B code is mostly in `metashape_qc_engine/level1b_*.py`, with `metashape_qc_engine/run_level1b_dumb_with_user_header.sh` and `R/level1b_step10_exactextractr_segment_stats.R`.
+This repository contains two logical workflows implemented as the Python subpackages `metashape_qc_engine.level1a` and `metashape_qc_engine.level1b`. Shared CLI wiring remains in `metashape_qc_engine/cli.py`; external launchers and R integration remain explicit repository resources.
 
 Operational and methodological details are maintained in the four active documents:
 
@@ -37,7 +34,7 @@ prepare -> run-analysis / resume-analysis -> evaluate -> review
 
 `metashape-qc resume-analysis` uses the same run contract. It skips latest manifest rows considered successful and reruns failed or missing variant/replicate combinations.
 
-The platform launcher selects `run_metashape_workflow.sh` on Linux/macOS/WSL or `run_metashape_workflow.ps1` on Windows. It resolves `metashape.sh` or `metashape.exe` respectively and launches `python/metashape_workflow.py` inside the Metashape runtime.
+The platform launcher selects `run_metashape_workflow.sh` on Linux/macOS/WSL or `run_metashape_workflow.ps1` on Windows. It resolves `metashape.sh` or `metashape.exe` respectively and launches `metashape_qc_engine/level1a/metashape_workflow.py` inside the Metashape runtime.
 
 ### Evaluate and review
 
@@ -156,10 +153,10 @@ $env:OVERWRITE = "1"
 powershell -ExecutionPolicy Bypass -File metashape_qc_engine\run_level1b_dumb_with_user_header.ps1
 ```
 
-If the runner cannot find that wrapper next to `level1b_dumb_runner.py`, it prints `UNRESOLVED` and the direct fallback command instead:
+If the runner cannot find that wrapper next to `level1b/dumb_runner.py`, it prints `UNRESOLVED` and the direct fallback command instead:
 
 ```bash
-python3 -m metashape_qc_engine.level1b_dumb_runner --rgb-ortho <input_ortho> --out-dir <run_root> --overwrite
+python3 -m metashape_qc_engine.level1b.dumb_runner --rgb-ortho <input_ortho> --out-dir <run_root> --overwrite
 ```
 
 For a complete run, resolve Step-10 outputs through the manifests recorded in the chain report:

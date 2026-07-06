@@ -13,8 +13,8 @@ from rasterio.transform import from_origin
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from metashape_qc_engine import level1b_candidate_response_surface as rs
-from metashape_qc_engine.level1b_candidate_response_surface import (
+from metashape_qc_engine.level1b import candidate_response_surface as rs
+from metashape_qc_engine.level1b.candidate_response_surface import (
     Level1BCandidateResponseSurfaceConfig,
     aggregate_analysis_matrix,
     analyze_full_candidate_space,
@@ -1026,7 +1026,7 @@ def test_shadow_retention_audit_never_proposes_deletion_for_incomplete_run(
 
 
 def test_shadow_transients_are_not_read_by_step9b_or_step10() -> None:
-    from metashape_qc_engine import level1b_materialization
+    from metashape_qc_engine.level1b import materialization as level1b_materialization
 
     consumer_source = "\n".join(
         [

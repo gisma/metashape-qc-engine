@@ -4,8 +4,8 @@ import subprocess
 
 import numpy as np
 
-import metashape_qc_engine.level1b_scaling as scaling
-from metashape_qc_engine.level1b_scaling import (
+import metashape_qc_engine.level1b.scaling as scaling
+from metashape_qc_engine.level1b.scaling import (
     REPORT_KEYS,
     Level1BScalingConfig,
     build_level1b_scaling_layout,

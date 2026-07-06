@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from metashape_qc_engine import level1b_centroid_seed_stabilization as stabilization
+from metashape_qc_engine.level1b import centroid_seed_stabilization as stabilization
 
 
 
