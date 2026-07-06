@@ -36,7 +36,7 @@ function Resolve-OtbEnvironmentScript {
 function Import-BatchEnvironment([string]$BatchFile) {
     $CommandLine = "call `"$BatchFile`" >nul && set"
     $Lines = & $env:ComSpec /d /s /c $CommandLine
-    if ($LASTEXITCODE -ne 0) { throw "OTB environment script failed: $BatchFile" }
+    if ($LASTEXITCODE -ne 0) { throw "Batch environment script failed: $BatchFile" }
     foreach ($Line in $Lines) {
         if ($Line -match '^([^=]+)=(.*)$') {
             [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], "Process")
@@ -48,17 +48,47 @@ function Resolve-SagaExecutable {
     $Candidates = @()
     if ($env:SAGA_ROOT) {
         if (Test-Path $env:SAGA_ROOT -PathType Leaf) {
-            $Candidates += $env:SAGA_ROOT
+            if ((Split-Path $env:SAGA_ROOT -Leaf) -match '^saga_cmd(\.exe|\.bat|\.cmd)?$') {
+                $Candidates += $env:SAGA_ROOT
+            }
         } else {
             $Candidates += (Join-Path $env:SAGA_ROOT "saga_cmd.exe")
+            $Candidates += (Join-Path $env:SAGA_ROOT "saga_cmd.bat")
+            $Candidates += (Join-Path $env:SAGA_ROOT "saga_cmd.cmd")
             $Candidates += (Join-Path $env:SAGA_ROOT "saga_cmd")
+            $Candidates += (Join-Path $env:SAGA_ROOT "bin\saga_cmd.exe")
+            $Candidates += (Join-Path $env:SAGA_ROOT "bin\saga_cmd.bat")
         }
     }
-    $OnPath = Get-Command saga_cmd.exe -ErrorAction SilentlyContinue
-    if ($OnPath) { $Candidates += $OnPath.Source }
+    foreach ($Name in @("saga_cmd.exe", "saga_cmd.bat", "saga_cmd.cmd", "saga_cmd")) {
+        $OnPath = Get-Command $Name -ErrorAction SilentlyContinue
+        if ($OnPath) { $Candidates += $OnPath.Source }
+    }
     foreach ($Root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }) {
         $Candidates += (Join-Path $Root "SAGA-GIS\saga_cmd.exe")
         $Candidates += (Join-Path $Root "SAGA GIS\saga_cmd.exe")
+    }
+    return $Candidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
+}
+
+function Resolve-Osgeo4wEnvironmentScript {
+    $Candidates = @()
+    if ($env:OSGEO4W_ROOT) {
+        if (Test-Path $env:OSGEO4W_ROOT -PathType Leaf) {
+            $Candidates += $env:OSGEO4W_ROOT
+        } else {
+            $Candidates += (Join-Path $env:OSGEO4W_ROOT "OSGeo4W.bat")
+        }
+    }
+    if ($env:SAGA_ROOT) {
+        if ((Test-Path $env:SAGA_ROOT -PathType Leaf) -and ((Split-Path $env:SAGA_ROOT -Leaf) -ieq "OSGeo4W.bat")) {
+            $Candidates += $env:SAGA_ROOT
+        } elseif (Test-Path $env:SAGA_ROOT -PathType Container) {
+            $Candidates += (Join-Path $env:SAGA_ROOT "OSGeo4W.bat")
+        }
+    }
+    foreach ($Root in @("C:\OSGeo4W", "C:\OSGeo4W64")) {
+        $Candidates += (Join-Path $Root "OSGeo4W.bat")
     }
     return $Candidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
 }
@@ -94,11 +124,33 @@ foreach ($Name in @("OTB_APPLICATION_PATH", "GDAL_DATA", "PROJ_LIB")) {
     Remove-Item "Env:$Name" -ErrorAction SilentlyContinue
 }
 
+$Osgeo4wEnv = Resolve-Osgeo4wEnvironmentScript
+if ($Osgeo4wEnv) {
+    # SAGA supplied by OSGeo4W must be discovered inside its batch environment.
+    # These values are saved for SAGA subprocesses and removed again before
+    # launching the clean conda Python runtime.
+    Import-BatchEnvironment $Osgeo4wEnv
+}
 $SagaExe = Resolve-SagaExecutable
 if (-not $SagaExe) {
-    throw "Could not find saga_cmd.exe. Set SAGA_ROOT to the SAGA installation directory."
+    throw "Could not find saga_cmd.exe/.bat. Set SAGA_ROOT to SAGA or OSGEO4W_ROOT to the OSGeo4W installation directory."
 }
-$env:LEVEL1B_SAGA_PATH_ORIG = "$(Split-Path -Parent $SagaExe);$BasePath"
+$env:LEVEL1B_SAGA_CMD_ORIG = $SagaExe
+$env:LEVEL1B_SAGA_PATH_ORIG = $env:PATH
+foreach ($Pair in @(
+    @("GDAL_DATA", "LEVEL1B_SAGA_GDAL_DATA_ORIG"),
+    @("PROJ_LIB", "LEVEL1B_SAGA_PROJ_LIB_ORIG")
+)) {
+    $Value = [Environment]::GetEnvironmentVariable($Pair[0], "Process")
+    if ($Value) { [Environment]::SetEnvironmentVariable($Pair[1], $Value, "Process") }
+}
+
+# Do not leak OSGeo4W Python/GDAL paths into the conda Python process.
+$env:PATH = $BasePath
+if ($BasePythonPath) { $env:PYTHONPATH = $BasePythonPath } else { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue }
+foreach ($Name in @("GDAL_DATA", "PROJ_LIB")) {
+    Remove-Item "Env:$Name" -ErrorAction SilentlyContinue
+}
 
 New-Item -ItemType Directory -Force -Path $RunRoot | Out-Null
 $ShellLog = Join-Path $RunRoot "level1b_chain.log"
@@ -110,6 +162,7 @@ Write-Host "ORTHO=$Ortho"
 Write-Host "RUN_ROOT=$RunRoot"
 Write-Host "OTB_ENV=$OtbEnv"
 Write-Host "SAGA_CMD=$SagaExe"
+if ($Osgeo4wEnv) { Write-Host "SAGA_ENV=$Osgeo4wEnv" }
 Write-Host "PYTHON=$EnvPython"
 
 & $EnvPython -m metashape_qc_engine.level1b_dumb_runner @RunnerArgs 2>&1 |

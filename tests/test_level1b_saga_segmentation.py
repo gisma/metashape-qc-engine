@@ -292,3 +292,26 @@ def test_saga_discovery_and_environment_use_saved_windows_path(monkeypatch) -> N
     assert saga.discover_saga_cmd().endswith("saga_cmd.exe")
     assert calls == [("saga_cmd", r"C:\SAGA;C:\Windows\System32")]
     assert saga.saga_cli_env()["PATH"] == r"C:\SAGA;C:\Windows\System32"
+
+
+def test_saga_discovery_prefers_explicit_windows_batch_launcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher = tmp_path / "saga_cmd.bat"
+    launcher.write_text("rem\n", encoding="utf-8")
+    monkeypatch.setenv("LEVEL1B_SAGA_CMD_ORIG", str(launcher))
+
+    assert saga.discover_saga_cmd() == str(launcher)
+
+
+def test_saga_subprocess_command_wraps_windows_batch_launcher(monkeypatch) -> None:
+    monkeypatch.setattr(saga.os, "name", "nt")
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+
+    wrapped = saga.saga_subprocess_command(
+        [r"C:\OSGeo4W\bin\saga_cmd.bat", "imagery_segmentation", "3"]
+    )
+
+    assert wrapped[:4] == [r"C:\Windows\System32\cmd.exe", "/d", "/s", "/c"]
+    assert "saga_cmd.bat" in wrapped[4]
+    assert "imagery_segmentation" in wrapped[4]

@@ -40,7 +40,7 @@ function Resolve-OtbEnvironmentScript {
 
 function Import-BatchEnvironment([string]$BatchFile) {
     $Lines = & $env:ComSpec /d /s /c "call `"$BatchFile`" >nul && set"
-    if ($LASTEXITCODE -ne 0) { throw "OTB environment script failed: $BatchFile" }
+    if ($LASTEXITCODE -ne 0) { throw "Batch environment script failed: $BatchFile" }
     foreach ($Line in $Lines) {
         if ($Line -match '^([^=]+)=(.*)$') {
             [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], "Process")
@@ -51,14 +51,48 @@ function Import-BatchEnvironment([string]$BatchFile) {
 function Resolve-SagaExecutable {
     $Candidates = @()
     if ($env:SAGA_ROOT) {
-        if (Test-Path $env:SAGA_ROOT -PathType Leaf) { $Candidates += $env:SAGA_ROOT }
-        else { $Candidates += (Join-Path $env:SAGA_ROOT "saga_cmd.exe") }
+        if (Test-Path $env:SAGA_ROOT -PathType Leaf) {
+            if ((Split-Path $env:SAGA_ROOT -Leaf) -match '^saga_cmd(\.exe|\.bat|\.cmd)?$') {
+                $Candidates += $env:SAGA_ROOT
+            }
+        }
+        else {
+            $Candidates += (Join-Path $env:SAGA_ROOT "saga_cmd.exe")
+            $Candidates += (Join-Path $env:SAGA_ROOT "saga_cmd.bat")
+            $Candidates += (Join-Path $env:SAGA_ROOT "saga_cmd.cmd")
+            $Candidates += (Join-Path $env:SAGA_ROOT "bin\saga_cmd.exe")
+            $Candidates += (Join-Path $env:SAGA_ROOT "bin\saga_cmd.bat")
+        }
     }
-    $OnPath = Get-Command saga_cmd.exe -ErrorAction SilentlyContinue
-    if ($OnPath) { $Candidates += $OnPath.Source }
+    foreach ($Name in @("saga_cmd.exe", "saga_cmd.bat", "saga_cmd.cmd", "saga_cmd")) {
+        $OnPath = Get-Command $Name -ErrorAction SilentlyContinue
+        if ($OnPath) { $Candidates += $OnPath.Source }
+    }
     foreach ($Root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }) {
         $Candidates += (Join-Path $Root "SAGA-GIS\saga_cmd.exe")
         $Candidates += (Join-Path $Root "SAGA GIS\saga_cmd.exe")
+    }
+    return $Candidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
+}
+
+function Resolve-Osgeo4wEnvironmentScript {
+    $Candidates = @()
+    if ($env:OSGEO4W_ROOT) {
+        if (Test-Path $env:OSGEO4W_ROOT -PathType Leaf) {
+            $Candidates += $env:OSGEO4W_ROOT
+        } else {
+            $Candidates += (Join-Path $env:OSGEO4W_ROOT "OSGeo4W.bat")
+        }
+    }
+    if ($env:SAGA_ROOT) {
+        if ((Test-Path $env:SAGA_ROOT -PathType Leaf) -and ((Split-Path $env:SAGA_ROOT -Leaf) -ieq "OSGeo4W.bat")) {
+            $Candidates += $env:SAGA_ROOT
+        } elseif (Test-Path $env:SAGA_ROOT -PathType Container) {
+            $Candidates += (Join-Path $env:SAGA_ROOT "OSGeo4W.bat")
+        }
+    }
+    foreach ($Root in @("C:\OSGeo4W", "C:\OSGeo4W64")) {
+        $Candidates += (Join-Path $Root "OSGeo4W.bat")
     }
     return $Candidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
 }
@@ -132,9 +166,14 @@ foreach ($Name in @("BandMathX", "DimensionalityReduction", "HaralickTextureExtr
     else { $OtbStatus = "MISSING"; $MissingOtb += "otbcli_$Name"; Missing "otbcli_$Name" }
 }
 
+$Osgeo4wEnv = Resolve-Osgeo4wEnvironmentScript
+if ($Osgeo4wEnv) {
+    Import-BatchEnvironment $Osgeo4wEnv
+    Ok "OSGeo4W environment for SAGA discovery: $Osgeo4wEnv"
+}
 $Saga = Resolve-SagaExecutable
 if ($Saga) { $SagaStatus = "OK"; Ok "saga_cmd: $Saga" }
-else { Missing "saga_cmd.exe; set SAGA_ROOT to the SAGA installation directory" }
+else { Missing "saga_cmd.exe/.bat; set SAGA_ROOT to SAGA or OSGEO4W_ROOT to the OSGeo4W installation directory" }
 
 $MissingGdal = @()
 foreach ($Name in @("gdal_edit.py", "ogr2ogr")) {

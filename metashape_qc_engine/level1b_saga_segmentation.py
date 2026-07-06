@@ -25,6 +25,9 @@ SEED_MAX_COVERAGE_FRACTION = 2.0
 
 
 def discover_saga_cmd() -> str | None:
+    explicit_command = os.environ.get("LEVEL1B_SAGA_CMD_ORIG")
+    if explicit_command and Path(explicit_command).is_file():
+        return explicit_command
     saved_path = os.environ.get("LEVEL1B_SAGA_PATH_ORIG")
     if saved_path:
         discovered = shutil.which(SAGA_CMD, path=saved_path)
@@ -39,6 +42,12 @@ def saga_cli_env() -> dict[str, str]:
     env = os.environ.copy()
     if os.environ.get("LEVEL1B_SAGA_PATH_ORIG"):
         env["PATH"] = os.environ["LEVEL1B_SAGA_PATH_ORIG"]
+    for saved_name, runtime_name in (
+        ("LEVEL1B_SAGA_GDAL_DATA_ORIG", "GDAL_DATA"),
+        ("LEVEL1B_SAGA_PROJ_LIB_ORIG", "PROJ_LIB"),
+    ):
+        if os.environ.get(saved_name):
+            env[runtime_name] = os.environ[saved_name]
     # OTB's bundled libraries and projection database are incompatible with the
     # system SAGA build. SAGA is a separate external CLI and must not inherit
     # those runtime overrides from an interactive OTB shell.
@@ -48,6 +57,24 @@ def saga_cli_env() -> dict[str, str]:
         if "otb" in env.get(name, "").lower():
             env.pop(name, None)
     return env
+
+
+def saga_subprocess_command(command: Iterable[str | os.PathLike[str]]) -> list[str]:
+    """Wrap Windows batch launchers explicitly for subprocess execution."""
+
+    normalized = [os.fspath(part) for part in command]
+    if os.name != "nt" or not normalized:
+        return normalized
+    if Path(normalized[0]).suffix.lower() not in {".bat", ".cmd"}:
+        return normalized
+    comspec = os.environ.get("COMSPEC") or shutil.which("cmd.exe") or "cmd.exe"
+    return [
+        comspec,
+        "/d",
+        "/s",
+        "/c",
+        subprocess.list2cmdline(normalized),
+    ]
 
 
 def _grid_paths(directory: Path, band_count: int) -> list[Path]:
@@ -708,7 +735,7 @@ def run_saga_seeded_region_growing(
 
     def run_command(command: list[str]) -> None:
         result = subprocess.run(
-            command,
+            saga_subprocess_command(command),
             capture_output=True,
             text=True,
             env=saga_cli_env(),

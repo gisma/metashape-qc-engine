@@ -23,6 +23,7 @@ from metashape_qc_engine.level1b_saga_segmentation import (
     discover_saga_cmd,
     export_saga_segments_to_geotiff,
     saga_cli_env,
+    saga_subprocess_command,
 )
 
 
@@ -449,7 +450,7 @@ def run_multiscale_centroid_seed_stabilization(
         seed_grid_path=stabilized_seed_grid,
     )
     process = subprocess.run(
-        command,
+        saga_subprocess_command(command),
         capture_output=True,
         text=True,
         env=saga_cli_env(),
