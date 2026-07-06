@@ -10,7 +10,6 @@ bibliography: metashape-qt-engine.bib
 link-citations: true
 ---
 
-
 ## 1. Motivation
 
 UAV photogrammetry converts overlapping image observations into spatial products such as sparse point clouds, dense reconstructions, digital surface models, and orthomosaics. In ecological and environmental sciences, these products are frequently used as if they were deterministic, error-free outputs of a fixed processing chain. However, structure-from-motion (SfM) and multi-view-stereo (MVS) processing are highly sensitive to acquisition conditions, alignment behaviour, reconstruction parameters, filtering decisions, georeferencing, and software-specific processing choices [@DeMarco2021SfMRepeatability; @Sledz2022SfMProcessingParameters; @Tinkham2024SfMParameters].
@@ -27,14 +26,23 @@ While these approaches mask algorithmic variance through external models ("AI sm
 
 To bridge the gap between photogrammetric uncertainty and object-based spatial analysis, this paper introduces a two-tier *Multi-Level Spatial Evidence Framework*. Rather than "correcting" algorithms with external models, this framework establishes algorithmic persistence under controlled parameter perturbations as the primary metric for product stability.
 
-The framework separates two methodological questions:
+High-resolution UAV remote sensing fundamentally suffers from the Modifiable Areal Unit Problem (MAUP) when analyzed at the pixel level. Individual sensor pixels do not represent tangible environmental objects, but rather noisy micro-structures such as shadows or leaf gaps. Aggregating these pixels into homogeneous areas (spatial support) is mandatory to extract reliable metrics. However, classical Geographic Object-Based Image Analysis (GEOBIA) often relies on the arbitrary, deterministic selection of segmentation parameters [@EzZahouani2023ParameterReview]. To generate reliable information units *before* any ecological or thematic classification (Level-2 and Level-3) takes place, the construction of spatial support must be treated as a statistical optimization problem.
+
+To address these theoretical deficits, the framework separates two methodological questions:
 
 * **Level-1A (Product Reproducibility):** Which Metashape processing variant produces an orthomosaic whose image values and valid spatial support remain stable across repeated builds?
 * **Level-1B (Scene-Adaptive Segmentation Evidence):** Starting from a completed RGB orthomosaic, how can object-like spatial support be constructed so that the resulting units are not artifacts of a single segmentation parameter realization, but are mathematically supported as persistent entities under controlled variations of spatial scale, feature tolerance, and seed initialization?
 
-The first level therefore evaluates the reproducibility of the image product, whereas the second level evaluates the stability of the spatial support used for subsequent object-based analysis.
+The first level evaluates the reproducibility of the image product, whereas the second level ensures the stability of the spatial support used for subsequent analysis. Level-1B achieves this by implementing three methodological paradigm shifts designed to construct algorithmically robust information units:
+
+**1. Geostatistical Scale Selection (Overcoming MAUP):** In common practice, segmentation scales are defined heuristically or via trial-and-error. Recent literature, however, emphasizes that spatial scales must be derived directly from the inherent autocorrelation structure of the image data to mitigate MAUP effects [@Ming2015SpatialStatisticsGEOBIA; @Curran1988SemivariogramRS]. Level-1B eliminates manual parameter guessing by calculating a multivariate empirical semivariogram. Spatial candidate scales are sampled exactly where the spatial autocorrelation crosses defined sill fractions, making the permissible segment size a data-driven response to the scene's structure rather than a human assumption.
+
+**2. Data-Driven Feature Tolerance (Unsupervised Evaluation):** Unsupervised Segmentation Evaluation (USE) dictates that reliable segments require a natural balance between intra-segment homogeneity and inter-segment heterogeneity [@Drăguţ2014AutomatedParameterisation]. Imposing static spectral thresholds often forces complex image areas into unnatural polygon constraints [@EzZahouani2023SegmentationReview]. Instead, the framework derives the permissible feature tolerance (`ranger`) locally from the density of the transformed feature space. Using k-Nearest-Neighbor distances and the robust Half-Sample Mode (HSM), the exact noise level characteristic of the respective scene is extracted. Homogeneity is therefore not forced upon the spatial unit, but derived from it.
+
+**3. Algorithmic Persistence via Ensemble Perturbation:** A single deterministic run of a segmentation algorithm (e.g., seeded region growing) is mathematically fragile. Minor variations in starting geometry or parameter selection frequently lead to drastically different segment boundaries, which is why the evaluation of clustering stability is highly demanded in pattern recognition literature [@VonLuxburg2010ClusteringStability; @BenHur2002StabilityClustering]. The framework quantifies this uncertainty by constructing a factorial ensemble of scale, tolerance, and seed phase. Rather than prioritizing a single deterministic product, it utilizes multiscale centroid stabilization. Only seed points that stably survive programmed parameter perturbations materialize as the final spatial support.
 
 Importantly, parameter values that originated in development runs are not treated here as final methodological constants. The admissible parameter ranges, sampling densities, support-aggregation policies, and handoff criteria belong to the experiment design and are to be evaluated in the sensitivity study. The method description below therefore states the implemented operations and decision logic without presenting development values as validated final settings.
+
 
 ## Level-1A: Reproducibility-Based Orthomosaic Product Analysis
 
