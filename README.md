@@ -107,6 +107,44 @@ limit without changing the canonical run directory, manifest paths, IDs, or
 Linux/macOS behavior. Do not start two `ps-run.ps1` instances for the same run
 directory concurrently.
 
+#### Optional Microsoft Defender exclusions
+
+Real-time antivirus scanning can add substantial I/O overhead while Metashape
+reads large source images and creates many project and raster files. On a
+dedicated, trusted processing workstation, an administrator may exclude only
+the input and generated run directories. Do not disable Microsoft Defender
+globally and do not exclude the repository, download directories, or an entire
+drive.
+
+Open PowerShell as Administrator and replace the example paths:
+
+```powershell
+$WorkflowPaths = @(
+    "D:\path\to\trusted\input-images",
+    "D:\path\to\level1a-runs",
+    "D:\path\to\level1b-runs"
+)
+
+Add-MpPreference -ExclusionPath $WorkflowPaths
+```
+
+Verify the effective exclusions:
+
+```powershell
+(Get-MpPreference).ExclusionPath
+```
+
+Remove them when the processing campaign is finished:
+
+```powershell
+Remove-MpPreference -ExclusionPath $WorkflowPaths
+```
+
+These commands may be blocked when Defender settings are centrally managed by
+Group Policy, Microsoft Intune, or another endpoint-security product. Path
+exclusions reduce malware protection for every file below those directories;
+use them only for controlled data and generated workflow artifacts.
+
 No setup script installs Agisoft Metashape, SAGA GIS, OTB, R itself, or other
 licensed/system software automatically.
 
