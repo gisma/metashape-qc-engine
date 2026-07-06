@@ -18,8 +18,9 @@ The repository layout is historical: Level-1A is split across `python/`, `script
 - macOS: `bash scripts/setup_level1a_macos.sh`
 - native Windows dependency environment: `powershell -ExecutionPolicy Bypass -File scripts/setup_level1a_windows.ps1`
 
-The native Windows setup uses `.conda-env` so GDAL and `osgeo` come from one
-compatible conda-forge build. The production Level-1A launcher itself remains
+The native Windows setup installs Miniforge through `winget` when needed and
+uses `.conda-env` so GDAL and `osgeo` come from one compatible conda-forge
+build. The production Level-1A launcher itself remains
 Bash-based. For the complete chain on Windows, run the Linux setup and launcher
 inside WSL2. WSL must see a Linux `metashape.sh`; finding `metashape.exe` on the
 Windows side does not satisfy the current launcher contract.

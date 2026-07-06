@@ -27,12 +27,34 @@ function Find-Tool([string[]]$Names) {
 }
 
 Set-Location $RepoRoot
-$Conda = Get-Command conda.exe -ErrorAction SilentlyContinue
-if (-not $Conda) { $Conda = Get-Command conda -ErrorAction SilentlyContinue }
-if (-not $Conda) {
-    throw "Conda was not found. Install Miniforge/Conda and reopen PowerShell. Native Windows GDAL Python bindings are installed from conda-forge."
+function Resolve-CondaExecutable {
+    $Command = Get-Command conda.exe -ErrorAction SilentlyContinue
+    if ($Command) { return $Command.Source }
+
+    $Candidates = @(
+        (Join-Path $env:USERPROFILE "miniforge3\Scripts\conda.exe"),
+        (Join-Path $env:LOCALAPPDATA "miniforge3\Scripts\conda.exe"),
+        (Join-Path $env:ProgramData "miniforge3\Scripts\conda.exe")
+    )
+    return $Candidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
 }
-$CondaCommand = $Conda.Source
+
+$CondaCommand = Resolve-CondaExecutable
+if (-not $CondaCommand) {
+    $Winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if (-not $Winget) {
+        throw "Neither Conda nor winget was found. Install Miniforge from https://conda-forge.org/download/ and rerun this script."
+    }
+
+    Write-Host "Conda not found; installing Miniforge with winget."
+    & $Winget.Source install --id CondaForge.Miniforge3 --exact --source winget --accept-package-agreements --accept-source-agreements
+    $WingetExitCode = $LASTEXITCODE
+    $CondaCommand = Resolve-CondaExecutable
+    if (-not $CondaCommand) {
+        throw "Miniforge installation did not expose conda.exe (winget exit $WingetExitCode). Reopen PowerShell or install from https://conda-forge.org/download/, then rerun."
+    }
+}
+Ok "Conda executable: $CondaCommand"
 
 $Packages = @("python=3.12", "pip", "numpy", "pyyaml", "rasterio", "gdal", "matplotlib")
 if (Test-Path $EnvPython -PathType Leaf) {

@@ -14,8 +14,9 @@ From the repository root, use the setup for the active platform:
 - macOS: `bash scripts/setup_level1b_macos.sh`
 - native Windows dependency environment: `powershell -ExecutionPolicy Bypass -File scripts/setup_level1b_windows.ps1`
 
-The native Windows setup uses `.conda-env` so GDAL, rasterio, and `osgeo` come
-from compatible conda-forge packages. The normal Level-1B wrapper remains
+The native Windows setup installs Miniforge through `winget` when needed and
+uses `.conda-env` so GDAL, rasterio, and `osgeo` come from compatible
+conda-forge packages. The normal Level-1B wrapper remains
 Bash-based. For the complete workflow on Windows, use WSL2 and run the Linux
 setup there. OTB, SAGA, GDAL, R, and their packages must be available inside
 WSL; Windows-side installations are not assumed to satisfy the Linux command

@@ -37,8 +37,9 @@ powershell -ExecutionPolicy Bypass -File scripts/setup_level1b_windows.ps1
 
 The Linux and macOS scripts create or reuse `.venv`. The native Windows
 scripts create or reuse `.conda-env` and install the mutually compatible Python,
-GDAL, rasterio, and `osgeo` packages from conda-forge. They require an existing
-Miniforge/Conda installation.
+GDAL, rasterio, and `osgeo` packages from conda-forge. If Conda is absent, they
+install Miniforge through `winget`; if `winget` is unavailable, they stop with
+the manual Miniforge download address.
 
 ### Windows via WSL2
 
