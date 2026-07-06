@@ -21,6 +21,26 @@ For Level-1B:
 bash scripts/setup_level1b.sh
 ```
 
+For macOS:
+
+```bash
+bash scripts/setup_level1a_macos.sh
+bash scripts/setup_level1b_macos.sh
+```
+
+For Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup_level1a_windows.ps1
+powershell -ExecutionPolicy Bypass -File scripts/setup_level1b_windows.ps1
+```
+
+The macOS and Windows scripts apply the same Python/dependency checks as the
+Linux setup. They do not install licensed or system software. The current
+normal workflow launchers are Bash-based; the Windows scripts therefore report
+native launcher integration as unresolved rather than implying that dependency
+checks alone make the complete chain natively executable.
+
 The setup scripts create or reuse `.venv`, install the local Python package, verify required Python imports, and check external tools. They do **not** install licensed or system software such as Agisoft Metashape, SAGA GIS, OTB, GDAL CLI tools, or R itself.
 
 ## Active documentation

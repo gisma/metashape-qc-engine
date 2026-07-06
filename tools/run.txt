@@ -1,0 +1,53 @@
+cd /home/creu/dev/metashape-qc-engine
+  source .venv/bin/activate
+  export METASHAPE_DIR=/home/creu/apps/metashape-pro
+
+  IMAGE_DIR=/datadisk/data/uav/MOF_09072024_core2
+  PRODUCT_ID=MOF_09072024_core2
+  REPS=2
+  L1A_ROOT=/home/creu/tmp/level1a_runs
+  L1A_RUN=$L1A_ROOT/${PRODUCT_ID}_alignment_mesh_ortho_reference_reps${REPS}
+  L1B_RUN=/home/creu/tmp/level1b_runs/${PRODUCT_ID}_level1b
+
+  metashape-qc prepare \
+    --image-dir "$IMAGE_DIR" \
+    --product-id "$PRODUCT_ID" \
+    --preset config/experiments/presets/mof_alignment_mesh_ortho_reference_v1.json \
+    --reps "$REPS" \
+    --output-root "$L1A_ROOT"
+
+  metashape-qc run-analysis "$L1A_RUN/config.yml" \
+    --variants "$L1A_RUN/variants.csv" \
+    --reps "$REPS" \
+    --run-dir "$L1A_RUN"
+
+  metashape-qc evaluate "$L1A_RUN"
+
+  ORTHO=$(jq -r '.product_modes.median_ortho.path' "$L1A_RUN/selected_product.json")
+
+  ORTHO="$ORTHO" \
+  RUN_ROOT="$L1B_RUN" \
+  OVERWRITE=0 \
+  bash metashape_qc_engine/run_level1b_dumb_with_user_header.sh
+9m
+
+
+
+
+
+
+
+
+
+    
+      document
+        .querySelector('.app-loading-screen')
+        .addEventListener('dblclick', () => window.showDebugLog());
+    
+
+    
+    
+      window.startApp();
+    
+  
+
