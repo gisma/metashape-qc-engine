@@ -10,13 +10,31 @@ bibliography: metashape-qt-engine.bib
 link-citations: true
 ---
 
-## Motivation and Methodological Questions
 
-UAV photogrammetry converts overlapping image observations into spatial products such as sparse point clouds, dense reconstructions, digital surface models, and orthomosaics. These products are often used as if they were deterministic outputs of a fixed processing chain. However, structure-from-motion and multi-view-stereo processing are affected by acquisition conditions, alignment behaviour, reconstruction parameters, filtering decisions, georeferencing, and software-specific processing choices [@DeMarco2021SfMRepeatability; @Sledz2022SfMProcessingParameters; @Tinkham2024SfMParameters]. Checkpoint or ground-control based accuracy assessment is therefore not sufficient to describe whether an exported orthomosaic is internally reproducible under repeated processing [@Ludwig2020ReproducibleOrthomosaics].
+## 1. Motivation
 
-The framework separates two methodological questions. Level-1A asks which Metashape processing variant produces an orthomosaic whose image values and valid spatial support remain stable across repeated builds. Level-1B starts from a completed RGB orthomosaic and asks how object-like spatial support can be constructed so that the resulting units are not artifacts of a single segmentation parameter realization. The first level therefore evaluates the reproducibility of the image product, whereas the second level evaluates the stability of the spatial support used for subsequent object-based analysis.
+UAV photogrammetry converts overlapping image observations into spatial products such as sparse point clouds, dense reconstructions, digital surface models, and orthomosaics. In ecological and environmental sciences, these products are frequently used as if they were deterministic, error-free outputs of a fixed processing chain. However, structure-from-motion (SfM) and multi-view-stereo (MVS) processing are highly sensitive to acquisition conditions, alignment behaviour, reconstruction parameters, filtering decisions, georeferencing, and software-specific processing choices [@DeMarco2021SfMRepeatability; @Sledz2022SfMProcessingParameters; @Tinkham2024SfMParameters].
 
-Parameter values that originated in development runs are not treated here as final methodological constants. The admissible parameter ranges, sampling densities, support-aggregation policies, and handoff criteria belong to the experiment design and are to be evaluated in the sensitivity study. The method description below therefore states the implemented operations and decision logic without presenting development values as validated final settings.
+Even with identical input data and fixed parameters, image reconstruction is subject to an inherent algorithmic variance. In structurally complex environments, such as forest canopies, product reproducibility can drop to as low as 75% [@Ludwig2020ReproducibleOrthomosaics]. Consequently, conventional checkpoint or ground-control-based accuracy assessment is not sufficient to describe whether an exported orthomosaic is internally reproducible under repeated processing. When downstream workflows like Geographic Object-Based Image Analysis (GEOBIA) rely on these unstable geometries, they risk mapping the artifacts of a single parameter configuration rather than actual ecological units [@Kucharczyk2020GEOBIAPrimer].
+
+## 2. State of the Art
+
+Current research increasingly addresses the instability of UAV photogrammetry and segmentation through algorithmic compensation or multimodal data fusion. To mitigate SfM limitations in complex vegetation, studies often deploy LiDAR integration or deep learning filters. Similarly, in modern GEOBIA, the trend is shifting away from treating segmentation as an independent geometric process; instead, it is frequently fused directly with semantic classification using Foundation Models like the Segment Anything Model (SAM) [@He2024GlobalLocalGEOBIA] or "end-to-end" neural classifiers [@EzZahouani2023SegmentationReview].
+
+While these approaches mask algorithmic variance through external models ("AI smoothing") or auxiliary sensors, there is a critical lack of transparent, purely analytical frameworks that statistically quantify the inherent variance of parameter selection directly from the image data to use it as primary spatial evidence [@EzZahouani2023ParameterReview].
+
+## 3. Methodological Framework and Questions
+
+To bridge the gap between photogrammetric uncertainty and object-based spatial analysis, this paper introduces a two-tier *Multi-Level Spatial Evidence Framework*. Rather than "correcting" algorithms with external models, this framework establishes algorithmic persistence under controlled parameter perturbations as the primary metric for product stability.
+
+The framework separates two methodological questions:
+
+* **Level-1A (Product Reproducibility):** Which Metashape processing variant produces an orthomosaic whose image values and valid spatial support remain stable across repeated builds?
+* **Level-1B (Scene-Adaptive Segmentation Evidence):** Starting from a completed RGB orthomosaic, how can object-like spatial support be constructed so that the resulting units are not artifacts of a single segmentation parameter realization, but are mathematically supported as persistent entities under controlled variations of spatial scale, feature tolerance, and seed initialization?
+
+The first level therefore evaluates the reproducibility of the image product, whereas the second level evaluates the stability of the spatial support used for subsequent object-based analysis.
+
+Importantly, parameter values that originated in development runs are not treated here as final methodological constants. The admissible parameter ranges, sampling densities, support-aggregation policies, and handoff criteria belong to the experiment design and are to be evaluated in the sensitivity study. The method description below therefore states the implemented operations and decision logic without presenting development values as validated final settings.
 
 ## Level-1A: Reproducibility-Based Orthomosaic Product Analysis
 
