@@ -31,8 +31,11 @@ bash scripts/setup_level1b_macos.sh
 For Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/setup_level1a_windows.ps1
-powershell -ExecutionPolicy Bypass -File scripts/setup_level1b_windows.ps1
+$env:OTB_ROOT = "C:\path\to\OTB"
+$env:SAGA_ROOT = "C:\path\to\saga_cmd.exe"
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_level1a_windows.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_level1b_windows.ps1
 ```
 
 The Linux and macOS scripts create or reuse `.venv`. The native Windows
@@ -65,9 +68,44 @@ installed or exposed inside WSL. Native Windows installations are not silently
 reused by the Linux runners.
 
 Native Level-1B requires `OTB_ROOT` to identify the extracted Windows OTB
-package and `SAGA_ROOT` when `saga_cmd.exe` is not on `PATH`. The PowerShell
-wrapper loads `otbenv.bat` only for OTB subprocesses so its GDAL DLLs do not
-replace the conda-forge Python GDAL runtime.
+package and `SAGA_ROOT` when `saga_cmd.exe` is not on `PATH`. `OTB_ROOT` must
+contain `otbenv.ps1` or `otbenv.bat`; `SAGA_ROOT` may name either the SAGA
+installation directory or `saga_cmd.exe` itself. The PowerShell wrapper loads
+the OTB environment only for OTB subprocesses so its GDAL DLLs do not replace
+the conda-forge Python GDAL runtime.
+
+The Level-1A Windows setup also installs `requirements-metashape.txt` into
+`python\vendor`. This is required because Metashape uses its own Python runtime
+and cannot import PyYAML from `.conda-env`.
+
+### Native Windows end-to-end run
+
+The repository includes `ps-run.ps1` for the configured MOF Level-1A to
+Level-1B chain. Before starting it, review these values near the top of the
+file and adapt them to the local installation and dataset:
+
+- `IMAGE_DIR`, `PRODUCT_ID`, `REPS`, `L1A_ROOT`, and `L1B_RUN`;
+- `OTB_ROOT`, pointing to an OTB package containing `otbenv.ps1` or
+  `otbenv.bat`;
+- `SAGA_ROOT`, pointing to the SAGA directory or directly to `saga_cmd.exe`.
+
+Run the complete chain from the repository root:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ps-run.ps1
+```
+
+The script prepares a new Level-1A run only when its control files do not yet
+exist. If `manifest.csv` exists, it selects `resume-analysis` automatically;
+otherwise it selects `run-analysis`. Successful analysis is evaluated, the
+selected median orthomosaic is read from `selected_product.json`, and Level-1B
+is then launched with that product.
+
+On Windows, the Level-1A runner automatically assigns a temporary short drive
+letter for paths passed to Metashape. This avoids Metashape's legacy path-length
+limit without changing the canonical run directory, manifest paths, IDs, or
+Linux/macOS behavior. Do not start two `ps-run.ps1` instances for the same run
+directory concurrently.
 
 No setup script installs Agisoft Metashape, SAGA GIS, OTB, R itself, or other
 licensed/system software automatically.

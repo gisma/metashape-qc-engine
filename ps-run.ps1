@@ -19,30 +19,45 @@
       throw "metashape-qc.exe fehlt: $QC"
   }
 
-  # Level 1A vorbereiten
-  $PrepareArgs = @(
-      "prepare"
-      "--image-dir", $IMAGE_DIR
-      "--product-id", $PRODUCT_ID
-      "--preset", "config\experiments\presets\mof_alignment_mesh_ortho_reference_v1.json"
-      "--reps", $REPS
-      "--output-root", $L1A_ROOT
-  )
+  # Level 1A nur bei einem neuen Lauf vorbereiten.
+  $ConfigFile = Join-Path $L1A_RUN "config.yml"
+  $VariantsFile = Join-Path $L1A_RUN "variants.csv"
+  $ManifestFile = Join-Path $L1A_RUN "manifest.csv"
 
-  & $QC @PrepareArgs
-  if ($LASTEXITCODE -ne 0) { throw "Level-1A prepare failed: $LASTEXITCODE" }
+  if (-not (Test-Path $ConfigFile -PathType Leaf) -or
+      -not (Test-Path $VariantsFile -PathType Leaf)) {
+      $PrepareArgs = @(
+          "prepare"
+          "--image-dir", $IMAGE_DIR
+          "--product-id", $PRODUCT_ID
+          "--preset", "config\experiments\presets\mof_alignment_mesh_ortho_reference_v1.json"
+          "--reps", $REPS
+          "--output-root", $L1A_ROOT
+      )
+
+      & $QC @PrepareArgs
+      if ($LASTEXITCODE -ne 0) { throw "Level-1A prepare failed: $LASTEXITCODE" }
+  } else {
+      Write-Host "Level-1A control files already exist; skipping prepare."
+  }
 
   # Level 1A ausführen
-  $AnalysisArgs = @(
+  $AnalysisCommand = if (Test-Path $ManifestFile -PathType Leaf) {
+      "resume-analysis"
+  } else {
       "run-analysis"
-      "$L1A_RUN\config.yml"
-      "--variants", "$L1A_RUN\variants.csv"
+  }
+  $AnalysisArgs = @(
+      $AnalysisCommand
+      $ConfigFile
+      "--variants", $VariantsFile
       "--reps", $REPS
       "--run-dir", $L1A_RUN
   )
 
+  Write-Host "Level-1A command: $AnalysisCommand"
   & $QC @AnalysisArgs
-  if ($LASTEXITCODE -ne 0) { throw "Level-1A run-analysis failed: $LASTEXITCODE" }
+  if ($LASTEXITCODE -ne 0) { throw "Level-1A $AnalysisCommand failed: $LASTEXITCODE" }
 
   # Level 1A auswerten
   & $QC evaluate $L1A_RUN

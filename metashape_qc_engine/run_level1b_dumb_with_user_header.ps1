@@ -21,16 +21,30 @@ if (-not (Test-Path $EnvPython -PathType Leaf)) {
 function Resolve-OtbEnvironmentScript {
     $Candidates = @()
     if ($env:OTB_ROOT) {
+        $Candidates += (Join-Path $env:OTB_ROOT "otbenv.ps1")
         $Candidates += (Join-Path $env:OTB_ROOT "otbenv.bat")
+        $Candidates += (Join-Path $env:OTB_ROOT "bin\otbenv.ps1")
         $Candidates += (Join-Path $env:OTB_ROOT "bin\otbenv.bat")
     }
-    $OnPath = Get-Command otbenv.bat -ErrorAction SilentlyContinue
-    if ($OnPath) { $Candidates += $OnPath.Source }
+    foreach ($Name in @("otbenv.ps1", "otbenv.bat")) {
+        $OnPath = Get-Command $Name -ErrorAction SilentlyContinue
+        if ($OnPath) { $Candidates += $OnPath.Source }
+    }
     foreach ($Root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }) {
-        $Candidates += Get-ChildItem -Path $Root -Filter "otbenv.bat" -Recurse -Depth 2 -File -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty FullName
+        foreach ($Name in @("otbenv.ps1", "otbenv.bat")) {
+            $Candidates += Get-ChildItem -Path $Root -Filter $Name -Recurse -Depth 2 -File -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty FullName
+        }
     }
     return $Candidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
+}
+
+function Import-OtbEnvironment([string]$EnvironmentScript) {
+    if ([IO.Path]::GetExtension($EnvironmentScript) -ieq ".ps1") {
+        . $EnvironmentScript
+    } else {
+        Import-BatchEnvironment $EnvironmentScript
+    }
 }
 
 function Import-BatchEnvironment([string]$BatchFile) {
@@ -70,9 +84,9 @@ $env:PATH = $BasePath
 
 $OtbEnv = Resolve-OtbEnvironmentScript
 if (-not $OtbEnv) {
-    throw "Could not find otbenv.bat. Set OTB_ROOT to the extracted Windows OTB package root."
+    throw "Could not find otbenv.ps1 or otbenv.bat. Set OTB_ROOT to the extracted Windows OTB package root."
 }
-Import-BatchEnvironment $OtbEnv
+Import-OtbEnvironment $OtbEnv
 $env:LEVEL1B_OTB_PATH_ORIG = $env:PATH
 $SavedOtbVariables = @{
     "OTB_APPLICATION_PATH" = "LEVEL1B_OTB_APPLICATION_PATH_ORIG"
