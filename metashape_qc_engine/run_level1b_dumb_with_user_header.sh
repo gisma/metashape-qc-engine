@@ -5,6 +5,7 @@ ORTHO="${ORTHO:-/home/creu/tmp/cut-ref-ortho.tif}"
 REPO="${REPO:-/home/creu/dev/metashape-qc-engine}"
 RUN_ROOT="${RUN_ROOT:-/home/creu/tmp/level1b_runs/level1b_$(date +%Y%m%dT%H%M%S)}"
 OVERWRITE="${OVERWRITE:-0}"
+LEVEL1B_CONFIG="${LEVEL1B_CONFIG:-}"
 OTB_ROOT="${OTB_ROOT:-$HOME/apps/otb911}"
 
 mkdir -p "$RUN_ROOT"
@@ -110,6 +111,9 @@ RUNNER_ARGS=(
 )
 if [[ "$OVERWRITE" == "1" ]]; then
   RUNNER_ARGS+=(--overwrite)
+fi
+if [[ -n "$LEVEL1B_CONFIG" ]]; then
+  RUNNER_ARGS+=(--config "$LEVEL1B_CONFIG")
 fi
 
 echo "Level-1b runner"

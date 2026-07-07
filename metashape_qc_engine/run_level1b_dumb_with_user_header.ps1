@@ -10,6 +10,7 @@ $EnvPython = Join-Path $EnvDir "python.exe"
 $Ortho = $env:ORTHO
 $RunRoot = $env:RUN_ROOT
 $Overwrite = $env:OVERWRITE
+$Level1BConfig = $env:LEVEL1B_CONFIG
 
 if (-not $Ortho) { throw "Set ORTHO to the input orthomosaic path." }
 if (-not $RunRoot) { throw "Set RUN_ROOT to the Level-1B output directory." }
@@ -170,6 +171,7 @@ New-Item -ItemType Directory -Force -Path $RunRoot | Out-Null
 $ShellLog = Join-Path $RunRoot "level1b_chain.log"
 $RunnerArgs = @("--rgb-ortho", $Ortho, "--out-dir", $RunRoot)
 if ($Overwrite -eq "1") { $RunnerArgs += "--overwrite" }
+if ($Level1BConfig) { $RunnerArgs += @("--config", $Level1BConfig) }
 
 Write-Host "Level-1B Windows runner"
 Write-Host "ORTHO=$Ortho"

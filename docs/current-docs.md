@@ -12,6 +12,9 @@ This file is the active documentation index. It defines which project documents 
 | `docs/LEVEL1A_METHOD_CORE_MAP.md` | Level-1A method core: replicates, canonical grid, stability ranking, support persistence, median/medoid, non-scope | active |
 | `docs/RUN_LEVEL1B.md` | Level-1B operation: wrapper call, chain report, Step-10 products, quality evidence, status diagnosis | active |
 | `docs/LEVEL1B_METHOD_CORE_MAP.md` | Level-1B method core: valid mask, six-band RGB/DGLCM-PC1 proxy stack, scaling, scene-adaptive variogram/HSM pre-screening, SAGA ensemble, continuous robust Step 9a support, Step 9b, and Step 10 | active |
+| `docs/RUN_LEVEL1AB_SENSITIVITY.md` | Operation of the joint Level-1A/Level-1B sensitivity experiment | active |
+| `docs/LEVEL1AB_SENSITIVITY_METHODS.md` | Paper-style methods and interpretation limits for the joint sensitivity experiment | active |
+| `docs/RUN_IMAGE_CHUNK_EXTRACTION.md` | Tool-independent extraction of deterministic geotagged UAV image subsets | active |
 
 ## Active configuration and runtime entry points
 

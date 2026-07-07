@@ -124,6 +124,7 @@ def run_level1b_dumb_chain(
     output_dir: Path,
     *,
     overwrite: bool = False,
+    config_path: Path | None = None,
 ) -> dict:
     rgb_ortho = Path(rgb_ortho)
     output_dir = Path(output_dir)
@@ -137,7 +138,11 @@ def run_level1b_dumb_chain(
 
     level1b_dir.mkdir(parents=True, exist_ok=True)
 
-    config_path = Path(__file__).resolve().parents[2] / "config" / "level1b_default.yaml"
+    if config_path is None:
+        config_path = (
+            Path(__file__).resolve().parents[2] / "config" / "level1b_default.yaml"
+        )
+    config_path = Path(config_path).expanduser().resolve()
     with config_path.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)["level1b"]
 
@@ -551,8 +556,10 @@ def run_level1b_dumb_chain(
         "status": "level1b_dumb_chain_complete",
         "candidate_id": candidate_id,
         "output_dir": str(output_dir),
+        "config_path": str(config_path),
         "branch": "adjacent_midpoint",
         "artifacts": {
+            "resolved_config": str(resolved_config_path),
             "valid_mask": str(valid_mask),
             "proxy_stack": str(proxy_stack),
             "scaled_feature_stack": str(scaled_feature_stack),
@@ -574,6 +581,14 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rgb-ortho", required=True, type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help=(
+            "Resolved Level-1B YAML used by controlled study runs. "
+            "The normal workflow keeps using config/level1b_default.yaml."
+        ),
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args(argv)
 
@@ -721,6 +736,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             rgb_ortho=args.rgb_ortho,
             output_dir=args.out_dir,
             overwrite=args.overwrite,
+            config_path=args.config,
         )
         exit_code = (
             2

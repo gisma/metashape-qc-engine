@@ -839,3 +839,27 @@ def test_windows_next_commands_use_native_powershell_wrapper(
     assert "powershell -ExecutionPolicy Bypass -File" in output
     assert "$env:ORTHO=" in output
     assert "run_level1b_dumb_with_user_header.sh" not in output
+
+
+def test_runner_loads_explicit_study_config_without_changing_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output_dir = tmp_path / "run"
+    config_path = tmp_path / "study_level1b.yaml"
+    default_path = Path(runner.__file__).resolve().parents[2] / "config" / "level1b_default.yaml"
+    config = default_path.read_text(encoding="utf-8").replace(
+        "dglcm_pc1_small_radius_m: 0.2",
+        "dglcm_pc1_small_radius_m: 0.15",
+    )
+    config_path.write_text(config, encoding="utf-8")
+    _, captured = _install_stubs(monkeypatch, output_dir, branch="adjacent")
+
+    result = runner.run_level1b_dumb_chain(
+        Path("/tmp/ortho.tif"), output_dir, config_path=config_path
+    )
+
+    assert captured["channels"].dglcm_pc1_small_radius_m == 0.15
+    assert result["config_path"] == str(config_path.resolve())
+    assert result["artifacts"]["resolved_config"] == str(
+        output_dir / "level1b" / "resolved_level1b_config.yaml"
+    )

@@ -1,0 +1,113 @@
+# Joint Level-1A/Level-1B scientific sensitivity study.
+#
+# This file defines an explicit experiment, not new workflow defaults. The
+# normal Level-1A and Level-1B invocations remain unchanged. Relative repository
+# paths are resolved from the repository root. Edit the absolute input/tool
+# paths before starting a different dataset.
+schema_version: 1
+
+study:
+  id: "mof_level1ab_sensitivity_v1"
+  output_root: "/home/creu/tmp/level1ab_sensitivity/mof_v1"
+
+  # false is deliberate: a repeated invocation must not silently mix old and
+  # new runs. Set true only when the complete named study may be overwritten.
+  overwrite: false
+
+level1a:
+  # Existing compact 48-image field dataset. Replace this for another scene.
+  image_dir: "/datadisk/data/uav/MOF_repro_test_recovered/input-images"
+  product_id: "mof_level1a_sensitivity"
+  project_crs: "EPSG::32632"
+  preset: "config/experiments/presets/rgb_mesh_ortho_fast_screening_v1.json"
+  metashape_dir: "/home/creu/apps/metashape-pro"
+
+  # Three independently executed Metashape replicates per variant are the
+  # minimum useful basis for within-variant reproducibility evidence.
+  replicates: 3
+
+  # This is the existing 2 x 2 x 2 fast-screening design: 8 variants and
+  # 24 Metashape runs. These values are passed to the normal Level-1A prepare
+  # command. No hidden factor combinations are added by the meta-runner.
+  factors:
+    alignPhotos.downscale: [1, 2]
+    buildModel.face_count_custom: [50000, 100000]
+    buildModel.noiterations: [5, 35]
+    buildOrthomosaic.orthoRes: [0.05]
+
+level1b:
+  # Each profile below is created by copying this active config and replacing
+  # only the explicitly named existing keys. Unknown keys fail during planning.
+  base_config: "config/level1b_default.yaml"
+  wrapper: "metashape_qc_engine/run_level1b_dumb_with_user_header.sh"
+  otb_root: "/home/creu/apps/otb911"
+
+  # This first study deliberately keeps the implemented six-band proxy recipe.
+  # It varies only pre-registered, interpretable controls. Arbitrary channel
+  # subset searches are excluded. A later proxy ablation should use separately
+  # named recipes: current stack, spectral-only, no-ratio, or RGB+CHM.
+  profiles:
+    - id: "baseline"
+      overrides: {}
+
+    # Tests whether the admissible scene-structure domain is too broad. It does
+    # not prescribe concrete candidate radii; the variogram still materializes
+    # the candidates inside this domain.
+    - id: "radius_domain_narrow"
+      overrides:
+        candidate_pre_screening.radius_max_m: 2.0
+
+    - id: "radius_domain_wide"
+      overrides:
+        candidate_pre_screening.radius_max_m: 6.0
+
+    # Hypothesis-driven proxy-scale ablations. Band identities and formulas are
+    # unchanged; only the fine/coarse DGLCM support radii change.
+    - id: "dglcm_finer"
+      overrides:
+        channels.dglcm_pc1_small_radius_m: 0.1
+        channels.dglcm_pc1_large_radius_m: 0.3
+
+    - id: "dglcm_coarser"
+      overrides:
+        channels.dglcm_pc1_small_radius_m: 0.3
+        channels.dglcm_pc1_large_radius_m: 0.8
+
+    # Tests sensitivity of the automatically selected kNN/HSM plateau. A run
+    # may legitimately fail if the stricter curve has no stable plateau.
+    - id: "ranger_plateau_strict"
+      overrides:
+        candidate_pre_screening.hsm_stability_rel_tol: 0.05
+
+    # Requires stronger support across the existing 12 seed/ranger runs at a
+    # scale. This changes stabilization evidence, not the segmentation backend.
+    - id: "centroid_support_strict"
+      overrides:
+        centroid_seed_stabilization.minimum_run_support: 8
+        centroid_seed_stabilization.minimum_phase_support: 4
+        centroid_seed_stabilization.minimum_ranger_support: 3
+
+  sources:
+    # Parameter sensitivity is measured conditionally on the Level-1A product
+    # selected by the existing continuous-stability procedure.
+    selected_product:
+      profile_ids:
+        - baseline
+        - radius_domain_narrow
+        - radius_domain_wide
+        - dglcm_finer
+        - dglcm_coarser
+        - ranger_plateau_strict
+        - centroid_support_strict
+
+    # Propagation is measured separately: four corners of the Level-1A design
+    # receive only the unchanged Level-1B baseline. This avoids an expensive and
+    # poorly interpretable full Level-1A x Level-1B Cartesian product.
+    level1a_variants:
+      variant_ids:
+        - ds1_fc050k_smooth5_or0.05
+        - ds1_fc100k_smooth35_or0.05
+        - ds2_fc050k_smooth5_or0.05
+        - ds2_fc100k_smooth35_or0.05
+      profile_ids:
+        - baseline
