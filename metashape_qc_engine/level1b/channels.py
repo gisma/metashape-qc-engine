@@ -77,6 +77,7 @@ REPORT_KEYS = (
     "failure_reasons",
     "command_results",
     "output_created",
+    "scratch_cleanup",
     "timestamp",
 )
 CHECK_KEYS = (
@@ -593,6 +594,12 @@ def run_channel_construction_step(config) -> dict[str, object]:
         "failure_reasons": failure_reasons,
         "command_results": command_results,
         "output_created": output_created,
+        "scratch_cleanup": _cleanup_channel_scratch(
+            layout["runtime_tmp_dir"] / "channels",
+            output_path,
+            status=status,
+            dry_run=bool(config.dry_run),
+        ),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     report = {key: report[key] for key in REPORT_KEYS}
@@ -612,3 +619,45 @@ def run_channel_construction_step(config) -> dict[str, object]:
         candidate_id=str(config.candidate_id).strip(),
     )
     return report
+
+
+def _cleanup_channel_scratch(
+    scratch_dir: Path,
+    proxy_stack_path: Path,
+    *,
+    status: str,
+    dry_run: bool,
+) -> dict[str, object]:
+    """Remove channel construction scratch only after the final stack exists."""
+
+    result: dict[str, object] = {
+        "path": str(scratch_dir),
+        "status": "skipped",
+        "bytes_reclaimed": 0,
+    }
+    if dry_run or status != "ok":
+        result["reason"] = "channel_step_not_successful"
+        return result
+    if not proxy_stack_path.is_file() or proxy_stack_path.stat().st_size == 0:
+        result["reason"] = "final_proxy_stack_missing_or_empty"
+        return result
+    if not scratch_dir.exists():
+        result["status"] = "complete"
+        result["reason"] = "scratch_already_absent"
+        return result
+
+    bytes_reclaimed = sum(
+        path.stat().st_size
+        for path in scratch_dir.rglob("*")
+        if path.is_file()
+    )
+    try:
+        shutil.rmtree(scratch_dir)
+    except OSError as exc:
+        result["status"] = "failed"
+        result["reason"] = str(exc)
+        return result
+    result["status"] = "complete"
+    result["reason"] = "final_proxy_stack_verified"
+    result["bytes_reclaimed"] = bytes_reclaimed
+    return result

@@ -48,6 +48,7 @@ REPORT_KEYS = (
     "statistics_xml_created",
     "scaling_parameters_json_written",
     "scaled_output_created",
+    "scratch_cleanup",
     "timestamp",
     "no_pca_performed",
     "no_scale_" + "candidates_generated",
@@ -463,6 +464,16 @@ def run_scaling_step(config) -> dict[str, object]:
     #     report["status"] = "ok"
 
     _refresh_artifact_flags(report)
+    report["scratch_cleanup"] = _cleanup_scaling_scratch(
+        layout["runtime_scaling_tmp_dir"],
+        required_outputs=(
+            Path(report["scaled_feature_stack_path"]),
+            Path(report["scaling_parameters_xml_path"]),
+            Path(report["scaling_parameters_json_path"]),
+        ),
+        status=str(report["status"]),
+        dry_run=bool(config.dry_run),
+    )
     _write_report(report)
     return report
 
@@ -497,12 +508,60 @@ def _base_report(config, layout, apps, checks, failure_reasons) -> dict[str, obj
         "statistics_xml_created": False,
         "scaling_parameters_json_written": False,
         "scaled_output_created": False,
+        "scratch_cleanup": {
+            "path": str(layout["runtime_scaling_tmp_dir"]),
+            "status": "skipped",
+            "bytes_reclaimed": 0,
+            "reason": "scaling_step_not_finished",
+        },
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "no_pca_performed": True,
         "no_scale_" + "candidates_generated": True,
         "no_seg" + "mentation_performed": True,
     }
     return {key: values[key] for key in REPORT_KEYS}
+
+
+def _cleanup_scaling_scratch(
+    scratch_dir: Path,
+    *,
+    required_outputs: tuple[Path, ...],
+    status: str,
+    dry_run: bool,
+) -> dict[str, object]:
+    """Remove scaling scratch only after every canonical output is non-empty."""
+
+    result: dict[str, object] = {
+        "path": str(scratch_dir),
+        "status": "skipped",
+        "bytes_reclaimed": 0,
+    }
+    if dry_run or status != "ok":
+        result["reason"] = "scaling_step_not_successful"
+        return result
+    if any(not path.is_file() or path.stat().st_size == 0 for path in required_outputs):
+        result["reason"] = "canonical_scaling_output_missing_or_empty"
+        return result
+    if not scratch_dir.exists():
+        result["status"] = "complete"
+        result["reason"] = "scratch_already_absent"
+        return result
+
+    bytes_reclaimed = sum(
+        path.stat().st_size
+        for path in scratch_dir.rglob("*")
+        if path.is_file()
+    )
+    try:
+        shutil.rmtree(scratch_dir)
+    except OSError as exc:
+        result["status"] = "failed"
+        result["reason"] = str(exc)
+        return result
+    result["status"] = "complete"
+    result["reason"] = "canonical_scaling_outputs_verified"
+    result["bytes_reclaimed"] = bytes_reclaimed
+    return result
 
 
 def _command_result(command, result) -> dict[str, object]:

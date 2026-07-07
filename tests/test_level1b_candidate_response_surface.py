@@ -2450,3 +2450,65 @@ def test_midpoint_connector_stops_on_failed_nested_response_surface(
             config,
             manifest_path,
         )
+
+
+def test_completed_step9a_removes_only_seed_scaffold_rasters(tmp_path: Path) -> None:
+    out_dir = tmp_path / "candidate_response_surface"
+    scaffold = out_dir / "seed_scaffolds" / "scale_001" / "phase_00"
+    scaffold.mkdir(parents=True)
+    expected_bytes = 0
+    for suffix in rs.SEED_SCAFFOLD_RASTER_SUFFIXES:
+        path = scaffold / f"seeds{suffix}"
+        payload = suffix.encode("utf-8")
+        path.write_bytes(payload)
+        expected_bytes += len(payload)
+    report_json = scaffold / "controlled_seed_report.json"
+    report_json.write_text('{"status":"ok"}', encoding="utf-8")
+    unrelated = scaffold / "keep.txt"
+    unrelated.write_text("keep", encoding="utf-8")
+
+    cleanup = rs._cleanup_completed_seed_scaffold_rasters(
+        out_dir,
+        {
+            "status": "ok",
+            "number_of_planned_runs": 4,
+            "number_of_omitted_runs_due_to_explicit_safety_limits": 0,
+            "number_of_successful_runs": 4,
+            "number_of_failed_runs": 0,
+        },
+        dry_run=False,
+    )
+
+    assert cleanup["status"] == "complete"
+    assert cleanup["deleted_file_count"] == len(rs.SEED_SCAFFOLD_RASTER_SUFFIXES)
+    assert cleanup["bytes_reclaimed"] == expected_bytes
+    assert report_json.is_file()
+    assert unrelated.is_file()
+    assert not any(
+        path.suffix in rs.SEED_SCAFFOLD_RASTER_SUFFIXES
+        for path in scaffold.iterdir()
+    )
+
+
+def test_incomplete_step9a_preserves_seed_scaffold_rasters(tmp_path: Path) -> None:
+    out_dir = tmp_path / "candidate_response_surface"
+    scaffold = out_dir / "seed_scaffolds" / "scale_001" / "phase_00"
+    scaffold.mkdir(parents=True)
+    seed_grid = scaffold / "seeds.sdat"
+    seed_grid.write_bytes(b"seed-grid")
+
+    cleanup = rs._cleanup_completed_seed_scaffold_rasters(
+        out_dir,
+        {
+            "status": "partial",
+            "number_of_planned_runs": 4,
+            "number_of_omitted_runs_due_to_explicit_safety_limits": 0,
+            "number_of_successful_runs": 3,
+            "number_of_failed_runs": 1,
+        },
+        dry_run=False,
+    )
+
+    assert cleanup["status"] == "skipped"
+    assert cleanup["reason"] == "step9a_not_complete_success"
+    assert seed_grid.is_file()

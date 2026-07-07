@@ -235,6 +235,10 @@ def test_actual_rgb_execution_calls_existing_pca_and_valid_quantiles(tmp_path, m
 
     def fake_subprocess(command, capture_output, text, **kwargs):
         assert kwargs["env"]["PATH"]
+        if "-out" in command:
+            output = Path(command[command.index("-out") + 1])
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"raster")
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
     def fake_pca(config):
@@ -263,6 +267,10 @@ def test_actual_rgb_execution_calls_existing_pca_and_valid_quantiles(tmp_path, m
     )
     assert report["status"] == "ok"
     assert report["output_created"] is True
+    assert report["scratch_cleanup"]["status"] == "complete"
+    assert not (tmp_path / "out" / "level1b" / "tmp" / "channels").exists()
+    assert Path(report["output_path"]).read_bytes() == b"raster"
+    assert Path(report["report_path"]).is_file()
     assert len(pca_configs) == 1
     assert isinstance(pca_configs[0], Level1BPCAConfig)
     assert pca_configs[0].band_count == 3

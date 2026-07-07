@@ -104,6 +104,7 @@ RETENTION_CLEANUP_EXECUTION_STATUSES = (
     "computed",
     "recomputed_incomplete",
 )
+SEED_SCAFFOLD_RASTER_SUFFIXES = frozenset({".sdat", ".sgrd", ".mgrd"})
 DOWNSTREAM_RETAINED_ARTIFACT_CONSUMERS = {
     "merged_labels": ("step9_resume", "step10_materialize_selected_segments"),
     "masked_segmentation_stack": ("step10_exactextractr_segment_stats",),
@@ -3130,9 +3131,77 @@ def run_candidate_response_surface_step(cfg: Level1BCandidateResponseSurfaceConf
     )
     report["perturbation_statuses"] = segmentation_reports
     report.update(scale_gate)
+    report["seed_scaffold_cleanup"] = _cleanup_completed_seed_scaffold_rasters(
+        out_dir,
+        report,
+        dry_run=bool(cfg.dry_run),
+    )
     _write_json(out_dir / OUTPUT_FILENAMES["report"], report)
     _write_candidate_response_surface_manifest(cfg, out_dir, str(report["status"]))
     return report
+
+
+def _cleanup_completed_seed_scaffold_rasters(
+    out_dir: Path,
+    report: dict[str, Any],
+    *,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Delete reproducible SAGA seed rasters only after complete Step-9a."""
+
+    scaffold_root = out_dir / "seed_scaffolds"
+    result: dict[str, Any] = {
+        "path": str(scaffold_root),
+        "status": "skipped",
+        "deleted_file_count": 0,
+        "bytes_reclaimed": 0,
+        "deleted_suffixes": sorted(SEED_SCAFFOLD_RASTER_SUFFIXES),
+    }
+    if dry_run or report.get("status") != "ok":
+        result["reason"] = "step9a_not_complete_success"
+        return result
+
+    planned = int(report.get("number_of_planned_runs", -1))
+    omitted = int(
+        report.get("number_of_omitted_runs_due_to_explicit_safety_limits", -1)
+    )
+    successful = int(report.get("number_of_successful_runs", -1))
+    failed = int(report.get("number_of_failed_runs", -1))
+    if failed != 0 or planned < 0 or omitted < 0 or successful != planned - omitted:
+        result["reason"] = "step9a_run_population_incomplete"
+        return result
+    if not scaffold_root.exists():
+        result["status"] = "complete"
+        result["reason"] = "seed_scaffolds_already_absent"
+        return result
+
+    candidates = sorted(
+        path
+        for path in scaffold_root.rglob("*")
+        if path.is_file() and path.suffix.lower() in SEED_SCAFFOLD_RASTER_SUFFIXES
+    )
+    deleted_paths: list[str] = []
+    bytes_reclaimed = 0
+    for path in candidates:
+        size_bytes = path.stat().st_size
+        try:
+            path.unlink()
+        except OSError as exc:
+            result["status"] = "partial"
+            result["reason"] = str(exc)
+            result["deleted_paths"] = deleted_paths
+            result["deleted_file_count"] = len(deleted_paths)
+            result["bytes_reclaimed"] = bytes_reclaimed
+            return result
+        deleted_paths.append(str(path))
+        bytes_reclaimed += size_bytes
+
+    result["status"] = "complete"
+    result["reason"] = "complete_step9a_run_population_verified"
+    result["deleted_paths"] = deleted_paths
+    result["deleted_file_count"] = len(deleted_paths)
+    result["bytes_reclaimed"] = bytes_reclaimed
+    return result
 
 
 def dominant_size_class(summary: dict[str, Any]) -> str:

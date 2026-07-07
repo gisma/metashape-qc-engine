@@ -230,7 +230,7 @@ def test_successful_run_writes_robust_percentile_parameters(
         output = Path(command[command.index("-out") + 1]) if "-out" in command else None
         if output is not None:
             output.parent.mkdir(parents=True, exist_ok=True)
-            output.touch()
+            output.write_bytes(b"raster")
         if "-out.xml" in command:
             xml = Path(command[command.index("-out.xml") + 1])
             xml.parent.mkdir(parents=True, exist_ok=True)
@@ -262,6 +262,10 @@ def test_successful_run_writes_robust_percentile_parameters(
     assert parameters["lower_values"] == stats["lower_values"]
     assert parameters["upper_values"] == stats["upper_values"]
     assert report["scaled_output_created"] is True
+    assert report["scratch_cleanup"]["status"] == "complete"
+    assert not Path(report["masked_feature_stack_path"]).exists()
+    assert Path(report["scaled_feature_stack_path"]).read_bytes() == b"raster"
+    assert Path(report["report_path"]).is_file()
 
 
 def test_failed_subprocess_stops_without_parameters_json(tmp_path: Path, monkeypatch) -> None:
