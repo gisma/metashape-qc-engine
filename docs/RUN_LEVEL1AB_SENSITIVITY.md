@@ -156,6 +156,25 @@ Principal geospatial outputs are:
 <run>/level1b/step10_materialization/figures/
 ```
 
+## Resume interrupted Level-1B study runs
+
+Use the dedicated resume stage after disk-space, process, or machine interruption:
+
+```bash
+bash scripts/run_level1ab_sensitivity.sh \
+  config/sensitivity/level1ab_sensitivity.yaml \
+  level1b-resume
+```
+
+The resume policy is explicit:
+
+- `level1b_dumb_chain_complete` is skipped;
+- `step9b_non_adjacent_choice_required` is a terminal scientific branch and is skipped;
+- an existing failed or partial run directory is retried with `OVERWRITE=1`;
+- a run that has not started is launched with `OVERWRITE=0`.
+
+The retry does not delete the existing run directory. Individual Level-1B steps retain their existing overwrite/reuse behavior. Inspect available disk space before resuming because each profile has an independent Level-1B artifact tree.
+
 ## 4. Collect existing evidence
 
 ```bash

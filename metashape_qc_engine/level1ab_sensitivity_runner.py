@@ -27,7 +27,7 @@ from metashape_qc_engine.level1a.prepare_product_experiment import (
 )
 
 
-STAGES = ("plan", "level1a", "level1b", "collect", "all")
+STAGES = ("plan", "level1a", "level1b", "level1b-resume", "collect", "all")
 TOP_LEVEL_KEYS = {"schema_version", "study", "level1a", "level1b"}
 STUDY_KEYS = {"id", "output_root", "overwrite"}
 LEVEL1A_KEYS = {
@@ -438,7 +438,9 @@ def level1b_sources(config: dict[str, Any]) -> list[dict[str, str]]:
     return out
 
 
-def run_level1b(config: dict[str, Any]) -> list[dict[str, Any]]:
+def run_level1b(
+    config: dict[str, Any], *, resume: bool = False
+) -> list[dict[str, Any]]:
     profiles = materialize_level1b_profiles(config)
     wrapper = _repo_path(config["level1b"]["wrapper"])
     if not wrapper.is_file():
@@ -452,12 +454,37 @@ def run_level1b(config: dict[str, Any]) -> list[dict[str, Any]]:
                 f"Level-1B source orthomosaic is missing: {ortho}"
             )
         run_root = root / "level1b" / "runs" / source["run_id"]
+        report_path = run_root / "level1b_dumb_chain_report.json"
+        if resume and report_path.is_file():
+            with report_path.open("r", encoding="utf-8") as handle:
+                existing_report = json.load(handle)
+            if existing_report.get("status") in {
+                "level1b_dumb_chain_complete",
+                "step9b_non_adjacent_choice_required",
+            }:
+                print(
+                    f"resume: skip {source['run_id']} "
+                    f"status={existing_report['status']}",
+                    flush=True,
+                )
+                results.append(
+                    {
+                        **source,
+                        "return_code": 0,
+                        "run_root": str(run_root),
+                        "resume_action": "skipped_terminal_status",
+                    }
+                )
+                continue
+
+        retry_existing = resume and run_root.exists()
+        overwrite = bool(config["study"]["overwrite"] or retry_existing)
         env = os.environ.copy()
         env.update(
             {
                 "ORTHO": str(ortho),
                 "RUN_ROOT": str(run_root),
-                "OVERWRITE": "1" if config["study"]["overwrite"] else "0",
+                "OVERWRITE": "1" if overwrite else "0",
                 "LEVEL1B_CONFIG": str(profiles[source["profile_id"]]),
             }
         )
@@ -465,7 +492,18 @@ def run_level1b(config: dict[str, Any]) -> list[dict[str, Any]]:
             env["OTB_ROOT"] = str(_repo_path(config["level1b"]["otb_root"]))
         command = ["bash", str(wrapper)]
         return_code = run_command(command, env=env)
-        results.append({**source, "return_code": return_code, "run_root": str(run_root)})
+        results.append(
+            {
+                **source,
+                "return_code": return_code,
+                "run_root": str(run_root),
+                "resume_action": (
+                    "retried_existing_run" if retry_existing else "started_missing_run"
+                )
+                if resume
+                else "normal_run",
+            }
+        )
     return results
 
 
@@ -581,8 +619,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.stage in {"level1a", "all"}:
         print(f"Level-1A experiment: {run_level1a(config)}")
-    if args.stage in {"level1b", "all"}:
-        results = run_level1b(config)
+    if args.stage in {"level1b", "level1b-resume", "all"}:
+        results = run_level1b(
+            config, resume=args.stage == "level1b-resume"
+        )
         failures = [row for row in results if row["return_code"] not in {0, 2}]
         if failures:
             print(
@@ -591,7 +631,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
     if args.stage in {"collect", "all"}:
         print(f"Study results: {collect_results(config)}")
-    return 1 if args.stage in {"level1b", "all"} and failures else 0
+    return (
+        1
+        if args.stage in {"level1b", "level1b-resume", "all"} and failures
+        else 0
+    )
 
 
 if __name__ == "__main__":

@@ -147,3 +147,67 @@ def test_level1b_runner_passes_profile_config_to_existing_wrapper(
         "level1b/configs/narrow.yaml"
     )
     assert captured["env"]["OVERWRITE"] == "0"
+
+
+def test_level1b_resume_skips_terminal_retries_failed_and_starts_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _study(tmp_path)
+    _, experiment_dir, _ = sensitivity.level1a_paths(config)
+    selected_ortho = tmp_path / "selected.tif"
+    selected_ortho.write_bytes(b"ortho")
+    variant_ortho = (
+        experiment_dir
+        / "stability_union"
+        / "variants"
+        / "ds1_fc050k_smooth5_or0.05"
+        / "median_ortho.tif"
+    )
+    variant_ortho.parent.mkdir(parents=True)
+    variant_ortho.write_bytes(b"variant")
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    (experiment_dir / "selected_product.json").write_text(
+        json.dumps(
+            {
+                "primary_variant_id": "selected",
+                "product_modes": {"median_ortho": {"path": str(selected_ortho)}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    runs = tmp_path / "study" / "level1b" / "runs"
+    baseline = runs / "selected_product__baseline"
+    narrow = runs / "selected_product__narrow"
+    baseline.mkdir(parents=True)
+    narrow.mkdir(parents=True)
+    (baseline / "level1b_dumb_chain_report.json").write_text(
+        json.dumps({"status": "step9b_non_adjacent_choice_required"}),
+        encoding="utf-8",
+    )
+    (narrow / "level1b_dumb_chain_report.json").write_text(
+        json.dumps({"status": "level1b_dumb_chain_failed"}),
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fake_run(command, *, env=None):
+        calls.append({"command": command, "env": env})
+        return 0
+
+    monkeypatch.setattr(sensitivity, "run_command", fake_run)
+
+    results = sensitivity.run_level1b(config, resume=True)
+
+    by_id = {row["run_id"]: row for row in results}
+    assert by_id["selected_product__baseline"]["resume_action"] == (
+        "skipped_terminal_status"
+    )
+    assert by_id["selected_product__narrow"]["resume_action"] == (
+        "retried_existing_run"
+    )
+    assert by_id[
+        "variant_ds1_fc050k_smooth5_or0.05__baseline"
+    ]["resume_action"] == "started_missing_run"
+    assert len(calls) == 2
+    assert calls[0]["env"]["OVERWRITE"] == "1"
+    assert calls[1]["env"]["OVERWRITE"] == "0"

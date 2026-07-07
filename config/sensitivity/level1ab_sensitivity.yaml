@@ -8,7 +8,7 @@ schema_version: 1
 
 study:
   id: "mof_level1ab_sensitivity_v1"
-  output_root: "/home/creu/tmp/level1ab_sensitivity/mof_v1"
+  output_root: "/home/creu/tmp/level1ab_sensitivity/mof_v1_8_67705_50_84095_grid7x7"
 
   # false is deliberate: a repeated invocation must not silently mix old and
   # new runs. Set true only when the complete named study may be overwritten.
@@ -16,7 +16,7 @@ study:
 
 level1a:
   # Existing compact 48-image field dataset. Replace this for another scene.
-  image_dir: "/datadisk/data/uav/MOF_repro_test_recovered/input-images"
+  image_dir: "/home/creu/tmp/sensi-img/8_67705_50_84095_grid7x7/images"
   product_id: "mof_level1a_sensitivity"
   project_crs: "EPSG::32632"
   preset: "config/experiments/presets/rgb_mesh_ortho_fast_screening_v1.json"
