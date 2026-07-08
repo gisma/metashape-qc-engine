@@ -149,7 +149,7 @@ def test_level1b_runner_passes_profile_config_to_existing_wrapper(
     assert captured["env"]["OVERWRITE"] == "0"
 
 
-def test_level1b_resume_skips_terminal_retries_failed_and_starts_missing(
+def test_level1b_resume_skips_terminal_retries_empty_report_and_starts_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _study(tmp_path)
@@ -185,8 +185,7 @@ def test_level1b_resume_skips_terminal_retries_failed_and_starts_missing(
         encoding="utf-8",
     )
     (narrow / "level1b_dumb_chain_report.json").write_text(
-        json.dumps({"status": "level1b_dumb_chain_failed"}),
-        encoding="utf-8",
+        "", encoding="utf-8"
     )
     calls = []
 

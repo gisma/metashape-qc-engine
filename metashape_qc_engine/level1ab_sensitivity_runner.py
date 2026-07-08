@@ -456,8 +456,18 @@ def run_level1b(
         run_root = root / "level1b" / "runs" / source["run_id"]
         report_path = run_root / "level1b_dumb_chain_report.json"
         if resume and report_path.is_file():
-            with report_path.open("r", encoding="utf-8") as handle:
-                existing_report = json.load(handle)
+            try:
+                with report_path.open("r", encoding="utf-8") as handle:
+                    existing_report = json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                existing_report = {}
+                print(
+                    f"resume: retry {source['run_id']} "
+                    "reason=invalid_or_incomplete_chain_report",
+                    flush=True,
+                )
+            if not isinstance(existing_report, dict):
+                existing_report = {}
             if existing_report.get("status") in {
                 "level1b_dumb_chain_complete",
                 "step9b_non_adjacent_choice_required",
