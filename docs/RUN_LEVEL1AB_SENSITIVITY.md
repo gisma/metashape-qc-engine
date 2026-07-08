@@ -193,13 +193,65 @@ This reads existing workflow results only. It writes:
 Inspect them with:
 
 ```bash
-ROOT=/home/creu/tmp/level1ab_sensitivity/mof_v1
+ROOT=/home/creu/tmp/level1ab_sensitivity/mof_v1_8_67705_50_84095_grid7x7
 
 jq . "$ROOT/sensitivity_study_report.json"
 column -s, -t < "$ROOT/study_results.csv" | less -S
 ```
 
 `study_results.csv` combines the existing Level-1A key metrics with available Level-1B status, selection, selected-run, and Step-9b handoff fields. It is not an automatic statistical verdict.
+
+## 5. Statistical evaluation in R
+
+Run the final artifact-based analysis after all planned Level-1A and Level-1B runs have reached terminal status:
+
+```bash
+ROOT=/home/creu/tmp/level1ab_sensitivity/mof_v1_8_67705_50_84095_grid7x7
+
+Rscript R/level1ab_sensitivity_analysis.R "$ROOT"
+```
+
+The default mode is strict. It writes no final analysis unless all planned Level-1A manifest rows are `ok`, all planned orthomosaics exist, and every planned Level-1B run has either `level1b_dumb_chain_complete` or `step9b_non_adjacent_choice_required`. An optional second positional argument selects another output directory. The default final output is:
+
+```text
+<study.output_root>/sensitivity_analysis/
+```
+
+For an explicitly provisional view during a long study, use:
+
+```bash
+Rscript R/level1ab_sensitivity_analysis.R "$ROOT" --allow-incomplete
+```
+
+That mode writes separately to:
+
+```text
+<study.output_root>/sensitivity_analysis_incremental/
+```
+
+Principal outputs are:
+
+```text
+sensitivity_analysis_report.md
+level1a_variant_metrics.csv
+level1a_factor_effects.csv
+level1a_correlations_spearman.csv
+level1a_correlations_pearson.csv
+level1a_factor_effects.png
+level1a_metric_correlation.png
+level1b_profile_summary.csv
+level1b_step9_ranked_candidates.csv
+level1b_step9b_supported_alternatives.csv
+level1b_numeric_sensitivity_summary.csv
+level1b_changes_from_baseline.csv
+level1b_profile_correlations_spearman.csv
+level1b_status_by_run.png
+level1b_step9_candidate_curves.png
+```
+
+The Level-1A effect table reports balanced high-minus-low factorial contrasts. Its SD, SE, and 95% interval describe variation among the four matched contrasts across the other factor settings; they are not independent-scene sampling errors. Correlation p-values are exploratory because the design contains only eight Level-1A variants and at most seven selected-product Level-1B profiles.
+
+Level-1B parameter profiles and Level-1A-to-Level-1B propagation runs are summarized separately. In incremental mode, missing runs remain `not_run` and invalid or empty chain reports remain `invalid_or_empty_report`. In both modes, `step9b_non_adjacent_choice_required` remains a completed scale-ambiguity outcome rather than being converted into a selected segmentation. Rerun the incremental analysis after a resume cycle; run the strict default analysis once the completion contract passes.
 
 ## Run all stages
 
