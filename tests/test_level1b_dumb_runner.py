@@ -48,6 +48,18 @@ def _install_stubs(
             candidate_id="test-candidate",
         )
 
+    def branch_manifest_name(step: str, step10_subdir: str) -> str:
+        if step10_subdir == "step10_materialization":
+            return step
+        suffix = "".join(
+            character if character.isalnum() else "_"
+            for character in step10_subdir
+        ).strip("_")
+        return f"{step}__{suffix}"
+
+    def step10_base(step10_subdir: str | None = None) -> Path:
+        return level1b / Path(step10_subdir or "step10_materialization")
+
     def preflight(config):
         calls.append("preflight")
         captured["preflight"] = config
@@ -196,7 +208,27 @@ def _install_stubs(
                 }
             )
         elif branch == "non_adjacent":
-            _write(local / "step9b_supported_scale_alternatives.json", [])
+            _write(
+                local / "step9b_supported_scale_alternatives.json",
+                [
+                    {
+                        "branch_id": "lower_support_mode",
+                        "candidate_scale_group_id": "lower-id",
+                        "rank": 1,
+                        "scale_coordinate_name": "radius_m",
+                        "scale_coordinate_value": 0.5,
+                        "stability_score_raw": 0.9,
+                    },
+                    {
+                        "branch_id": "upper_support_mode",
+                        "candidate_scale_group_id": "upper-id",
+                        "rank": 2,
+                        "scale_coordinate_name": "radius_m",
+                        "scale_coordinate_value": 2.5,
+                        "stability_score_raw": 0.85,
+                    },
+                ],
+            )
             prepare_artifacts["supported_scale_alternatives_json"] = (
                 local / "step9b_supported_scale_alternatives.json"
             )
@@ -280,100 +312,142 @@ def _install_stubs(
         )
         return {"status": "step9b_midpoint_response_surface_and_handoff_ready"}
 
-    def collect(path):
+    def collect(path, **kwargs):
         calls.append("step10_collect")
         assert Path(path) == output_dir
-        evidence = level1b / "step10_materialization" / "decision_evidence"
+        step10_subdir = kwargs.get("step10_subdir", "step10_materialization")
+        evidence = step10_base(step10_subdir) / "decision_evidence"
         _write(evidence / "finalist_evidence.json", {})
-        manifest(
-            "step10_collect",
-            "step10_part1_finalist_evidence_collected",
-            {
+        manifest_name = branch_manifest_name("step10_collect", step10_subdir)
+        write_step_manifest(
+            output_dir,
+            step=manifest_name,
+            status="step10_part1_finalist_evidence_collected",
+            inputs={},
+            artifacts={
                 "finalist_evidence_json": evidence / "finalist_evidence.json",
             },
+            candidate_id="test-candidate",
         )
-        return {"status": "step10_part1_finalist_evidence_collected"}
+        return {
+            "status": "step10_part1_finalist_evidence_collected",
+            "finalist_evidence_json": str(evidence / "finalist_evidence.json"),
+            "manifest_json": str(output_dir / "level1b" / "manifests" / f"{manifest_name}.json"),
+        }
 
     def stabilize(path, **kwargs):
         calls.append("centroid_seed_stabilization")
         assert Path(path) == output_dir
-        captured["centroid_seed_stabilization"] = kwargs
-        stabilization = (
-            level1b
-            / "step10_materialization"
-            / "centroid_seed_stabilization"
-        )
+        captured.setdefault("centroid_seed_stabilization_calls", []).append(kwargs)
+        step10_subdir = kwargs.get("step10_subdir", "step10_materialization")
+        stabilization = step10_base(step10_subdir) / "centroid_seed_stabilization"
         _write(stabilization / "centroid_seed_stabilization_report.json")
         _write(stabilization / "stabilized_seeds.sgrd")
         _write(stabilization / "stabilized_seeds.csv")
         _write(stabilization / "stabilized_labels.tif")
-        manifest(
-            "centroid_seed_stabilization",
-            "multiscale_centroid_seed_stabilization_ready",
-            {
+        manifest_name = branch_manifest_name(
+            "centroid_seed_stabilization", step10_subdir
+        )
+        write_step_manifest(
+            output_dir,
+            step=manifest_name,
+            status="multiscale_centroid_seed_stabilization_ready",
+            inputs={},
+            artifacts={
                 "stabilization_report_json": stabilization
                 / "centroid_seed_stabilization_report.json",
                 "stabilized_seed_grid": stabilization / "stabilized_seeds.sgrd",
                 "stabilized_seed_csv": stabilization / "stabilized_seeds.csv",
                 "stabilized_labels_tif": stabilization / "stabilized_labels.tif",
             },
+            candidate_id="test-candidate",
         )
-        return {"status": "multiscale_centroid_seed_stabilization_ready"}
+        return {
+            "status": "multiscale_centroid_seed_stabilization_ready",
+            "manifest_json": str(output_dir / "level1b" / "manifests" / f"{manifest_name}.json"),
+        }
 
-    def aggregate(path):
+    def aggregate(path, **kwargs):
         calls.append("step10_aggregate")
         assert Path(path) == output_dir
-        evidence = level1b / "step10_materialization" / "decision_evidence"
+        step10_subdir = kwargs.get("step10_subdir", "step10_materialization")
+        evidence = step10_base(step10_subdir) / "decision_evidence"
         _write(evidence / "finalist_evidence.json", {})
-        manifest(
-            "step10_aggregate",
-            "step10_part2_finalist_evidence_aggregated",
-            {
+        manifest_name = branch_manifest_name("step10_aggregate", step10_subdir)
+        write_step_manifest(
+            output_dir,
+            step=manifest_name,
+            status="step10_part2_finalist_evidence_aggregated",
+            inputs={},
+            artifacts={
                 "finalist_evidence_json": evidence / "finalist_evidence.json",
             },
+            candidate_id="test-candidate",
         )
-        return {"status": "step10_part2_finalist_evidence_aggregated"}
+        return {
+            "status": "step10_part2_finalist_evidence_aggregated",
+            "manifest_json": str(output_dir / "level1b" / "manifests" / f"{manifest_name}.json"),
+        }
 
-    def figures(path):
+    def figures(path, **kwargs):
         calls.append("step10_figures")
         assert Path(path) == output_dir
+        step10_subdir = kwargs.get("step10_subdir", "step10_materialization")
         figure_manifest = (
-            level1b
-            / "step10_materialization"
+            step10_base(step10_subdir)
             / "figures"
             / "step10_figure_manifest.json"
         )
         _write(figure_manifest)
-        manifest(
-            "step10_figures",
-            "step10_part3_figures_created",
-            {"figure_manifest_json": figure_manifest},
+        manifest_name = branch_manifest_name("step10_figures", step10_subdir)
+        write_step_manifest(
+            output_dir,
+            step=manifest_name,
+            status="step10_part3_figures_created",
+            inputs={},
+            artifacts={"figure_manifest_json": figure_manifest},
+            candidate_id="test-candidate",
         )
-        return {"status": "step10_part3_figures_created"}
+        return {
+            "status": "step10_part3_figures_created",
+            "manifest_json": str(output_dir / "level1b" / "manifests" / f"{manifest_name}.json"),
+        }
 
-    def materialize(path):
+    def materialize(path, **kwargs):
         calls.append("step10_materialize")
         assert Path(path) == output_dir
-        final = level1b / "step10_materialization" / "final_segments"
+        step10_subdir = kwargs.get("step10_subdir", "step10_materialization")
+        final = step10_base(step10_subdir) / "final_segments"
         _write(final / "selected_segments_manifest.json")
         _write(final / "selected_segments.gpkg")
         _write(final / "selected_labels.tif")
-        manifest(
-            "step10_materialize",
-            "step10_part4_selected_segments_materialized",
-            {
+        manifest_name = branch_manifest_name("step10_materialize", step10_subdir)
+        write_step_manifest(
+            output_dir,
+            step=manifest_name,
+            status="step10_part4_selected_segments_materialized",
+            inputs={},
+            artifacts={
                 "selected_segments_manifest_json": final
                 / "selected_segments_manifest.json",
                 "selected_segments_gpkg": final / "selected_segments.gpkg",
                 "selected_labels_tif": final / "selected_labels.tif",
             },
+            candidate_id="test-candidate",
         )
-        return {"status": "step10_part4_selected_segments_materialized"}
+        return {
+            "status": "step10_part4_selected_segments_materialized",
+            "selected_segments_manifest_json": str(final / "selected_segments_manifest.json"),
+            "selected_segments_gpkg": str(final / "selected_segments.gpkg"),
+            "selected_labels_tif": str(final / "selected_labels.tif"),
+            "manifest_json": str(output_dir / "level1b" / "manifests" / f"{manifest_name}.json"),
+        }
 
-    def quality(path):
+    def quality(path, **kwargs):
         calls.append("step10_quality")
         assert Path(path) == output_dir
-        step10 = level1b / "step10_materialization"
+        step10_subdir = kwargs.get("step10_subdir", "step10_materialization")
+        step10 = step10_base(step10_subdir)
         _write(
             step10 / "segment_stats" / "selected_segment_exactextractr_stats.csv"
         )
@@ -381,10 +455,13 @@ def _install_stubs(
             step10 / "segment_stats" / "selected_segment_exactextractr_summary.json"
         )
         _write(step10 / "quality" / "ortho_segmentation_quality_info.json")
-        manifest(
-            "step10_quality",
-            "step10_part5_exactextractr_segment_stats_and_quality_info_ready",
-            {
+        manifest_name = branch_manifest_name("step10_quality", step10_subdir)
+        write_step_manifest(
+            output_dir,
+            step=manifest_name,
+            status="step10_part5_exactextractr_segment_stats_and_quality_info_ready",
+            inputs={},
+            artifacts={
                 "selected_segment_exactextractr_stats_csv": step10
                 / "segment_stats"
                 / "selected_segment_exactextractr_stats.csv",
@@ -395,9 +472,12 @@ def _install_stubs(
                 / "quality"
                 / "ortho_segmentation_quality_info.json",
             },
+            candidate_id="test-candidate",
         )
         return {
-            "status": "step10_part5_exactextractr_segment_stats_and_quality_info_ready"
+            "status": "step10_part5_exactextractr_segment_stats_and_quality_info_ready",
+            "ortho_segmentation_quality_info_json": str(step10 / "quality" / "ortho_segmentation_quality_info.json"),
+            "manifest_json": str(output_dir / "level1b" / "manifests" / f"{manifest_name}.json"),
         }
 
     monkeypatch.setattr(runner, "run_preflight", preflight)
@@ -508,11 +588,13 @@ def test_adjacent_chain_uses_real_primary_structure_scale_contract(
     assert prescreen_config.max_distance_sample_n == 15000
     assert not hasattr(prescreen_config, "baseline_candidate_radii_m")
     assert not hasattr(prescreen_config, "quantile_probs")
-    assert captured["centroid_seed_stabilization"] == {
-        "minimum_run_support": 6,
-        "minimum_phase_support": 3,
-        "minimum_ranger_support": 2,
-    }
+    assert captured["centroid_seed_stabilization_calls"] == [
+        {
+            "minimum_run_support": 6,
+            "minimum_phase_support": 3,
+            "minimum_ranger_support": 2,
+        }
+    ]
 
     step9a_config = captured["step9a"]
     assert isinstance(step9a_config, Level1BCandidateResponseSurfaceConfig)
@@ -593,7 +675,7 @@ def test_runner_consumes_exact_manifest_artifact_path(
     assert captured["channels"].valid_mask_path == manifest_mask
 
 
-def test_non_adjacent_artifact_branch_stops_before_midpoint_and_step10(
+def test_non_adjacent_artifact_branch_evaluates_both_modes_before_returning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     output_dir = tmp_path / "run"
@@ -607,7 +689,16 @@ def test_non_adjacent_artifact_branch_stops_before_midpoint_and_step10(
         "step9b_supported_scale_alternatives.json"
     )
     assert "step9b_midpoint_handoff" not in calls
-    assert not any(call.startswith("step10_") for call in calls)
+    assert calls.count("step10_collect") == 2
+    assert calls.count("centroid_seed_stabilization") == 2
+    assert calls.count("step10_aggregate") == 2
+    assert calls.count("step10_figures") == 2
+    assert calls.count("step10_materialize") == 2
+    assert calls.count("step10_quality") == 2
+    assert [branch["branch_id"] for branch in result["non_adjacent_branches"]] == [
+        "lower_support_mode",
+        "upper_support_mode",
+    ]
 
 
 def test_partial_step9a_stops_before_step9b_and_step10(

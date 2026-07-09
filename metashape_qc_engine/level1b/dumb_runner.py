@@ -119,6 +119,125 @@ def _compact_step_result(
     }
 
 
+def _compact_result_from_manifest_path(
+    status: str,
+    manifest_path: str | Path,
+) -> dict[str, object]:
+    return {
+        "status": status,
+        "manifest": str(manifest_path),
+    }
+
+
+def _run_non_adjacent_step10_branch(
+    output_dir: Path,
+    branch_row: dict[str, object],
+    supported_alternatives_json: Path,
+    stabilization_cfg: dict[str, int],
+) -> dict[str, object]:
+    branch_rank = branch_row.get("rank", 0)
+    branch_id = str(branch_row.get("branch_id") or f"supported_mode_{branch_rank}")
+    selected_candidate_id = str(branch_row["candidate_scale_group_id"])
+    step10_subdir = f"step10_materialization/non_adjacent_branches/{branch_id}"
+    branch_step_results: dict[str, Any] = {}
+
+    collect_result = run_level1b_step10_collect_finalist_evidence(
+        output_dir,
+        step10_subdir=step10_subdir,
+        selected_candidate_id=selected_candidate_id,
+        selected_role=branch_id,
+        supported_alternatives_json=supported_alternatives_json,
+    )
+    _raise_on_failed_status(f"step10_collect[{branch_id}]", collect_result)
+    branch_step_results["step10_collect"] = _compact_result_from_manifest_path(
+        str(collect_result["status"]),
+        collect_result["manifest_json"],
+    )
+
+    stabilization_result = run_multiscale_centroid_seed_stabilization(
+        output_dir,
+        minimum_run_support=stabilization_cfg["minimum_run_support"],
+        minimum_phase_support=stabilization_cfg["minimum_phase_support"],
+        minimum_ranger_support=stabilization_cfg["minimum_ranger_support"],
+        step10_subdir=step10_subdir,
+    )
+    _raise_on_failed_status(
+        f"centroid_seed_stabilization[{branch_id}]", stabilization_result
+    )
+    branch_step_results["centroid_seed_stabilization"] = (
+        _compact_result_from_manifest_path(
+            str(stabilization_result["status"]),
+            stabilization_result["manifest_json"],
+        )
+    )
+
+    aggregate_result = run_level1b_step10_aggregate_finalist_evidence(
+        output_dir,
+        step10_subdir=step10_subdir,
+    )
+    _raise_on_failed_status(f"step10_aggregate[{branch_id}]", aggregate_result)
+    branch_step_results["step10_aggregate"] = _compact_result_from_manifest_path(
+        str(aggregate_result["status"]),
+        aggregate_result["manifest_json"],
+    )
+
+    figures_result = run_level1b_step10_make_finalist_figures(
+        output_dir,
+        step10_subdir=step10_subdir,
+    )
+    _raise_on_failed_status(f"step10_figures[{branch_id}]", figures_result)
+    branch_step_results["step10_figures"] = _compact_result_from_manifest_path(
+        str(figures_result["status"]),
+        figures_result.get("step_manifest_json", figures_result["manifest_json"]),
+    )
+
+    materialize_result = run_level1b_step10_materialize_selected_segments(
+        output_dir,
+        step10_subdir=step10_subdir,
+    )
+    _raise_on_failed_status(
+        f"step10_materialize[{branch_id}]", materialize_result
+    )
+    branch_step_results["step10_materialize"] = _compact_result_from_manifest_path(
+        str(materialize_result["status"]),
+        materialize_result.get(
+            "step_manifest_json", materialize_result["manifest_json"]
+        ),
+    )
+
+    quality_result = (
+        run_level1b_step10_compute_exactextractr_segment_stats_and_quality_info(
+            output_dir,
+            step10_subdir=step10_subdir,
+        )
+    )
+    _raise_on_failed_status(f"step10_quality[{branch_id}]", quality_result)
+    branch_step_results["step10_quality"] = _compact_result_from_manifest_path(
+        str(quality_result["status"]),
+        quality_result["manifest_json"],
+    )
+
+    return {
+        "branch_id": branch_id,
+        "selected_candidate_id": selected_candidate_id,
+        "selected_role": branch_id,
+        "rank": branch_row.get("rank"),
+        "scale_coordinate_name": branch_row.get("scale_coordinate_name"),
+        "scale_coordinate_value": branch_row.get("scale_coordinate_value"),
+        "stability_score_raw": branch_row.get("stability_score_raw"),
+        "step10_subdir": step10_subdir,
+        "artifacts": {
+            "step10_evidence": str(collect_result["finalist_evidence_json"]),
+            "selected_labels_tif": str(materialize_result["selected_labels_tif"]),
+            "selected_segments_gpkg": str(materialize_result["selected_segments_gpkg"]),
+            "step10_quality": str(
+                quality_result["ortho_segmentation_quality_info_json"]
+            ),
+        },
+        "step_results": branch_step_results,
+    }
+
+
 def run_level1b_dumb_chain(
     rgb_ortho: Path,
     output_dir: Path,
@@ -377,12 +496,30 @@ def run_level1b_dumb_chain(
             step9b_prepare_manifest,
             ("supported_scale_alternatives_json",),
         )["supported_scale_alternatives_json"]
+        supported_branch_rows = json.loads(
+            supported_alternatives.read_text(encoding="utf-8")
+        )
+        stabilization_cfg = cfg["centroid_seed_stabilization"]
+        non_adjacent_branches = [
+            _run_non_adjacent_step10_branch(
+                output_dir,
+                branch_row,
+                supported_alternatives,
+                stabilization_cfg,
+            )
+            for branch_row in supported_branch_rows
+        ]
+        step_results["non_adjacent_branches"] = {
+            "status": "step10_branch_evaluations_ready",
+            "manifest": str(supported_alternatives),
+        }
         return {
             "status": "step9b_non_adjacent_choice_required",
             "candidate_id": candidate_id,
             "output_dir": str(output_dir),
             "branch": "non_adjacent",
             "supported_scale_alternatives_json": str(supported_alternatives),
+            "non_adjacent_branches": non_adjacent_branches,
             "step_results": step_results,
         }
     if step9b_prepare_manifest["status"] != "step9b_midpoint_probe_ready":

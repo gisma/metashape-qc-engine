@@ -2243,7 +2243,14 @@ def run_step9b_midpoint_support_probe(
         alternatives = []
         for rank, candidate_id in ((1, no1_id), (2, no2_id)):
             ranked_row = _step9b_ranked_candidate_row(ranked_candidate_rows, candidate_id)
+            if candidate_id == str(lower_id):
+                branch_id = "lower_support_mode"
+            elif candidate_id == str(upper_id):
+                branch_id = "upper_support_mode"
+            else:
+                branch_id = f"supported_mode_{rank}"
             alternative = {
+                "branch_id": branch_id,
                 "rank": rank,
                 "candidate_scale_group_id": candidate_id,
                 "stability_score_raw": _step9b_raw_support(ranked_row),

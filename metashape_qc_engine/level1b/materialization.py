@@ -8,32 +8,60 @@ import shutil
 import statistics
 import subprocess
 
-from metashape_qc_engine.level1b.step_manifest import write_step_manifest
+from metashape_qc_engine.level1b.step_manifest import step_manifest_path, write_step_manifest
 
 
 STEP10_FINALIST_EVIDENCE_FILENAME = "finalist_evidence.json"
 STEP10_FINALIST_EVIDENCE_SCHEMA = "level1b_step10_finalist_evidence"
+DEFAULT_STEP10_SUBDIR = "step10_materialization"
 
 
-def _step10_decision_evidence_dir(output_dir: str | Path) -> Path:
+def _step10_root_dir(
+    output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
+) -> Path:
+    return Path(output_dir) / "level1b" / Path(step10_subdir)
+
+
+def _step10_decision_evidence_dir(
+    output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
+) -> Path:
+    return _step10_root_dir(output_dir, step10_subdir=step10_subdir) / "decision_evidence"
+
+
+def _step10_finalist_evidence_path(
+    output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
+) -> Path:
     return (
-        Path(output_dir)
-        / "level1b"
-        / "step10_materialization"
-        / "decision_evidence"
-    )
-
-
-def _step10_finalist_evidence_path(output_dir: str | Path) -> Path:
-    return (
-        _step10_decision_evidence_dir(output_dir)
+        _step10_decision_evidence_dir(output_dir, step10_subdir=step10_subdir)
         / STEP10_FINALIST_EVIDENCE_FILENAME
     )
 
 
-def _read_step10_finalist_evidence(output_dir: str | Path) -> dict:
+def _step10_manifest_step_name(step: str, step10_subdir: str) -> str:
+    if step10_subdir == DEFAULT_STEP10_SUBDIR:
+        return step
+    suffix = "".join(
+        character if character.isalnum() else "_"
+        for character in step10_subdir
+    ).strip("_")
+    return f"{step}__{suffix}"
+
+
+def _read_step10_finalist_evidence(
+    output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
+) -> dict:
     evidence = json.loads(
-        _step10_finalist_evidence_path(output_dir).read_text(encoding="utf-8")
+        _step10_finalist_evidence_path(
+            output_dir, step10_subdir=step10_subdir
+        ).read_text(encoding="utf-8")
     )
     if evidence["schema"] != STEP10_FINALIST_EVIDENCE_SCHEMA:
         raise ValueError("Invalid Step-10 finalist evidence schema")
@@ -67,6 +95,11 @@ def _selected_label_raster_path(selected_row: dict) -> Path:
 
 def run_level1b_step10_collect_finalist_evidence(
     output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
+    selected_candidate_id: str | None = None,
+    selected_role: str | None = None,
+    supported_alternatives_json: str | Path | None = None,
 ) -> dict:
     output_root = Path(output_dir)
     step9a_dir = output_root / "level1b" / "candidate_response_surface"
@@ -77,137 +110,233 @@ def run_level1b_step10_collect_finalist_evidence(
         / "level1b"
         / "candidate_response_surface"
     )
+    decision_evidence_dir = _step10_decision_evidence_dir(
+        output_root, step10_subdir=step10_subdir
+    )
+    decision_evidence_dir.mkdir(parents=True, exist_ok=True)
+    evidence_json_path = _step10_finalist_evidence_path(
+        output_root, step10_subdir=step10_subdir
+    )
 
-    handoff_json = step9b_dir / "step9b_midpoint_gain_share_handoff.json"
     step9a_group_summary_json = (
         step9a_dir / "candidate_group_response_summary.json"
     )
     step9a_run_population_json = step9a_dir / "run_population_summary.json"
-    midpoint_group_summary_json = (
-        midpoint_response_surface_dir / "candidate_group_response_summary.json"
-    )
-    midpoint_run_population_json = (
-        midpoint_response_surface_dir / "run_population_summary.json"
-    )
-
-    handoff = json.loads(handoff_json.read_text(encoding="utf-8"))
     step9a_group_summary = json.loads(
         step9a_group_summary_json.read_text(encoding="utf-8")
     )
     step9a_run_population = json.loads(
         step9a_run_population_json.read_text(encoding="utf-8")
     )
-    midpoint_group_summary = json.loads(
-        midpoint_group_summary_json.read_text(encoding="utf-8")
-    )
-    midpoint_run_population = json.loads(
-        midpoint_run_population_json.read_text(encoding="utf-8")
-    )
 
-    finalist_ids = {
-        "lower_boundary": handoff["top_pair_lower_scale_candidate_group_id"],
-        "midpoint": handoff["midpoint_candidate_id"],
-        "upper_boundary": handoff["top_pair_upper_scale_candidate_group_id"],
+    branch_mode = selected_candidate_id is not None
+    source_artifacts: dict[str, str] = {
+        "step9a_candidate_group_response_summary_json": str(
+            step9a_group_summary_json
+        ),
+        "step9a_run_population_summary_json": str(
+            step9a_run_population_json
+        ),
     }
-    selected_candidate_id = handoff["handoff_candidate_id"]
-    selected_role = next(
-        role for role, candidate_id in finalist_ids.items() if candidate_id == selected_candidate_id
-    )
-    no1_role = next(
-        role for role, candidate_id in finalist_ids.items()
-        if candidate_id == handoff["no1_candidate_scale_group_id"]
-    )
-    no2_role = next(
-        role for role, candidate_id in finalist_ids.items()
-        if candidate_id == handoff["no2_candidate_scale_group_id"]
-    )
-    ordered_roles = (
-        ["midpoint", no1_role, no2_role]
-        if selected_role == "midpoint"
-        else [selected_role, "midpoint", no2_role]
-    )
-    display_rank_by_role = {
-        role: index for index, role in enumerate(ordered_roles, start=1)
-    }
+    if branch_mode:
+        if selected_role is None:
+            raise ValueError(
+                "selected_role is required when selected_candidate_id is provided"
+            )
+        selected_candidate_id = str(selected_candidate_id)
+        selected_role = str(selected_role)
+        finalist_ids = {selected_role: selected_candidate_id}
+        ordered_roles = [selected_role]
+        display_rank_by_role = {selected_role: 1}
+        if supported_alternatives_json is not None:
+            source_artifacts["supported_scale_alternatives_json"] = str(
+                supported_alternatives_json
+            )
 
-    def annotate(row: dict, role: str, source_table: str) -> dict:
-        annotated = dict(row)
-        annotated.update(
+        def annotate(row: dict, role: str, source_table: str) -> dict:
+            annotated = dict(row)
+            annotated.update(
+                {
+                    "step10_display_rank": display_rank_by_role[role],
+                    "step10_finalist_role": role,
+                    "step10_selected_candidate": True,
+                    "step10_selected_role": selected_role,
+                    "step10_source_table": source_table,
+                    "step10_lower_boundary_documentation_only": False,
+                }
+            )
+            return annotated
+
+        selected_group_row = next(
+            row
+            for row in step9a_group_summary
+            if row["candidate_scale_group_id"] == selected_candidate_id
+        )
+        group_rows_by_role = {
+            selected_role: annotate(
+                selected_group_row,
+                selected_role,
+                "step9a_candidate_group_response_summary",
+            )
+        }
+        group_rows = [group_rows_by_role[selected_role]]
+        run_rows_by_role = {
+            selected_role: [
+                annotate(
+                    row,
+                    selected_role,
+                    "step9a_run_population_summary",
+                )
+                for row in step9a_run_population
+                if row["candidate_scale_group_id"] == selected_candidate_id
+            ]
+        }
+        run_rows = run_rows_by_role[selected_role]
+    else:
+        handoff_json = step9b_dir / "step9b_midpoint_gain_share_handoff.json"
+        midpoint_group_summary_json = (
+            midpoint_response_surface_dir / "candidate_group_response_summary.json"
+        )
+        midpoint_run_population_json = (
+            midpoint_response_surface_dir / "run_population_summary.json"
+        )
+
+        handoff = json.loads(handoff_json.read_text(encoding="utf-8"))
+        midpoint_group_summary = json.loads(
+            midpoint_group_summary_json.read_text(encoding="utf-8")
+        )
+        midpoint_run_population = json.loads(
+            midpoint_run_population_json.read_text(encoding="utf-8")
+        )
+        source_artifacts.update(
             {
-                "step10_display_rank": display_rank_by_role[role],
-                "step10_finalist_role": role,
-                "step10_selected_candidate": row["candidate_scale_group_id"]
-                == selected_candidate_id,
-                "step10_selected_role": selected_role,
-                "step10_source_table": source_table,
-                "step10_lower_boundary_documentation_only": (
-                    role == "lower_boundary"
-                    and row["candidate_scale_group_id"] != selected_candidate_id
+                "step9b_handoff_json": str(handoff_json),
+                "midpoint_candidate_group_response_summary_json": str(
+                    midpoint_group_summary_json
+                ),
+                "midpoint_run_population_summary_json": str(
+                    midpoint_run_population_json
                 ),
             }
         )
-        return annotated
 
-    lower_group_row = next(
-        row
-        for row in step9a_group_summary
-        if row["candidate_scale_group_id"] == finalist_ids["lower_boundary"]
-    )
-    upper_group_row = next(
-        row
-        for row in step9a_group_summary
-        if row["candidate_scale_group_id"] == finalist_ids["upper_boundary"]
-    )
-    midpoint_group_row = next(
-        row
-        for row in midpoint_group_summary
-        if row["candidate_scale_group_id"] == finalist_ids["midpoint"]
-    )
-    group_rows_by_role = {
-        "lower_boundary": annotate(
-            lower_group_row,
-            "lower_boundary",
-            "step9a_candidate_group_response_summary",
-        ),
-        "upper_boundary": annotate(
-            upper_group_row,
-            "upper_boundary",
-            "step9a_candidate_group_response_summary",
-        ),
-        "midpoint": annotate(
-            midpoint_group_row,
-            "midpoint",
-            "midpoint_candidate_group_response_summary",
-        ),
-    }
-    group_rows = [group_rows_by_role[role] for role in ordered_roles]
+        finalist_ids = {
+            "lower_boundary": handoff["top_pair_lower_scale_candidate_group_id"],
+            "midpoint": handoff["midpoint_candidate_id"],
+            "upper_boundary": handoff["top_pair_upper_scale_candidate_group_id"],
+        }
+        selected_candidate_id = str(handoff["handoff_candidate_id"])
+        selected_role = next(
+            role
+            for role, candidate_id in finalist_ids.items()
+            if candidate_id == selected_candidate_id
+        )
+        no1_role = next(
+            role
+            for role, candidate_id in finalist_ids.items()
+            if candidate_id == handoff["no1_candidate_scale_group_id"]
+        )
+        no2_role = next(
+            role
+            for role, candidate_id in finalist_ids.items()
+            if candidate_id == handoff["no2_candidate_scale_group_id"]
+        )
+        ordered_roles = (
+            ["midpoint", no1_role, no2_role]
+            if selected_role == "midpoint"
+            else [selected_role, "midpoint", no2_role]
+        )
+        display_rank_by_role = {
+            role: index for index, role in enumerate(ordered_roles, start=1)
+        }
 
-    run_rows_by_role = {
-        "lower_boundary": [
-            annotate(row, "lower_boundary", "step9a_run_population_summary")
-            for row in step9a_run_population
+        def annotate(row: dict, role: str, source_table: str) -> dict:
+            annotated = dict(row)
+            annotated.update(
+                {
+                    "step10_display_rank": display_rank_by_role[role],
+                    "step10_finalist_role": role,
+                    "step10_selected_candidate": row["candidate_scale_group_id"]
+                    == selected_candidate_id,
+                    "step10_selected_role": selected_role,
+                    "step10_source_table": source_table,
+                    "step10_lower_boundary_documentation_only": (
+                        role == "lower_boundary"
+                        and row["candidate_scale_group_id"] != selected_candidate_id
+                    ),
+                }
+            )
+            return annotated
+
+        lower_group_row = next(
+            row
+            for row in step9a_group_summary
             if row["candidate_scale_group_id"] == finalist_ids["lower_boundary"]
-        ],
-        "upper_boundary": [
-            annotate(row, "upper_boundary", "step9a_run_population_summary")
-            for row in step9a_run_population
+        )
+        upper_group_row = next(
+            row
+            for row in step9a_group_summary
             if row["candidate_scale_group_id"] == finalist_ids["upper_boundary"]
-        ],
-        "midpoint": [
-            annotate(row, "midpoint", "midpoint_run_population_summary")
-            for row in midpoint_run_population
+        )
+        midpoint_group_row = next(
+            row
+            for row in midpoint_group_summary
             if row["candidate_scale_group_id"] == finalist_ids["midpoint"]
-        ],
-    }
-    run_rows = [
-        row
-        for role in ordered_roles
-        for row in run_rows_by_role[role]
-    ]
+        )
+        group_rows_by_role = {
+            "lower_boundary": annotate(
+                lower_group_row,
+                "lower_boundary",
+                "step9a_candidate_group_response_summary",
+            ),
+            "upper_boundary": annotate(
+                upper_group_row,
+                "upper_boundary",
+                "step9a_candidate_group_response_summary",
+            ),
+            "midpoint": annotate(
+                midpoint_group_row,
+                "midpoint",
+                "midpoint_candidate_group_response_summary",
+            ),
+        }
+        group_rows = [group_rows_by_role[role] for role in ordered_roles]
 
-    decision_evidence_dir = _step10_decision_evidence_dir(output_root)
-    decision_evidence_dir.mkdir(parents=True, exist_ok=True)
-    evidence_json_path = _step10_finalist_evidence_path(output_root)
+        run_rows_by_role = {
+            "lower_boundary": [
+                annotate(
+                    row,
+                    "lower_boundary",
+                    "step9a_run_population_summary",
+                )
+                for row in step9a_run_population
+                if row["candidate_scale_group_id"]
+                == finalist_ids["lower_boundary"]
+            ],
+            "upper_boundary": [
+                annotate(
+                    row,
+                    "upper_boundary",
+                    "step9a_run_population_summary",
+                )
+                for row in step9a_run_population
+                if row["candidate_scale_group_id"]
+                == finalist_ids["upper_boundary"]
+            ],
+            "midpoint": [
+                annotate(
+                    row,
+                    "midpoint",
+                    "midpoint_run_population_summary",
+                )
+                for row in midpoint_run_population
+                if row["candidate_scale_group_id"] == finalist_ids["midpoint"]
+            ],
+        }
+        run_rows = [
+            row for role in ordered_roles for row in run_rows_by_role[role]
+        ]
+
     selected_group_row = group_rows_by_role[selected_role]
     selected_representative_run_id = str(selected_group_row["medoid_run_id"])
     [selected_representative_row] = [
@@ -221,21 +350,7 @@ def run_level1b_step10_collect_finalist_evidence(
         "schema": STEP10_FINALIST_EVIDENCE_SCHEMA,
         "schema_version": 2,
         "status": "step10_part1_finalist_evidence_collected",
-        "source_artifacts": {
-            "step9b_handoff_json": str(handoff_json),
-            "step9a_candidate_group_response_summary_json": str(
-                step9a_group_summary_json
-            ),
-            "step9a_run_population_summary_json": str(
-                step9a_run_population_json
-            ),
-            "midpoint_candidate_group_response_summary_json": str(
-                midpoint_group_summary_json
-            ),
-            "midpoint_run_population_summary_json": str(
-                midpoint_run_population_json
-            ),
-        },
+        "source_artifacts": source_artifacts,
         "finalist_candidate_ids": finalist_ids,
         "display_order": ordered_roles,
         "selected_candidate_id": selected_candidate_id,
@@ -288,17 +403,12 @@ def run_level1b_step10_collect_finalist_evidence(
     write_json(runs_json_path, run_rows)
     write_csv(runs_csv_path, run_rows)
 
-    write_step_manifest(
+    step_name = _step10_manifest_step_name("step10_collect", step10_subdir)
+    manifest_path = write_step_manifest(
         output_dir,
-        step="step10_collect",
+        step=step_name,
         status="step10_part1_finalist_evidence_collected",
-        inputs={
-            "step9b_handoff_json": handoff_json,
-            "step9a_candidate_group_response_summary_json": step9a_group_summary_json,
-            "step9a_run_population_summary_json": step9a_run_population_json,
-            "midpoint_candidate_group_response_summary_json": midpoint_group_summary_json,
-            "midpoint_run_population_summary_json": midpoint_run_population_json,
-        },
+        inputs=source_artifacts,
         artifacts={
             "finalist_evidence_json": evidence_json_path,
             "finalist_group_summary_json": group_json_path,
@@ -323,15 +433,25 @@ def run_level1b_step10_collect_finalist_evidence(
         "finalist_perturbation_runs_csv": str(runs_csv_path),
         "group_row_count": len(group_rows),
         "perturbation_run_row_count": len(run_rows),
+        "manifest_json": str(manifest_path),
+        "step_manifest_json": str(step_manifest_json),
     }
 
 
 def run_level1b_step10_aggregate_finalist_evidence(
     output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
 ) -> dict:
-    decision_evidence_dir = _step10_decision_evidence_dir(output_dir)
-    evidence_json_path = _step10_finalist_evidence_path(output_dir)
-    evidence = _read_step10_finalist_evidence(output_dir)
+    decision_evidence_dir = _step10_decision_evidence_dir(
+        output_dir, step10_subdir=step10_subdir
+    )
+    evidence_json_path = _step10_finalist_evidence_path(
+        output_dir, step10_subdir=step10_subdir
+    )
+    evidence = _read_step10_finalist_evidence(
+        output_dir, step10_subdir=step10_subdir
+    )
     group_rows = evidence["finalist_group_rows"]
     perturbation_run_rows = evidence["finalist_run_rows"]
 
@@ -520,9 +640,9 @@ def run_level1b_step10_aggregate_finalist_evidence(
         for row in group_rows
         if row["step10_selected_candidate"] is True
     )
-    write_step_manifest(
+    manifest_path = write_step_manifest(
         output_dir,
-        step="step10_aggregate",
+        step=_step10_manifest_step_name("step10_aggregate", step10_subdir),
         status="step10_part2_finalist_evidence_aggregated",
         inputs={
             "finalist_evidence_json": evidence_json_path,
@@ -548,11 +668,14 @@ def run_level1b_step10_aggregate_finalist_evidence(
         "finalist_numeric_distribution_summary_csv": str(distribution_csv_path),
         "group_aggregation_row_count": len(group_aggregation_rows),
         "numeric_distribution_row_count": len(numeric_distribution_rows),
+        "manifest_json": str(manifest_path),
     }
 
 
 def run_level1b_step10_make_finalist_figures(
     output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
 ) -> dict:
     import matplotlib
 
@@ -560,8 +683,12 @@ def run_level1b_step10_make_finalist_figures(
     import matplotlib.pyplot as plt
 
     output_root = Path(output_dir)
-    evidence_json_path = _step10_finalist_evidence_path(output_root)
-    evidence = _read_step10_finalist_evidence(output_root)
+    evidence_json_path = _step10_finalist_evidence_path(
+        output_root, step10_subdir=step10_subdir
+    )
+    evidence = _read_step10_finalist_evidence(
+        output_root, step10_subdir=step10_subdir
+    )
     group_rows = evidence["finalist_group_rows"]
     perturbation_run_rows = evidence["finalist_run_rows"]
     group_aggregation_rows = evidence["group_aggregation_rows"]
@@ -592,7 +719,9 @@ def run_level1b_step10_make_finalist_figures(
     role_labels = [role_label(role) for role in display_roles]
     selected_title = f"Selected candidate: {selected_candidate_id}"
 
-    figures_dir = output_root / "level1b" / "step10_materialization" / "figures"
+    figures_dir = _step10_root_dir(
+        output_root, step10_subdir=step10_subdir
+    ) / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
     figure_paths = [
         figures_dir / "finalist_decision_scores.png",
@@ -859,9 +988,9 @@ def run_level1b_step10_make_finalist_figures(
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-    write_step_manifest(
+    step_manifest_json = write_step_manifest(
         output_dir,
-        step="step10_figures",
+        step=_step10_manifest_step_name("step10_figures", step10_subdir),
         status="step10_part3_figures_created",
         inputs={
             "finalist_evidence_json": evidence_json_path,
@@ -887,17 +1016,21 @@ def run_level1b_step10_make_finalist_figures(
 
 def run_level1b_step10_materialize_selected_segments(
     output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
 ) -> dict:
     from osgeo import gdal, ogr, osr
 
     output_root = Path(output_dir)
-    evidence_json_path = _step10_finalist_evidence_path(output_root)
-    evidence = _read_step10_finalist_evidence(output_root)
+    evidence_json_path = _step10_finalist_evidence_path(
+        output_root, step10_subdir=step10_subdir
+    )
+    evidence = _read_step10_finalist_evidence(
+        output_root, step10_subdir=step10_subdir
+    )
     selected_row = _selected_representative_run(evidence)
     stabilization_report_path = (
-        output_root
-        / "level1b"
-        / "step10_materialization"
+        _step10_root_dir(output_root, step10_subdir=step10_subdir)
         / "centroid_seed_stabilization"
         / "centroid_seed_stabilization_report.json"
     )
@@ -910,7 +1043,8 @@ def run_level1b_step10_materialize_selected_segments(
         raise RuntimeError("centroid seed stabilization is not converged")
     source_label_raster = Path(stabilization_report["stabilized_labels_tif"])
     final_segments_dir = (
-        output_root / "level1b" / "step10_materialization" / "final_segments"
+        _step10_root_dir(output_root, step10_subdir=step10_subdir)
+        / "final_segments"
     )
     final_segments_dir.mkdir(parents=True, exist_ok=True)
     selected_labels_tif = final_segments_dir / "selected_labels.tif"
@@ -990,9 +1124,9 @@ def run_level1b_step10_materialize_selected_segments(
         manifest["label_invalid_support_value"] = invalid_support_value
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-    write_step_manifest(
+    step_manifest_json = write_step_manifest(
         output_dir,
-        step="step10_materialize",
+        step=_step10_manifest_step_name("step10_materialize", step10_subdir),
         status="step10_part4_selected_segments_materialized",
         inputs={
             "finalist_evidence_json": evidence_json_path,
@@ -1023,6 +1157,7 @@ def run_level1b_step10_materialize_selected_segments(
         "selected_labels_tif": str(selected_labels_tif),
         "selected_segments_gpkg": str(selected_segments_gpkg),
         "manifest_json": str(manifest_path),
+        "step_manifest_json": str(step_manifest_json),
         "selected_candidate_id": selected_row["candidate_scale_group_id"],
         "selected_source": selected_row["step10_selected_role"],
         "selected_representative_id": selected_row["run_id"],
@@ -1031,19 +1166,25 @@ def run_level1b_step10_materialize_selected_segments(
 
 def run_level1b_step10_compute_exactextractr_segment_stats_and_quality_info(
     output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
 ) -> dict:
     output_root = Path(output_dir)
-    step10_dir = output_root / "level1b" / "step10_materialization"
+    step10_dir = _step10_root_dir(output_root, step10_subdir=step10_subdir)
     final_segments_dir = step10_dir / "final_segments"
     selected_labels_tif = final_segments_dir / "selected_labels.tif"
     selected_segments_gpkg = final_segments_dir / "selected_segments.gpkg"
     selected_segments_manifest_json = (
         final_segments_dir / "selected_segments_manifest.json"
     )
-    evidence_json_path = _step10_finalist_evidence_path(output_root)
+    evidence_json_path = _step10_finalist_evidence_path(
+        output_root, step10_subdir=step10_subdir
+    )
 
     json.loads(selected_segments_manifest_json.read_text(encoding="utf-8"))
-    evidence = _read_step10_finalist_evidence(output_root)
+    evidence = _read_step10_finalist_evidence(
+        output_root, step10_subdir=step10_subdir
+    )
     selected_row = _selected_representative_run(evidence)
     [selected_group_aggregation_row] = [
         row
@@ -1145,9 +1286,9 @@ def run_level1b_step10_compute_exactextractr_segment_stats_and_quality_info(
         json.dumps(quality_info, indent=2), encoding="utf-8"
     )
 
-    write_step_manifest(
+    manifest_path = write_step_manifest(
         output_dir,
-        step="step10_quality",
+        step=_step10_manifest_step_name("step10_quality", step10_subdir),
         status="step10_part5_exactextractr_segment_stats_and_quality_info_ready",
         inputs={
             "selected_labels_tif": selected_labels_tif,
@@ -1178,4 +1319,5 @@ def run_level1b_step10_compute_exactextractr_segment_stats_and_quality_info(
         "selected_representative_id": selected_representative_id,
         "value_raster_used": str(value_raster),
         "valid_mask_path": str(valid_mask_path),
+        "manifest_json": str(manifest_path),
     }

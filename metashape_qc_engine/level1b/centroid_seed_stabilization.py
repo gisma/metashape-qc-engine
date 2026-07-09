@@ -27,9 +27,25 @@ from metashape_qc_engine.level1b.saga_segmentation import (
 )
 
 
-STABILIZATION_RELATIVE_DIR = Path(
-    "level1b/step10_materialization/centroid_seed_stabilization"
-)
+DEFAULT_STEP10_SUBDIR = "step10_materialization"
+
+
+def _step10_root_dir(
+    output_dir: str | Path,
+    *,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
+) -> Path:
+    return Path(output_dir) / "level1b" / Path(step10_subdir)
+
+
+def _step10_manifest_step_name(step: str, step10_subdir: str) -> str:
+    if step10_subdir == DEFAULT_STEP10_SUBDIR:
+        return step
+    suffix = "".join(
+        character if character.isalnum() else "_"
+        for character in step10_subdir
+    ).strip("_")
+    return f"{step}__{suffix}"
 
 
 def _segment_centroids(label_path: Path) -> np.ndarray:
@@ -328,6 +344,7 @@ def run_multiscale_centroid_seed_stabilization(
     minimum_run_support: int,
     minimum_phase_support: int,
     minimum_ranger_support: int,
+    step10_subdir: str = DEFAULT_STEP10_SUBDIR,
 ) -> dict[str, Any]:
     root = Path(output_dir)
 
@@ -336,8 +353,9 @@ def run_multiscale_centroid_seed_stabilization(
         (response_dir / "run_population_summary.json").read_text(encoding="utf-8")
     )
     evidence_path = (
-        root
-        / "level1b/step10_materialization/decision_evidence/finalist_evidence.json"
+        _step10_root_dir(root, step10_subdir=step10_subdir)
+        / "decision_evidence"
+        / "finalist_evidence.json"
     )
     evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
     selected_candidate_id = str(evidence["selected_candidate_id"])
@@ -365,7 +383,10 @@ def run_multiscale_centroid_seed_stabilization(
         ),
     )
 
-    stabilization_dir = root / STABILIZATION_RELATIVE_DIR
+    stabilization_dir = (
+        _step10_root_dir(root, step10_subdir=step10_subdir)
+        / "centroid_seed_stabilization"
+    )
     stabilization_dir.mkdir(parents=True, exist_ok=True)
     peaks_by_scale: list[list[dict[str, Any]]] = []
     radii_px: list[int] = []
@@ -492,9 +513,11 @@ def run_multiscale_centroid_seed_stabilization(
     }
     report_path = stabilization_dir / "centroid_seed_stabilization_report.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    write_step_manifest(
+    manifest_path = write_step_manifest(
         root,
-        step="centroid_seed_stabilization",
+        step=_step10_manifest_step_name(
+            "centroid_seed_stabilization", step10_subdir
+        ),
         status=status,
         inputs={
             "finalist_evidence_json": evidence_path,
@@ -510,4 +533,8 @@ def run_multiscale_centroid_seed_stabilization(
         },
         candidate_id=selected_candidate_id,
     )
-    return {**report, "report_json": str(report_path)}
+    return {
+        **report,
+        "report_json": str(report_path),
+        "manifest_json": str(manifest_path),
+    }

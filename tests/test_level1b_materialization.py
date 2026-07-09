@@ -194,6 +194,54 @@ def test_step10_canonical_evidence_preserves_upper_selected_display_order(
     ] == [1, 2, 3]
 
 
+def test_step10_collect_can_materialize_single_non_adjacent_branch(
+    tmp_path: Path,
+) -> None:
+    _seed_step9_evidence(tmp_path, selected_candidate_id="upper-id")
+    alternatives = (
+        tmp_path
+        / "level1b"
+        / "local_transition_refinement"
+        / "step9b_supported_scale_alternatives.json"
+    )
+    _write_json(
+        alternatives,
+        [
+            {
+                "branch_id": "upper_support_mode",
+                "candidate_scale_group_id": "upper-id",
+                "rank": 2,
+                "scale_coordinate_name": "radius_m",
+                "scale_coordinate_value": 2.5,
+                "stability_score_raw": 0.8,
+            }
+        ],
+    )
+
+    result = run_level1b_step10_collect_finalist_evidence(
+        tmp_path,
+        step10_subdir="step10_materialization/non_adjacent_branches/upper_support_mode",
+        selected_candidate_id="upper-id",
+        selected_role="upper_support_mode",
+        supported_alternatives_json=alternatives,
+    )
+    evidence = json.loads(
+        Path(result["finalist_evidence_json"]).read_text(encoding="utf-8")
+    )
+
+    assert evidence["display_order"] == ["upper_support_mode"]
+    assert evidence["selected_candidate_id"] == "upper-id"
+    assert evidence["selected_role"] == "upper_support_mode"
+    assert [row["step10_finalist_role"] for row in evidence["finalist_group_rows"]] == [
+        "upper_support_mode"
+    ]
+    assert all(
+        row["candidate_scale_group_id"] == "upper-id"
+        for row in evidence["finalist_run_rows"]
+    )
+    assert Path(result["manifest_json"]).exists()
+
+
 def test_step10_roles_follow_scale_order_when_no1_is_lower(
     tmp_path: Path,
 ) -> None:

@@ -1588,6 +1588,10 @@ def test_51_step9b_non_adjacent_forwards_two_supported_alternatives_without_midp
         "r999px001",
         "r001px999",
     ]
+    assert [row["branch_id"] for row in result["supported_alternatives"]] == [
+        "lower_support_mode",
+        "upper_support_mode",
+    ]
     assert result["midpoint_candidate_count"] == 0
     assert (step9b_dir / "step9b_supported_scale_alternatives.csv").exists()
     assert (step9b_dir / "step9b_supported_scale_alternatives.json").exists()
