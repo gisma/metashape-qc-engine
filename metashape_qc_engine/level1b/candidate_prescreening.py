@@ -667,8 +667,6 @@ def run_candidate_prescreening_step(
             )
             ranger_diagnostics["sample_n_used"] = len(sampled_vectors)
             ranger_diagnostics["distance_sample_n"] = distance_sample_n
-            if not ranger_diagnostics.get("plateau_found"):
-                raise ValueError("no stable Half-Sample Mode plateau found for ranger selection")
             ranger_levels = _ranger_levels(ranger_candidates)
             candidates = materialize_candidate_population(
                 config,
@@ -683,6 +681,8 @@ def run_candidate_prescreening_step(
                 "valid_mask_path": str(config.valid_mask_path),
                 "radius_domain_m": [float(config.radius_min_m), float(config.radius_max_m)],
                 "candidate_budget": int(config.candidate_budget),
+                "ranger_selection_status": ranger_diagnostics.get("ranger_selection_status", "stable_plateau"),
+                "ranger_selection_warning": ranger_diagnostics.get("ranger_selection_warning"),
                 "scale_family_count": len({row["candidate_scale_group_id"] for row in candidates}),
                 "candidate_count": len(candidates),
                 "no_segmentation_performed": True,
@@ -719,6 +719,7 @@ def run_candidate_prescreening_step(
         "candidate_population_json": str(candidate_json),
         "candidate_population_csv": str(candidate_csv),
         "failure_reasons": failures,
+        "warnings": ([ranger_diagnostics["ranger_selection_warning"]] if ranger_diagnostics.get("ranger_selection_warning") else []),
         "no_segmentation_performed": True,
         "no_ranking_performed": True,
         "no_final_selection_performed": True,

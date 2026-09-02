@@ -29,6 +29,10 @@ RANGER_FIELDS = (
     "sample_n_requested",
     "sample_n_used",
     "distance_sample_n",
+    "ranger_population",
+    "zero_distance_count",
+    "zero_distance_fraction",
+    "positive_distance_count",
     "feature_space_source",
     "band_count",
     "ranger_source",
@@ -55,12 +59,18 @@ RANGER_JSON_KEYS = (
     "sample_n_requested",
     "sample_n_used",
     "distance_sample_n",
+    "ranger_population",
+    "zero_distance_count",
+    "zero_distance_fraction",
+    "positive_distance_count",
     "knn_k_policy",
     "knn_k_candidates",
     "hsm_stability_rel_tol",
     "hsm_plateau_window",
     "selected_knn_k",
     "plateau_found",
+    "ranger_selection_status",
+    "ranger_selection_warning",
     "selection_method",
     "distance_min",
     "distance_median",
@@ -403,7 +413,21 @@ def estimate_half_sample_mode(distances) -> dict[str, float | int | str]:
     if not np.any(values > 0):
         raise ValueError("Feature Space has no finite positive distance variation")
 
-    ordered = np.sort(values)
+    # Exact zero kNN distances are common in high-resolution, quantized
+    # feature stacks: several valid pixels can have the same feature vector.
+    # They cannot define a usable SAGA ranger (which must be positive), so the
+    # HSM is deliberately conditioned on distinguishable neighbourhoods.
+    # Keep the discarded mass in diagnostics rather than silently treating it
+    # as absent.
+    zero_distance_count = int(np.count_nonzero(values == 0))
+    positive_values = values[values > 0]
+
+    if positive_values.size == 0:
+        raise ValueError(
+            "Feature space has no finite positive distance variation"
+        )
+
+    ordered = np.sort(positive_values)
     distance_min = float(ordered[0])
     distance_median = float(np.median(ordered))
     distance_max = float(ordered[-1])
@@ -430,6 +454,10 @@ def estimate_half_sample_mode(distances) -> dict[str, float | int | str]:
 
     return {
         "selection_method": RANGER_SELECTION_METHOD,
+        "ranger_population": "positive_knn_distances_only",
+        "zero_distance_count": zero_distance_count,
+        "zero_distance_fraction": float(zero_distance_count / values.size),
+        "positive_distance_count": int(positive_values.size),
         "ranger": ranger,
         "distance_min": distance_min,
         "distance_median": distance_median,
@@ -456,6 +484,10 @@ def build_ranger_candidate_from_knn_distances(
         "ranger_index": 1,
         "ranger": diagnostics["ranger"],
         "selection_method": diagnostics["selection_method"],
+        "ranger_population": diagnostics["ranger_population"],
+        "zero_distance_count": diagnostics["zero_distance_count"],
+        "zero_distance_fraction": diagnostics["zero_distance_fraction"],
+        "positive_distance_count": diagnostics["positive_distance_count"],
         "modal_interval_lower": diagnostics["modal_interval_lower"],
         "modal_interval_upper": diagnostics["modal_interval_upper"],
         "half_sample_iterations": diagnostics["half_sample_iterations"],
@@ -556,13 +588,31 @@ def derive_ranger_candidates(
         config.hsm_stability_rel_tol,
         config.hsm_plateau_window,
     )
+    plateau_found = selected_knn_k is not None
+    selection_status = "stable_plateau"
+    selection_warning = None
+    if not plateau_found:
+        best_window = min(
+            plateau_windows,
+            key=lambda window: (float(window["relative_span"]), int(window["window_index"])),
+        )
+        relative_span = float(best_window["relative_span"])
+        selected_knn_k = int(best_window["knn_k_values"][0])
+        selection_status = "weak_plateau_fallback"
+        selection_warning = (
+            "No HSM ranger plateau met the configured tolerance; selected the "
+            "lowest-k window with the smallest relative span "
+            f"({relative_span:.6g})."
+        )
     diagnostics: dict[str, object] = {
         "knn_k_policy": config.knn_k_policy,
         "knn_k_candidates": [int(value) for value in knn_k_candidates],
         "hsm_stability_rel_tol": float(config.hsm_stability_rel_tol),
         "hsm_plateau_window": int(config.hsm_plateau_window),
         "selected_knn_k": selected_knn_k,
-        "plateau_found": selected_knn_k is not None,
+        "plateau_found": plateau_found,
+        "ranger_selection_status": selection_status,
+        "ranger_selection_warning": selection_warning,
         "selection_method": RANGER_SELECTION_METHOD,
         "hsm_ranger_curve": hsm_ranger_curve,
         "hsm_plateau_windows": plateau_windows,
@@ -572,6 +622,10 @@ def derive_ranger_candidates(
         None,
     )
     for key in (
+        "ranger_population",
+        "zero_distance_count",
+        "zero_distance_fraction",
+        "positive_distance_count",
         "distance_min",
         "distance_median",
         "distance_max",
@@ -579,10 +633,7 @@ def derive_ranger_candidates(
         "modal_interval_upper",
         "half_sample_iterations",
     ):
-        diagnostics[key] = selected_diagnostics[key] if selected_diagnostics else None
-
-    if selected_knn_k is None:
-        return [], len(distance_vectors), diagnostics
+        diagnostics[key] = selected_diagnostics.get(key) if selected_diagnostics else None
 
     candidates, _ = build_ranger_candidate_from_knn_distances(
         candidate_id=config.candidate_id,
@@ -659,7 +710,13 @@ def write_ranger_candidates_json(config, candidates, sample_n_used, distance_sam
         "hsm_plateau_window": int(config.hsm_plateau_window),
         "selected_knn_k": diagnostics["selected_knn_k"],
         "plateau_found": diagnostics["plateau_found"],
+        "ranger_selection_status": diagnostics["ranger_selection_status"],
+        "ranger_selection_warning": diagnostics["ranger_selection_warning"],
         "selection_method": diagnostics["selection_method"],
+        "ranger_population": diagnostics["ranger_population"],
+        "zero_distance_count": diagnostics["zero_distance_count"],
+        "zero_distance_fraction": diagnostics["zero_distance_fraction"],
+        "positive_distance_count": diagnostics["positive_distance_count"],
         "distance_min": diagnostics["distance_min"],
         "distance_median": diagnostics["distance_median"],
         "distance_max": diagnostics["distance_max"],
@@ -734,13 +791,8 @@ def run_feature_range_assignment_step(config) -> dict[str, object]:
                 ranger_json_path,
             )
             files_written = [str(ranger_csv_path), str(ranger_json_path)]
-            # Preserve the complete pre-segmentation diagnostic before failing.
-            # No scale assignment or perturbation input is written without a
-            # stable plateau, and no historical fixed k is substituted.
-            if not ranger_diagnostics["plateau_found"]:
-                raise ValueError(
-                    "no stable Half-Sample Mode plateau found for knn_k candidates"
-                )
+            # A weak plateau is a documented deterministic fallback, not a
+            # failed feature-range assignment. See ranger_selection_warning.
             scale_candidates = read_scale_candidates(config.scale_candidates_json_path)
             assigned_candidates = assign_ranger_candidates_to_scale_candidates(scale_candidates, ranger_candidates)
             write_assigned_candidates_csv(assigned_candidates, assigned_csv_path)
@@ -782,6 +834,8 @@ def run_feature_range_assignment_step(config) -> dict[str, object]:
         "hsm_plateau_window": config.hsm_plateau_window,
         "selected_knn_k": ranger_diagnostics.get("selected_knn_k"),
         "plateau_found": ranger_diagnostics.get("plateau_found", False),
+        "ranger_selection_status": ranger_diagnostics.get("ranger_selection_status"),
+        "ranger_selection_warning": ranger_diagnostics.get("ranger_selection_warning"),
         "selection_method": RANGER_SELECTION_METHOD,
         "ranger_diagnostics": ranger_diagnostics,
         "max_distance_sample_n": config.max_distance_sample_n,

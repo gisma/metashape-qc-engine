@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import shutil
@@ -246,6 +247,76 @@ def _run_evaluate(args: argparse.Namespace) -> int:
     return _run(cmd)
 
 
+def _level1b_ortho(args: argparse.Namespace) -> Path:
+    if args.ortho:
+        ortho = Path(args.ortho).expanduser().resolve()
+    else:
+        selected = Path(args.from_level1a).expanduser().resolve() / "selected_product.json"
+        _require_file(str(selected), "LEVEL1A selected_product.json")
+        with selected.open(encoding="utf-8") as handle:
+            payload = json.load(handle)
+        try:
+            ortho = Path(payload["product_modes"]["median_ortho"]["path"]).expanduser().resolve()
+        except (KeyError, TypeError) as exc:
+            raise RuntimeError(f"Invalid Level-1A selection file: {selected}") from exc
+    _require_file(str(ortho), "ORTHO")
+    return ortho
+
+
+def _level1b_wrapper(root: Path) -> Path:
+    wrapper = root / "metashape_qc_engine" / "run_level1b_dumb_with_user_header.sh"
+    _require_file(str(wrapper), "Level-1B wrapper")
+    return wrapper
+
+
+def _run_level1b_start(args: argparse.Namespace) -> int:
+    ortho = _level1b_ortho(args)
+    run_root = Path(args.run_root).expanduser().resolve()
+    level1b_dir = run_root / "level1b"
+    if level1b_dir.exists() and not args.overwrite:
+        raise RuntimeError(f"Level-1B run already exists: {level1b_dir}. Use a new --run-root or level1b retry.")
+    run_root.mkdir(parents=True, exist_ok=True)
+    root = _repo_root()
+    wrapper = _level1b_wrapper(root)
+    config = Path(args.config).expanduser().resolve() if args.config else None
+    if config:
+        _require_file(str(config), "LEVEL1B_CONFIG")
+    record = {"schema_version": 1, "ortho": str(ortho), "run_root": str(run_root), "config": str(config) if config else None, "wrapper": str(wrapper), "source": "level1a_selected_product" if args.from_level1a else "external_ortho"}
+    (run_root / "level1b_launch.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    env = {"ORTHO": str(ortho), "RUN_ROOT": str(run_root), "OVERWRITE": "1" if args.overwrite else "0"}
+    if config:
+        env["LEVEL1B_CONFIG"] = str(config)
+    return _run(["bash", str(wrapper)], env)
+
+
+def _run_level1b_status(args: argparse.Namespace) -> int:
+    report = Path(args.run_root).expanduser().resolve() / "level1b_dumb_chain_report.json"
+    _require_file(str(report), "Level-1B chain report")
+    print(report.read_text(encoding="utf-8"))
+    return 0
+
+
+def _run_level1b_retry(args: argparse.Namespace) -> int:
+    run_root = Path(args.run_root).expanduser().resolve()
+    record_path = run_root / "level1b_launch.json"
+    _require_file(str(record_path), "Level-1B launch record")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    ortho = Path(record["ortho"])
+    _require_file(str(ortho), "Recorded ORTHO")
+    wrapper = Path(record["wrapper"])
+    _require_file(str(wrapper), "Recorded Level-1B wrapper")
+    env = {"ORTHO": str(ortho), "RUN_ROOT": str(run_root), "OVERWRITE": "1"}
+    if record.get("config"):
+        _require_file(str(record["config"]), "Recorded LEVEL1B_CONFIG")
+        env["LEVEL1B_CONFIG"] = str(record["config"])
+    return _run(["bash", str(wrapper)], env)
+
+
+def _run_chain(args: argparse.Namespace) -> int:
+    _require_file(args.study, "STUDY")
+    return _run([sys.executable, "-m", "metashape_qc_engine.level1ab_sensitivity_runner", "--study", args.study, "--stage", args.stage])
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="metashape-qc",
@@ -375,6 +446,30 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--stable-rmse-threshold", metavar="X", type=float)
     evaluate.add_argument("--no-overwrite", action="store_true")
     evaluate.set_defaults(func=_run_evaluate)
+
+    level1b = subparsers.add_parser("level1b", help="Start, inspect, or retry a Level-1B run.")
+    level1b_sub = level1b.add_subparsers(dest="level1b_command", required=True)
+    level1b_start = level1b_sub.add_parser("start", help="Start from a TIFF or a selected Level-1A product.")
+    source = level1b_start.add_mutually_exclusive_group(required=True)
+    source.add_argument("--ortho", metavar="TIFF")
+    source.add_argument("--from-level1a", metavar="RUN_DIR")
+    level1b_start.add_argument("--run-root", metavar="DIR", required=True)
+    level1b_start.add_argument("--config", metavar="YAML")
+    level1b_start.add_argument("--overwrite", action="store_true")
+    level1b_start.set_defaults(func=_run_level1b_start)
+    level1b_status = level1b_sub.add_parser("status", help="Print the chain report for a Level-1B run.")
+    level1b_status.add_argument("run_root", metavar="RUN_ROOT")
+    level1b_status.set_defaults(func=_run_level1b_status)
+    level1b_retry = level1b_sub.add_parser("retry", help="Retry a recorded Level-1B launch after failure.")
+    level1b_retry.add_argument("run_root", metavar="RUN_ROOT")
+    level1b_retry.set_defaults(func=_run_level1b_retry)
+
+    chain = subparsers.add_parser("chain", help="Run the configured Level-1A to Level-1B handoff.")
+    chain_sub = chain.add_subparsers(dest="chain_command", required=True)
+    for name, stage, help_text in (("run", "all", "Run Level-1A and selected-product Level-1B jobs."), ("retry-level1b", "level1b-resume", "Retry incomplete Level-1B study jobs.")):
+        command = chain_sub.add_parser(name, help=help_text)
+        command.add_argument("--study", metavar="YAML", required=True)
+        command.set_defaults(func=_run_chain, stage=stage)
 
     return parser
 

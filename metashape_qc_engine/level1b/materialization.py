@@ -434,7 +434,7 @@ def run_level1b_step10_collect_finalist_evidence(
         "group_row_count": len(group_rows),
         "perturbation_run_row_count": len(run_rows),
         "manifest_json": str(manifest_path),
-        "step_manifest_json": str(step_manifest_json),
+        "step_manifest_json": str(manifest_path),
     }
 
 

@@ -257,3 +257,27 @@ jq . "$FIGURE_MANIFEST"
 
 Do not interpret a non-adjacent stop as processing failure. It is the explicit
 analyst-choice branch.
+
+## Simplified CLI
+
+Use the normal chain when Level-1B should consume the Level-1A selected median product:
+
+```bash
+metashape-qc chain run --study /path/to/study.yaml
+```
+
+Use Level-1B independently for either an external TIFF or an existing Level-1A run:
+
+```bash
+metashape-qc level1b start --ortho /path/to/ortho.tif --run-root /path/to/level1b-run
+metashape-qc level1b start --from-level1a /path/to/level1a-run --run-root /path/to/level1b-run
+```
+
+The start command records the exact input, config, and wrapper in `level1b_launch.json`. Inspect and retry the same recorded contract with:
+
+```bash
+metashape-qc level1b status /path/to/level1b-run
+metashape-qc level1b retry /path/to/level1b-run
+```
+
+`retry` reruns the recorded chain with overwrite enabled; it is not yet a step-level resume. For study runs, use `metashape-qc chain retry-level1b --study /path/to/study.yaml`.

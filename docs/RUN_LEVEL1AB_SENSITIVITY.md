@@ -1,8 +1,62 @@
-# Run the Level-1A/Level-1B Sensitivity Study
+# Run the Level-1A/Level-1B Chain and Sensitivity Study
 
 ## Purpose
 
-This guide runs the joint sensitivity experiment defined in:
+This is the reference guide for the versioned joint Study YAML used by the productive `metashape-qc chain run --study ...` command and by sensitivity studies. The CLI adds no hidden YAML fields: it passes the file unchanged to the strict schema-version-1 loader.
+
+## Study YAML contract and compatibility
+
+The supported contract is `schema_version: 1`. Existing schema-v1 study files, including `config/sensitivity/level1ab_sensitivity.yaml`, are compatible with `metashape-qc chain run` without modification. Unknown keys, missing required keys, invalid profile overrides, and incompatible value types fail before processing.
+
+Required top-level blocks are:
+
+```yaml
+schema_version: 1
+study:    # id, output_root, overwrite
+level1a:  # image_dir, product_id, project_crs, preset, replicates, metashape_dir, factors
+level1b:  # base_config, wrapper, otb_root, profiles, sources
+```
+
+`level1b.sources.selected_product` defines the normal handoff: after Level-1A evaluation, the runner reads `selected_product.json` and sends its `product_modes.median_ortho.path` to every listed Level-1B profile. `level1b.sources.level1a_variants` is optional in scientific intent but required by schema v1; use an empty `variant_ids: []` list when no propagation runs are wanted.
+
+Minimal productive example:
+
+```yaml
+schema_version: 1
+study:
+  id: douglasien_production
+  output_root: /path/to/analysis
+  overwrite: false
+level1a:
+  image_dir: /path/to/images
+  product_id: douglasien
+  project_crs: EPSG::32632
+  preset: config/experiments/presets/rgb_mesh_ortho_fast_screening_v1.json
+  replicates: 2
+  metashape_dir: /path/to/metashape
+  factors: {}
+level1b:
+  base_config: config/level1b_default.yaml
+  wrapper: metashape_qc_engine/run_level1b_dumb_with_user_header.sh
+  otb_root: /path/to/otb
+  profiles:
+    - id: baseline
+      overrides: {}
+  sources:
+    selected_product:
+      profile_ids: [baseline]
+    level1a_variants:
+      variant_ids: []
+      profile_ids: [baseline]
+```
+
+Start this normal path with:
+
+```bash
+metashape-qc chain run --study /path/to/douglasien_production.yaml
+```
+
+This guide also runs the joint sensitivity experiment defined in:
 
 ```text
 config/sensitivity/level1ab_sensitivity.yaml
@@ -346,7 +400,7 @@ Check:
 <Level-1B run>/level1b/manifests/
 ```
 
-A profile such as `ranger_plateau_strict` may fail scientifically when no stable plateau satisfies its stricter criterion. Such a failure is study evidence and must not be silently replaced by the baseline result.
+A profile such as `ranger_plateau_strict` can produce `weak_plateau_fallback` when no stable plateau satisfies its stricter criterion. The run continues with the deterministically least-variable k window and records the warning; compare this status explicitly against baseline rather than treating it as equivalent evidence.
 
 ## Interpretation boundary
 

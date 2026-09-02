@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
 import yaml
 
+from metashape_qc_engine import cli
 from metashape_qc_engine import level1ab_sensitivity_runner as sensitivity
 
 
@@ -210,3 +212,41 @@ def test_level1b_resume_skips_terminal_retries_empty_report_and_starts_missing(
     assert len(calls) == 2
     assert calls[0]["env"]["OVERWRITE"] == "1"
     assert calls[1]["env"]["OVERWRITE"] == "0"
+
+
+def test_level1b_cli_resolves_selected_level1a_median(tmp_path: Path) -> None:
+    ortho = tmp_path / "median.tif"
+    ortho.write_bytes(b"ortho")
+    (tmp_path / "selected_product.json").write_text(
+        json.dumps({"product_modes": {"median_ortho": {"path": str(ortho)}}}),
+        encoding="utf-8",
+    )
+
+    resolved = cli._level1b_ortho(Namespace(ortho=None, from_level1a=str(tmp_path)))
+
+    assert resolved == ortho.resolve()
+
+
+def test_level1b_cli_records_start_and_retries_same_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ortho = tmp_path / "ortho.tif"
+    ortho.write_bytes(b"ortho")
+    run_root = tmp_path / "run"
+    calls = []
+
+    def fake_run(command, env_overrides=None):
+        calls.append({"command": command, "env": env_overrides})
+        return 0
+
+    monkeypatch.setattr(cli, "_run", fake_run)
+    args = Namespace(ortho=str(ortho), from_level1a=None, run_root=str(run_root), config=None, overwrite=False)
+
+    assert cli._run_level1b_start(args) == 0
+    record = json.loads((run_root / "level1b_launch.json").read_text(encoding="utf-8"))
+    assert record["ortho"] == str(ortho.resolve())
+    assert calls[0]["env"]["OVERWRITE"] == "0"
+
+    assert cli._run_level1b_retry(Namespace(run_root=str(run_root))) == 0
+    assert calls[1]["env"]["ORTHO"] == str(ortho.resolve())
+    assert calls[1]["env"]["OVERWRITE"] == "1"

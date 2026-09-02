@@ -292,15 +292,19 @@ def test_08_output_schemas_record_half_sample_mode_and_one_ranger(tmp_path: Path
     assert assigned_payload["ranger_candidate_count"] == 1
 
 
-def test_08b_missing_plateau_fails_after_writing_the_diagnostic_curve(tmp_path: Path, monkeypatch) -> None:
+def test_08b_missing_plateau_uses_a_documented_minimum_span_fallback(tmp_path: Path, monkeypatch) -> None:
     vectors = synthetic_vectors()
     monkeypatch.setattr(feature_range, "sample_valid_feature_vectors", lambda _config: (vectors, len(vectors)))
-    ranger_values = iter((1.0, 1.3, 1.7))
+    ranger_values = iter((1.0, 1.3, 1.7, 1.0))
 
     def fake_hsm(_distances):
         ranger = next(ranger_values)
         return {
             "selection_method": RANGER_SELECTION_METHOD,
+            "ranger_population": "positive_knn_distances_only",
+            "zero_distance_count": 0,
+            "zero_distance_fraction": 0.0,
+            "positive_distance_count": 20,
             "ranger": ranger,
             "distance_min": ranger,
             "distance_median": ranger,
@@ -321,14 +325,16 @@ def test_08b_missing_plateau_fails_after_writing_the_diagnostic_curve(tmp_path: 
     )
     ranger_payload = json.loads(Path(report["output_ranger_json_path"]).read_text(encoding="utf-8"))
 
-    assert report["status"] == "failed"
+    assert report["status"] == "ok"
     assert report["plateau_found"] is False
-    assert report["selected_knn_k"] is None
+    assert report["selected_knn_k"] == 7
+    assert report["ranger_selection_status"] == "weak_plateau_fallback"
+    assert "smallest relative span" in report["ranger_selection_warning"]
     assert ranger_payload["plateau_found"] is False
-    assert ranger_payload["ranger_count"] == 0
+    assert ranger_payload["selected_knn_k"] == 7
+    assert ranger_payload["ranger_count"] == 1
     assert len(ranger_payload["hsm_ranger_curve"]) == 3
-    assert any("no stable Half-Sample Mode plateau" in reason for reason in report["failure_reasons"])
-    assert not Path(report["output_assigned_json_path"]).exists()
+    assert Path(report["output_assigned_json_path"]).exists()
 
 
 def test_09_read_scale_candidates_fails_clearly_for_missing_required_fields(tmp_path: Path) -> None:
@@ -361,7 +367,6 @@ def test_11_invalid_knn_distance_distributions_fail_clearly() -> None:
         ([0.0, 0.0, 0.0], "no finite positive distance variation"),
         ([1.0, float("nan"), 2.0], "finite"),
         ([-1.0, 1.0, 2.0], "non-negative"),
-        ([0.0, 0.0, 1.0], "positive"),
     ):
         try:
             estimate_half_sample_mode(distances)
@@ -369,6 +374,17 @@ def test_11_invalid_knn_distance_distributions_fail_clearly() -> None:
             assert expected in str(exc)
         else:
             raise AssertionError("expected invalid distance-distribution failure")
+
+
+
+def test_11b_hsm_conditions_ranger_on_positive_knn_distances() -> None:
+    result = estimate_half_sample_mode([0.0, 0.0, 1.0])
+
+    assert result["ranger"] == 1.0
+    assert result["ranger_population"] == "positive_knn_distances_only"
+    assert result["zero_distance_count"] == 2
+    assert result["zero_distance_fraction"] == pytest.approx(2 / 3)
+    assert result["positive_distance_count"] == 1
 
 
 def test_12_run_function_is_testable_without_real_rasters_by_monkeypatching_sampler(tmp_path: Path, monkeypatch) -> None:

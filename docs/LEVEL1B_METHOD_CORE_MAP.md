@@ -125,7 +125,9 @@ separate candidate classes and do not receive different Step-9 rules.
 The same scaled valid feature vectors provide empirical k-nearest-neighbour
 distance distributions. For every configured candidate k, the Half-Sample Mode
 (HSM) is computed. The smallest k in the first configured stable HSM plateau is
-selected. The candidate population uses the HSM mode and the positive unique
+selected. If no window meets the configured tolerance, the implementation
+selects the lowest-k window with the smallest relative span and records
+`weak_plateau_fallback` plus a warning. The candidate population uses the HSM mode and the positive unique
 bounds of its main modal interval as bounded ranger positions. No tail-quantile
 ranger ladder is used.
 

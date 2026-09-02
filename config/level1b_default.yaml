@@ -135,9 +135,10 @@ level1b:
     hsm_stability_rel_tol: 0.10
 
     # Number of consecutive k candidates required for a stable plateau. The
-    # smallest k in the first stable window is selected. If no such window is
-    # found, pre-screening fails and records the diagnostic curve; there is no
-    # fallback to a fixed k.
+    # smallest k in the first stable window is selected. If no window meets
+    # this tolerance, the lowest-k window with the smallest relative span is
+    # selected deterministically and recorded as weak_plateau_fallback; it is
+    # a warning, not a claim that a stable plateau was found.
     hsm_plateau_window: 3
 
     # Maximum vectors entering the expensive pairwise kNN distance calculation

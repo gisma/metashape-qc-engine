@@ -154,6 +154,7 @@ licensed/system software automatically.
 |---|---|---|
 | Level-1A | [docs/RUN_LEVEL1A.md](docs/RUN_LEVEL1A.md) | [docs/LEVEL1A_METHOD_CORE_MAP.md](docs/LEVEL1A_METHOD_CORE_MAP.md) |
 | Level-1B | [docs/RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) | [docs/LEVEL1B_METHOD_CORE_MAP.md](docs/LEVEL1B_METHOD_CORE_MAP.md) |
+| Combined chain YAML | [docs/RUN_LEVEL1AB_SENSITIVITY.md](docs/RUN_LEVEL1AB_SENSITIVITY.md) | [WORKFLOW_CHAIN.md](WORKFLOW_CHAIN.md) |
 
 [WORKFLOW_CHAIN.md](WORKFLOW_CHAIN.md) shows how both chains relate. Other manuals are deprecated or background material unless explicitly promoted here.
 
@@ -174,16 +175,24 @@ metashape-qc prepare \
 
 `prepare` prints the exact `run-analysis`, `resume-analysis`, and `evaluate` commands for the generated run directory. See [RUN_LEVEL1A.md](docs/RUN_LEVEL1A.md).
 
-### Level-1B
+### Combined Level-1A → Level-1B normal path
 
-Use the environment wrapper as the normal entry point:
+Use the study-driven chain when Level-1B should automatically consume the Level-1A selected median orthomosaic:
 
 ```bash
-ORTHO=/path/to/ortho.tif \
-RUN_ROOT=/path/to/run_root \
-OVERWRITE=1 \
-bash metashape_qc_engine/run_level1b_dumb_with_user_header.sh
+metashape-qc chain run --study /path/to/study.yaml
 ```
+
+### Standalone Level-1B
+
+Start Level-1B independently either from an external TIFF or from the selected product of an existing Level-1A run:
+
+```bash
+metashape-qc level1b start --ortho /path/to/ortho.tif --run-root /path/to/level1b-run
+metashape-qc level1b start --from-level1a /path/to/level1a-run --run-root /path/to/level1b-run
+```
+
+The environment wrapper remains an advanced compatibility entry point; prefer the CLI commands above.
 
 The YAML defines an admissible segmentation-radius domain; scene-adaptive multiband variogram pre-screening materializes the concrete Step-9a scale families. DGLCM measurement radii and channel names do not define that ladder. Each scale/ranger combination is evaluated with four deterministic translations of a radius-controlled hexagonal seed lattice and SAGA Seeded Region Growing; Step 9 ranks the robust geometric mean of seed-, ranger-, and radius-boundary persistence plus continuous scale-match support. Boundary distances are normalized by candidate radius; historical fixed edge/jump penalties are diagnostic only. See [RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md) for dependencies, statuses, final products, and quality evidence.
 

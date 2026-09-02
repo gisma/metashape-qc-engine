@@ -7,6 +7,7 @@ Operational and methodological details are maintained in the four active documen
 - [docs/RUN_LEVEL1A.md](docs/RUN_LEVEL1A.md)
 - [docs/LEVEL1A_METHOD_CORE_MAP.md](docs/LEVEL1A_METHOD_CORE_MAP.md)
 - [docs/RUN_LEVEL1B.md](docs/RUN_LEVEL1B.md)
+- [docs/RUN_LEVEL1AB_SENSITIVITY.md](docs/RUN_LEVEL1AB_SENSITIVITY.md) — schema-v1 contract for the combined productive chain and sensitivity studies
 - [docs/LEVEL1B_METHOD_CORE_MAP.md](docs/LEVEL1B_METHOD_CORE_MAP.md)
 
 ## Environment setup
@@ -192,6 +193,19 @@ ls -la <run_root>/level1b/manifests
 
 ## Relationship between the chains
 
-A reviewed Level-1A orthomosaic may be supplied as the Level-1B input, but the code does not automatically chain Level-1A into Level-1B. The handoff is an explicit orthomosaic path chosen by the operator.
+The normal productive path is an explicit study-driven handoff:
+
+```bash
+metashape-qc chain run --study /path/to/study.yaml
+```
+
+It runs Level-1A, evaluates it, reads `selected_product.json`, and supplies that selected median orthomosaic to the configured Level-1B jobs. The Level-1B workflow remains independently usable with either an external TIFF or a completed Level-1A run:
+
+```bash
+metashape-qc level1b start --ortho /path/to/ortho.tif --run-root /path/to/level1b-run
+metashape-qc level1b start --from-level1a /path/to/level1a-run --run-root /path/to/level1b-run
+```
+
+Each standalone start records its input and configuration in `level1b_launch.json`; use `metashape-qc level1b status` and `metashape-qc level1b retry` with the same run root.
 
 Level-1A asks whether Metashape product candidates are reproducible. Level-1B asks which segmentation-scale response is locally supported for one finished orthomosaic and records the resulting segmentation evidence.
